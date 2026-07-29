@@ -1,8 +1,10 @@
 {
   "purchase": {
-    "seller_individual": [
+    "property": [
       "Escritura pública",
-      "Predial",
+      "Predial"
+    ],
+    "seller_individual": [
       "CURP",
       "Constancia de Situación Fiscal",
       "Comprobante de domicilio",
@@ -36,7 +38,7 @@
       "Certificado de vigencia / good standing (apostillado)",
       "Constancia de facultades del gerente (notariada y apostillada)",
       "Comprobante de domicilio de la LLC",
-      "Carta del IRS"
+      "EIN Letter"
     ],
     "llc_members": [
       "Copia de pasaporte (miembro)",
@@ -54,9 +56,11 @@
     ]
   },
   "trust": {
-    "seller_individual": [
+    "property": [
       "Escritura pública",
-      "Predial",
+      "Predial"
+    ],
+    "seller_individual": [
       "CURP",
       "Constancia de Situación Fiscal",
       "Comprobante de domicilio",
@@ -92,7 +96,7 @@
       "Certificado de vigencia / good standing (apostillado)",
       "Constancia de facultades del gerente (notariada y apostillada)",
       "Comprobante de domicilio de la LLC",
-      "Carta del IRS"
+      "EIN Letter"
     ],
     "llc_members": [
       "Copia de pasaporte (miembro)",
@@ -110,6 +114,10 @@
     ]
   },
   "transfer": {
+    "property": [
+      "Escritura pública",
+      "Recibo de predial"
+    ],
     "seller_individual": [
       "Pasaporte",
       "Comprobante de domicilio",
@@ -118,8 +126,6 @@
       "Acta de matrimonio (si aplica)",
       "Licencia de conducir",
       "Estatus migratorio",
-      "Escritura pública",
-      "Recibo de predial",
       "Último pago anual de fideicomiso"
     ],
     "buyer_individual": [
@@ -150,7 +156,7 @@
       "Certificado de vigencia / good standing (apostillado)",
       "Constancia de facultades del gerente (notariada y apostillada)",
       "Comprobante de domicilio de la LLC",
-      "Carta del IRS"
+      "EIN Letter"
     ],
     "llc_members": [
       "Copia de pasaporte (miembro)",
@@ -168,6 +174,10 @@
     ]
   },
   "trust_termination": {
+    "property": [
+      "Escritura pública",
+      "Recibo de predial"
+    ],
     "seller_individual": [
       "Pasaporte",
       "Comprobante de domicilio",
@@ -176,8 +186,6 @@
       "Acta de matrimonio (si aplica)",
       "Licencia de conducir",
       "Estatus migratorio",
-      "Escritura pública",
-      "Recibo de predial",
       "Último pago anual de fideicomiso"
     ],
     "buyer_individual": [
@@ -206,7 +214,7 @@
       "Certificado de vigencia / good standing (apostillado)",
       "Constancia de facultades del gerente (notariada y apostillada)",
       "Comprobante de domicilio de la LLC",
-      "Carta del IRS"
+      "EIN Letter"
     ],
     "llc_members": [
       "Copia de pasaporte (miembro)",

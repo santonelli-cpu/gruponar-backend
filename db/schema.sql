@@ -73,7 +73,9 @@ CREATE TABLE IF NOT EXISTS deal_parties (
 CREATE TABLE IF NOT EXISTS documents (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
-  deal_party_entity_id INTEGER NOT NULL REFERENCES deal_party_entities(id) ON DELETE CASCADE,
+  -- NULL = documento a nivel de operación (sección "Propiedad": Escritura
+  -- pública, Predial) en vez de uno de una parte específica.
+  deal_party_entity_id INTEGER REFERENCES deal_party_entities(id) ON DELETE CASCADE,
   sub_label TEXT,
   name TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','done')),
@@ -152,4 +154,12 @@ CREATE TABLE IF NOT EXISTS contract_templates (
   docx_file TEXT NOT NULL,
   created_by INTEGER REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Última vez que se mandó un recordatorio automático de documentos
+-- pendientes a cada parte (lib/reminders.js) — evita mandar uno nuevo cada
+-- vez que corre el chequeo diario si ya se mandó uno hace poco.
+CREATE TABLE IF NOT EXISTS document_reminders_log (
+  deal_party_entity_id INTEGER PRIMARY KEY REFERENCES deal_party_entities(id) ON DELETE CASCADE,
+  last_sent_at TEXT NOT NULL
 );

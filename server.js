@@ -14,6 +14,7 @@ const invitesRouter = require('./routes/invites');
 const dashboardRouter = require('./routes/dashboard');
 const kycRouter = require('./routes/kyc');
 const contractsRouter = require('./routes/contracts');
+const { runAutomaticReminders } = require('./lib/reminders');
 
 const app = express();
 app.use(express.json());
@@ -67,3 +68,11 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Grupo Nar backend escuchando en puerto ${PORT}`));
+
+// Recordatorios automáticos de documentos pendientes (lib/reminders.js) —
+// una pasada 1 minuto después de arrancar (deja que todo termine de cargar)
+// y luego cada 24h. No pasa nada si Resend no está configurado (se salta
+// solo); tampoco si el proceso se reinicia entre pasadas, el cooldown vive
+// en la base de datos, no en memoria.
+setTimeout(() => runAutomaticReminders().catch(err => console.error('[reminders] error:', err.message)), 60 * 1000);
+setInterval(() => runAutomaticReminders().catch(err => console.error('[reminders] error:', err.message)), 24 * 60 * 60 * 1000);

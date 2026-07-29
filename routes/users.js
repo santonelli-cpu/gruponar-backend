@@ -37,7 +37,7 @@ router.post('/', requireRole('admin'), (req, res) => {
 });
 
 router.get('/', requireRole('admin'), (req, res) => {
-  const users = db.prepare('SELECT id, name, email, role, status, created_at FROM users ORDER BY created_at DESC').all();
+  const users = db.prepare('SELECT id, name, email, role, status, agency, created_at FROM users ORDER BY created_at DESC').all();
   res.json(users);
 });
 

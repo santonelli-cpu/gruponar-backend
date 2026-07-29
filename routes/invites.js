@@ -5,6 +5,8 @@ const db = require('../db');
 const { requireRole } = require('./auth');
 const { canAccessDeal } = require('../lib/access');
 const { createRateLimiter } = require('../lib/rateLimit');
+const { resolveAgency } = require('./auth');
+const mailer = require('../lib/email');
 
 const router = express.Router();
 
@@ -20,7 +22,7 @@ const rateLimitAccept = createRateLimiter({ windowMs: 15 * 60 * 1000, maxAttempt
 // compradores/vendedores, cada uno necesita su propia invitación ligada a
 // su propia parte. Para agente/abogado, sin dealId/partyEntityId es una
 // invitación de equipo (se une a la firma en general).
-router.post('/', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+router.post('/', requireRole('admin', 'agent', 'lawyer'), async (req, res) => {
   const { dealId, dealPartyEntityId, roleInDeal, name, email } = req.body || {};
   if (!['buyer', 'seller', 'agent', 'lawyer'].includes(roleInDeal) || !name || !email) {
     return res.status(400).json({ error: 'Datos inválidos.' });
@@ -44,13 +46,25 @@ router.post('/', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
   const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 86400000).toISOString();
 
+  const normalizedEmail = email.toLowerCase().trim();
   db.prepare(`
     INSERT INTO invites (token, deal_id, deal_party_entity_id, role_in_deal, email, name, created_by, expires_at)
     VALUES (?,?,?,?,?,?,?,?)
   `).run(token, dealId || null, ['buyer', 'seller'].includes(roleInDeal) ? dealPartyEntityId : null,
-         roleInDeal, email.toLowerCase().trim(), name, req.session.userId, expiresAt);
+         roleInDeal, normalizedEmail, name, req.session.userId, expiresAt);
 
-  res.status(201).json({ token, url: `/invite.html?token=${token}` });
+  const url = `/invite.html?token=${token}`;
+  const dealProperty = dealId ? db.prepare('SELECT property FROM deals WHERE id = ?').get(dealId)?.property : null;
+  const absoluteUrl = `${req.protocol}://${req.get('host')}${url}`;
+  // El correo es "best effort": la invitación ya quedó creada y su link es
+  // usable aunque el correo falle (ej. dominio de Resend sin verificar
+  // todavía) — no bloqueamos ni le devolvemos error a quien invita por eso.
+  let emailResult = { ok: false, error: 'Resend no está configurado.' };
+  if (mailer.isConfigured()) {
+    emailResult = await mailer.sendInviteEmail({ to: normalizedEmail, name, roleInDeal, dealProperty, url: absoluteUrl });
+  }
+
+  res.status(201).json({ token, url, emailSent: emailResult.ok, emailError: emailResult.ok ? null : emailResult.error });
 });
 
 // GET /api/invites/:token — público, solo lo necesario para prellenar el formulario.
@@ -75,7 +89,7 @@ router.get('/:token', (req, res) => {
 
 // POST /api/invites/:token/accept — público, crea la cuenta (o la reutiliza) y la liga a la parte correspondiente.
 router.post('/:token/accept', rateLimitAccept, (req, res) => {
-  const { password } = req.body || {};
+  const { password, agency, agencyOther } = req.body || {};
   if (!password || password.length < 8) {
     return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres.' });
   }
@@ -84,6 +98,12 @@ router.post('/:token/accept', rateLimitAccept, (req, res) => {
   if (!invite) return res.status(404).json({ error: 'Invitación no encontrada.' });
   if (invite.used_at) return res.status(410).json({ error: 'Esta invitación ya fue usada.' });
   if (new Date(invite.expires_at) < new Date()) return res.status(410).json({ error: 'Esta invitación expiró.' });
+
+  let resolvedAgency = null;
+  if (invite.role_in_deal === 'agent') {
+    resolvedAgency = resolveAgency(agency, agencyOther);
+    if (!resolvedAgency) return res.status(400).json({ error: 'Elige tu agencia (o escribe cuál si no está en la lista).' });
+  }
 
   // Invitaciones viejas (de antes de que existiera deal_party_entity_id en
   // este flujo) pueden llegar aquí sin ese dato — se resuelve solo si hay
@@ -114,8 +134,8 @@ router.post('/:token/accept', rateLimitAccept, (req, res) => {
     let user = existing;
     if (!user) {
       const hash = bcrypt.hashSync(password, 12);
-      const info = db.prepare('INSERT INTO users (name, email, password_hash, role) VALUES (?,?,?,?)')
-        .run(invite.name, invite.email, hash, invite.role_in_deal);
+      const info = db.prepare('INSERT INTO users (name, email, password_hash, role, agency) VALUES (?,?,?,?,?)')
+        .run(invite.name, invite.email, hash, invite.role_in_deal, resolvedAgency);
       user = { id: info.lastInsertRowid, name: invite.name, email: invite.email, role: invite.role_in_deal };
     }
     if (invite.deal_id) {

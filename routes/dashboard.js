@@ -48,9 +48,11 @@ router.get('/', requireAuth, (req, res) => {
   // operación una por una. `stale` marca los que llevan más de STALE_DAYS
   // para resaltarlos, pero ya no son la única razón para aparecer aquí.
   const pendingDocuments = db.prepare(`
-    SELECT d.id AS documentId, d.name, d.owner, d.created_at, deals.id AS dealId, deals.property,
+    SELECT d.id AS documentId, d.name, dpe.name AS partyName, dpe.side, d.created_at, deals.id AS dealId, deals.property,
       (julianday('now') - julianday(d.created_at) > ${STALE_DAYS}) AS stale
-    FROM documents d JOIN deals ON deals.id = d.deal_id
+    FROM documents d
+    JOIN deals ON deals.id = d.deal_id
+    LEFT JOIN deal_party_entities dpe ON dpe.id = d.deal_party_entity_id
     WHERE d.deal_id IN (${dealsSql}) AND d.status = 'pending'
     ORDER BY deals.property ASC, d.created_at ASC
   `).all(...params);

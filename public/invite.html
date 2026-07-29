@@ -17,6 +17,15 @@
     <div class="gate-sub" id="sub">Cargando invitación…</div>
     <div class="gate-error" id="error"></div>
     <div id="form" style="display:none;">
+      <select id="agency" style="width:100%; margin-bottom:10px; display:none;">
+        <option value="">Selecciona tu agencia...</option>
+        <option value="LPR Luxury">LPR Luxury</option>
+        <option value="Applegate Realtors">Applegate Realtors</option>
+        <option value="JPM Real Estate">JPM Real Estate</option>
+        <option value="Interamerican">Interamerican</option>
+        <option value="Otro">Otro</option>
+      </select>
+      <input type="text" id="agency-other" placeholder="¿Cuál agencia?" style="display:none;">
       <input type="password" id="password" placeholder="Contraseña (mínimo 8 caracteres)" autocomplete="new-password">
       <input type="password" id="password2" placeholder="Confirma tu contraseña" autocomplete="new-password">
       <button class="btn primary" id="submit" style="width:100%;">Crear cuenta y entrar</button>
@@ -30,7 +39,11 @@
   const subEl = document.getElementById('sub');
   const errorEl = document.getElementById('error');
   const formEl = document.getElementById('form');
+  const agencyEl = document.getElementById('agency');
+  const agencyOtherEl = document.getElementById('agency-other');
   const ROLE_LABEL = { buyer: 'comprador(a)', seller: 'vendedor(a)', agent: 'agente', lawyer: 'abogado(a) / empleado(a) interno' };
+  let inviteRole = null;
+  agencyEl.onchange = () => { agencyOtherEl.style.display = agencyEl.value === 'Otro' ? 'block' : 'none'; };
 
   async function apiFetch(path, options={}){
     const res = await fetch(path, { credentials:'include', headers:{'Content-Type':'application/json'}, ...options });
@@ -48,10 +61,12 @@
     }
     try {
       const invite = await apiFetch('/api/invites/' + token);
+      inviteRole = invite.roleInDeal;
       const roleLabel = ROLE_LABEL[invite.roleInDeal] || invite.roleInDeal;
       subEl.textContent = invite.dealProperty
         ? `${invite.name}, te invitaron como ${roleLabel} a la operación "${invite.dealProperty}". Pon una contraseña para tu cuenta (${invite.email}).`
         : `${invite.name}, te invitaron como ${roleLabel} al equipo de Grupo Nar. Pon una contraseña para tu cuenta (${invite.email}).`;
+      if (inviteRole === 'agent') agencyEl.style.display = 'block';
       formEl.style.display = 'block';
     } catch(e) {
       subEl.textContent = '';
@@ -65,8 +80,11 @@
     const password2 = document.getElementById('password2').value;
     if (password.length < 8) { errorEl.textContent = 'La contraseña debe tener al menos 8 caracteres.'; return; }
     if (password !== password2) { errorEl.textContent = 'Las contraseñas no coinciden.'; return; }
+    const agency = agencyEl.value;
+    const agencyOther = agencyOtherEl.value.trim();
+    if (inviteRole === 'agent' && (!agency || (agency==='Otro' && !agencyOther))) { errorEl.textContent = 'Elige tu agencia.'; return; }
     try {
-      await apiFetch('/api/invites/' + token + '/accept', { method:'POST', body: JSON.stringify({ password }) });
+      await apiFetch('/api/invites/' + token + '/accept', { method:'POST', body: JSON.stringify({ password, agency, agencyOther }) });
       window.location.href = '/';
     } catch(e) {
       errorEl.textContent = e.message;

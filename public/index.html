@@ -214,9 +214,19 @@ async function checkSession(){
 function adaptDoc(d){
   return {
     id: d.id, name: d.name, subLabel: d.sub_label, status: d.status,
-    fileUrl: d.file_url, originalName: d.original_name, partyId: d.deal_party_entity_id
+    fileUrl: d.file_url, originalName: d.original_name, partyId: d.deal_party_entity_id,
+    apostilleDone: !!d.apostille_done
   };
 }
+// Estos 3 documentos de LLC llegan normalmente dos veces (sin notarizar
+// primero, notarizado y apostillado después) — mismo nombre que
+// data/scenario-docs.json y routes/deals.js (APOSTILLE_DOC_NAMES).
+const AGENCIES = ['LPR Luxury', 'Applegate Realtors', 'JPM Real Estate', 'Interamerican'];
+const APOSTILLE_DOC_NAMES = [
+  'Acta constitutiva de LLC (notariada y apostillada)',
+  'Acuerdo operativo (notariado y apostillado)',
+  'Certificado de vigencia / good standing (apostillado)'
+];
 function adaptTask(t){
   return {
     id: t.id, en: t.label_en, es: t.label_es, status: t.status, sign: !!t.requires_signature,
@@ -245,6 +255,7 @@ function adaptDealSummary(row){
     id: row.id, scenario: row.scenario, development: row.development, property: row.property,
     price: row.price, furniturePrice: row.furniture_price, currency: row.currency, startDate: row.start_date,
     escrowCompany: row.escrow_company || 'armour',
+    closingDate: row.closing_date || '', dueDiligenceEndDate: row.due_diligence_end_date || '',
     parties: (row.parties || []).map(adaptParty),
     documents: [], tasks: [], _loaded: false,
     _counts: {
@@ -416,21 +427,41 @@ function renderRegister(body){
         <option value="agent">Agente de venta</option>
         <option value="lawyer">Abogado / empleado interno</option>
       </select>
+      <select id="reg-agency" style="width:100%; margin-bottom:10px;">
+        <option value="">Selecciona tu agencia...</option>
+        ${AGENCIES.map(a => `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join('')}
+        <option value="Otro">Otro</option>
+      </select>
+      <input type="text" id="reg-agency-other" placeholder="¿Cuál agencia?" style="display:none;">
       <button class="btn primary" id="register-submit" style="width:100%;" ${registerLoading ? 'disabled' : ''}>${registerLoading ? 'Creando...' : 'Crear cuenta'}</button>
       <div class="field-hint" style="text-align:center; margin-top:12px;"><a href="#" id="go-login">Ya tengo cuenta, iniciar sesión</a></div>
     </div>
   `;
   body.appendChild(wrap);
+  const agencySelect = wrap.querySelector('#reg-agency');
+  const agencyOtherInput = wrap.querySelector('#reg-agency-other');
+  const roleSelect = wrap.querySelector('#reg-role');
+  function syncAgencyVisibility(){
+    const isAgent = roleSelect.value === 'agent';
+    agencySelect.style.display = isAgent ? '' : 'none';
+    agencyOtherInput.style.display = (isAgent && agencySelect.value === 'Otro') ? '' : 'none';
+  }
+  syncAgencyVisibility();
+  roleSelect.onchange = syncAgencyVisibility;
+  agencySelect.onchange = syncAgencyVisibility;
   wrap.querySelector('#go-login').onclick = (e) => { e.preventDefault(); authView='login'; registerError=''; render(); };
   wrap.querySelector('#register-submit').onclick = async () => {
     const name = wrap.querySelector('#reg-name').value.trim();
     const email = wrap.querySelector('#reg-email').value.trim();
     const password = wrap.querySelector('#reg-password').value;
-    const role = wrap.querySelector('#reg-role').value;
+    const role = roleSelect.value;
+    const agency = agencySelect.value;
+    const agencyOther = agencyOtherInput.value.trim();
     if(!name || !email || !password){ registerError = 'Completa todos los campos.'; render(); return; }
+    if(role === 'agent' && (!agency || (agency==='Otro' && !agencyOther))){ registerError = 'Elige tu agencia.'; render(); return; }
     registerLoading = true; registerError=''; render();
     try{
-      const result = await apiFetch('/api/auth/register', { method:'POST', body: JSON.stringify({name, email, password, role}) });
+      const result = await apiFetch('/api/auth/register', { method:'POST', body: JSON.stringify({name, email, password, role, agency, agencyOther}) });
       registerLoading = false;
       authView = 'login';
       registerSuccess = result.message;
@@ -626,7 +657,7 @@ function buildDashboard(){
         row.style.cssText = 'display:flex; align-items:center; gap:10px; padding:6px 0; border-bottom:0.5px solid var(--line);';
         row.innerHTML = `
           <span class="doc-check" style="flex-shrink:0;"></span>
-          <span style="font-size:12.5px; flex:1;">Documento: ${escapeHtml(doc.name)} <span class="field-hint" style="margin:0;">(${escapeHtml(doc.owner==='seller'?'vendedor':'comprador')})</span></span>
+          <span style="font-size:12.5px; flex:1;">Documento: ${escapeHtml(doc.name)} <span class="field-hint" style="margin:0;">(${doc.partyName ? escapeHtml(doc.partyName) + ' · ' + (doc.side==='seller'?'vendedor':'comprador') : 'Propiedad'})</span></span>
           ${doc.stale ? `<span class="badge" style="background:var(--oxblood-soft); color:var(--oxblood); flex-shrink:0;">Atrasado</span>` : ''}
         `;
         row.querySelector('.doc-check').onclick = async () => {
@@ -681,7 +712,7 @@ function buildTeamSection(){
     pendingUsers.forEach(u => {
       const row = document.createElement('div');
       row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:0.5px solid var(--line); gap:10px;';
-      row.innerHTML = `<span style="font-size:13px;">${escapeHtml(u.name)} <span class="field-hint" style="margin:0;">— ${escapeHtml(u.email)} · ${u.role}</span></span>`;
+      row.innerHTML = `<span style="font-size:13px;">${escapeHtml(u.name)} <span class="field-hint" style="margin:0;">— ${escapeHtml(u.email)} · ${u.role}${u.agency ? ' · ' + escapeHtml(u.agency) : ''}</span></span>`;
       const approveBtn = document.createElement('button');
       approveBtn.className = 'btn primary'; approveBtn.textContent = 'Aprobar';
       approveBtn.onclick = async () => {
@@ -1024,13 +1055,17 @@ function buildPartiesSection(deal){
         block.style.marginTop = '8px';
         const saveBtn = document.createElement('button');
         saveBtn.className = 'btn primary'; saveBtn.style.fontSize = '11px'; saveBtn.textContent = 'Guardar';
+        const errEl = document.createElement('div');
+        errEl.className = 'gate-error';
         saveBtn.onclick = async () => {
+          errEl.textContent = '';
           try{
             await apiFetch(`/api/deals/${deal.id}/parties/${p.id}`, { method:'PATCH', body: JSON.stringify(block.collectParty(side)) });
             await openDeal(deal.id);
-          }catch(e){ alert(e.message); }
+          }catch(e){ errEl.textContent = e.message; }
         };
         block.appendChild(saveBtn);
+        block.appendChild(errEl);
         editSlot.appendChild(block);
       };
       const removeBtn = row.querySelector('.pty-remove');
@@ -1053,13 +1088,17 @@ function buildPartiesSection(deal){
       block.style.marginTop = '8px';
       const saveBtn = document.createElement('button');
       saveBtn.className = 'btn primary'; saveBtn.style.fontSize = '11px'; saveBtn.textContent = 'Agregar';
+      const errEl = document.createElement('div');
+      errEl.className = 'gate-error';
       saveBtn.onclick = async () => {
+        errEl.textContent = '';
         try{
           await apiFetch(`/api/deals/${deal.id}/parties`, { method:'POST', body: JSON.stringify(block.collectParty(side)) });
           await openDeal(deal.id);
-        }catch(e){ alert(e.message); }
+        }catch(e){ errEl.textContent = e.message; }
       };
       block.appendChild(saveBtn);
+      block.appendChild(errEl);
       addSlot.appendChild(block);
     };
 
@@ -1095,6 +1134,10 @@ function buildAdminDealDetail(deal){
         <option value="tla" ${deal.escrowCompany==='tla'?'selected':''}>TLA Financial Services</option>
       </select>
     </div>
+    <div class="deal-sub" style="margin-top:6px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+      <span style="display:flex; align-items:center; gap:6px;">Fecha de cierre <input type="date" id="closing-date-input" value="${deal.closingDate}" style="font-size:11.5px; padding:2px 6px;"></span>
+      <span style="display:flex; align-items:center; gap:6px;">Fin de due diligence <input type="date" id="dd-end-date-input" value="${deal.dueDiligenceEndDate}" style="font-size:11.5px; padding:2px 6px;"></span>
+    </div>
     <button class="btn" id="delDeal" style="margin-top:10px;"><i class="ti ti-trash" aria-hidden="true"></i> Eliminar operación</button>
   `;
   wrap.appendChild(header);
@@ -1108,6 +1151,19 @@ function buildAdminDealDetail(deal){
       await apiFetch('/api/deals/' + deal.id, { method:'PATCH', body: JSON.stringify({ escrowCompany: next }) });
       await openDeal(deal.id);
     }catch(err){ alert(err.message); e.target.value = deal.escrowCompany; }
+  };
+  header.querySelector('#closing-date-input').onchange = async (e) => {
+    try{
+      await apiFetch('/api/deals/' + deal.id, { method:'PATCH', body: JSON.stringify({ closingDate: e.target.value || null }) });
+      deal.closingDate = e.target.value;
+    }catch(err){ alert(err.message); e.target.value = deal.closingDate; }
+  };
+  header.querySelector('#dd-end-date-input').onchange = async (e) => {
+    try{
+      await apiFetch('/api/deals/' + deal.id, { method:'PATCH', body: JSON.stringify({ dueDiligenceEndDate: e.target.value || null }) });
+      deal.dueDiligenceEndDate = e.target.value;
+      render();
+    }catch(err){ alert(err.message); e.target.value = deal.dueDiligenceEndDate; }
   };
   header.querySelector('#delDeal').onclick = async () => {
     if(!confirm('¿Eliminar esta operación? Esta acción no se puede deshacer.')) return;
@@ -1123,12 +1179,20 @@ function buildAdminDealDetail(deal){
   wrap.appendChild(partiesTitle);
   wrap.appendChild(buildPartiesSection(deal));
 
+  const propTitle = document.createElement('div');
+  propTitle.className = 'section-title'; propTitle.textContent = 'Propiedad';
+  wrap.appendChild(propTitle);
+  const propCard = document.createElement('div');
+  propCard.className = 'card';
+  propCard.appendChild(buildPropertyDocsSection(deal));
+  wrap.appendChild(propCard);
+
   const docsTitle = document.createElement('div');
   docsTitle.className = 'section-title'; docsTitle.textContent = 'Checklist de documentos (KYC)';
   wrap.appendChild(docsTitle);
   const docsCard = document.createElement('div');
   docsCard.className = 'card';
-  deal.parties.forEach(p => docsCard.appendChild(buildDocListForParty(deal, p)));
+  docsCard.appendChild(buildDocsBySideGrouping(deal));
   wrap.appendChild(docsCard);
 
   const kycTitle = document.createElement('div');
@@ -1155,7 +1219,10 @@ function buildAdminDealDetail(deal){
   contractTitle.className = 'section-title'; contractTitle.textContent = 'Contrato de promesa (firma electrónica)';
   wrap.appendChild(contractTitle);
   const contractCard = document.createElement('div'); contractCard.className = 'card';
-  contractCard.appendChild(buildContractSection(deal, true));
+  // Generar/editar el contrato es trabajo exclusivo de admin/abogado — el
+  // agente ve la misma vista de solo lectura que comprador/vendedor (ver
+  // PDF + firmar si le toca), nunca el machote en blanco.
+  contractCard.appendChild(buildContractSection(deal, ['admin', 'lawyer'].includes(currentUser.role)));
   wrap.appendChild(contractCard);
 
   return wrap;
@@ -1398,13 +1465,89 @@ function openKycSigningModal(url, dealId, role){
   window.addEventListener('message', onMessage);
 }
 
+function buildDocItemLi(deal, doc){
+  const li = document.createElement('li');
+  li.className = 'doc-item';
+  // El sub_label ya se muestra como encabezado de grupo en
+  // buildDocListForParty — aquí solo el nombre del documento.
+  const label = escapeHtml(doc.name);
+  const needsApostille = APOSTILLE_DOC_NAMES.includes(doc.name);
+  li.innerHTML = `<span class="doc-check ${doc.status==='done'?'done':''}">${doc.status==='done'?'<i class=\"ti ti-check\" aria-hidden=\"true\"></i>':''}</span><span>${label}</span>
+    <span style="margin-left:auto; display:flex; align-items:center; gap:8px;">
+      ${needsApostille ? `<label style="display:flex; align-items:center; gap:4px; font-size:11px; color:var(--ink-soft); cursor:pointer;" title="Marca cuando ya llegó la versión notarizada y apostillada (no la copia escaneada simple)"><input type="checkbox" class="apostille-check" ${doc.apostilleDone?'checked':''}> Notariado + apostillado</label>` : ''}
+      ${doc.fileUrl ? `<a href="/api/deals/${deal.id}/documents/${doc.id}/file" target="_blank" style="font-size:11px;">Ver archivo</a>` : ''}
+      <input type="file" style="font-size:11px; max-width:130px;" accept=".pdf,.jpg,.jpeg,.png,.heic" title="Adjuntar documento">
+    </span>`;
+  li.querySelector('.doc-check').onclick = async () => {
+    const next = doc.status==='done' ? 'pending' : 'done';
+    try{
+      await apiFetch(`/api/deals/${deal.id}/documents/${doc.id}`, { method:'PATCH', body: JSON.stringify({status: next}) });
+      doc.status = next; render();
+    }catch(e){ alert(e.message); }
+  };
+  const apostilleCheck = li.querySelector('.apostille-check');
+  if(apostilleCheck){
+    apostilleCheck.onchange = async (e) => {
+      const next = e.target.checked;
+      try{
+        await apiFetch(`/api/deals/${deal.id}/documents/${doc.id}`, { method:'PATCH', body: JSON.stringify({apostilleDone: next}) });
+        doc.apostilleDone = next;
+      }catch(err){ alert(err.message); e.target.checked = !next; }
+    };
+  }
+  li.querySelector('input[type=file]').onchange = async (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    try{
+      await apiUpload(`/api/deals/${deal.id}/documents/${doc.id}/file`, fd);
+      await openDeal(deal.id);
+    }catch(err){ alert(err.message); }
+  };
+  return li;
+}
+
+// Agrupa el checklist en Vendedores/Compradores — mismo orden en el que
+// eventualmente se van a organizar las carpetas de Drive (Propiedad /
+// Vendedor / Comprador / Escrow / Notaría), aunque esas dos últimas todavía
+// no tienen un checklist de documentos propio en la plataforma.
+function buildDocsBySideGrouping(deal){
+  const wrap = document.createElement('div');
+  [['seller', 'Vendedores'], ['buyer', 'Compradores']].forEach(([side, label]) => {
+    const parties = deal.parties.filter(p => p.side === side);
+    if (!parties.length) return;
+    const sub = document.createElement('div');
+    sub.style.cssText = 'font-family:\'Cormorant Garamond\',serif; font-weight:600; font-size:15px; color:var(--ink-soft); margin:4px 0 8px;';
+    sub.textContent = label;
+    wrap.appendChild(sub);
+    parties.forEach(p => wrap.appendChild(buildDocListForParty(deal, p)));
+  });
+  return wrap;
+}
+
 function buildDocListForParty(deal, party){
   const box = document.createElement('div');
   box.style.marginBottom = '14px';
   const sideLabel = party.side === 'seller' ? 'Vendedor' : 'Comprador';
   const h = document.createElement('div');
-  h.style.cssText = 'font-weight:500; font-size:13px; color:var(--ink-soft); margin-bottom:6px;';
-  h.textContent = `${party.name} (${sideLabel} · ${TYPE_LABEL[party.partyType]})`;
+  h.style.cssText = 'font-weight:500; font-size:13px; color:var(--ink-soft); margin-bottom:6px; display:flex; align-items:center; gap:8px;';
+  const hLabel = document.createElement('span');
+  hLabel.textContent = `${party.name} (${sideLabel} · ${TYPE_LABEL[party.partyType]})`;
+  h.appendChild(hLabel);
+  if(['admin','agent','lawyer'].includes(currentUser.role) && party.linkedUser){
+    const remindBtn = document.createElement('button');
+    remindBtn.className = 'btn'; remindBtn.style.cssText = 'font-size:11px; padding:3px 10px;';
+    remindBtn.textContent = 'Recordar documentos';
+    remindBtn.onclick = async () => {
+      remindBtn.disabled = true;
+      try{
+        const r = await apiFetch(`/api/deals/${deal.id}/parties/${party.id}/remind`, { method:'POST' });
+        remindBtn.textContent = `Enviado (${r.count})`;
+      }catch(e){ alert(e.message); remindBtn.disabled = false; }
+    };
+    h.appendChild(remindBtn);
+  }
   box.appendChild(h);
 
   if(party.partyType !== 'individual' && !party.ownershipMode){
@@ -1414,37 +1557,43 @@ function buildDocListForParty(deal, party){
     box.appendChild(warn);
   }
 
+  // Subagrupa por sub_label — cada grupo distinto (un socio, el trust)
+  // corresponde a la subcarpeta propia que le tocaría dentro de la carpeta
+  // de esta parte en Drive; los documentos sin sub_label son los de la
+  // propia entidad/persona (party.name), sin subcarpeta.
   const docs = deal.documents.filter(d => d.partyId === party.id);
+  const groups = [];
+  const groupIndex = {};
+  docs.forEach(doc => {
+    const key = doc.subLabel || '';
+    if (!(key in groupIndex)) { groupIndex[key] = groups.length; groups.push({ label: doc.subLabel, docs: [] }); }
+    groups[groupIndex[key]].docs.push(doc);
+  });
+  groups.forEach(g => {
+    if (g.label) {
+      const gLabel = document.createElement('div');
+      gLabel.style.cssText = 'font-size:12px; font-weight:500; color:var(--ink-faint); margin:8px 0 2px;';
+      gLabel.textContent = g.label;
+      box.appendChild(gLabel);
+    }
+    const ul = document.createElement('ul');
+    ul.className = 'doc-list';
+    g.docs.forEach(doc => ul.appendChild(buildDocItemLi(deal, doc)));
+    box.appendChild(ul);
+  });
+  return box;
+}
+
+// Documentos de LA PROPIEDAD (Escritura pública, Predial) — una sola vez
+// por operación, no ligados a ningún vendedor/comprador en particular
+// (documents.deal_party_entity_id es NULL para estos).
+function buildPropertyDocsSection(deal){
+  const docs = deal.documents.filter(d => d.partyId === null);
+  const box = document.createElement('div');
+  box.style.marginBottom = '14px';
   const ul = document.createElement('ul');
   ul.className = 'doc-list';
-  docs.forEach(doc => {
-    const li = document.createElement('li');
-    li.className = 'doc-item';
-    const label = doc.subLabel ? `${escapeHtml(doc.name)} <span class="field-hint" style="margin:0;">(${escapeHtml(doc.subLabel)})</span>` : escapeHtml(doc.name);
-    li.innerHTML = `<span class="doc-check ${doc.status==='done'?'done':''}">${doc.status==='done'?'<i class=\"ti ti-check\" aria-hidden=\"true\"></i>':''}</span><span>${label}</span>
-      <span style="margin-left:auto; display:flex; align-items:center; gap:8px;">
-        ${doc.fileUrl ? `<a href="/api/deals/${deal.id}/documents/${doc.id}/file" target="_blank" style="font-size:11px;">Ver archivo</a>` : ''}
-        <input type="file" style="font-size:11px; max-width:130px;" accept=".pdf,.jpg,.jpeg,.png,.heic" title="Adjuntar documento">
-      </span>`;
-    li.querySelector('.doc-check').onclick = async () => {
-      const next = doc.status==='done' ? 'pending' : 'done';
-      try{
-        await apiFetch(`/api/deals/${deal.id}/documents/${doc.id}`, { method:'PATCH', body: JSON.stringify({status: next}) });
-        doc.status = next; render();
-      }catch(e){ alert(e.message); }
-    };
-    li.querySelector('input[type=file]').onchange = async (e) => {
-      const file = e.target.files[0];
-      if(!file) return;
-      const fd = new FormData();
-      fd.append('file', file);
-      try{
-        await apiUpload(`/api/deals/${deal.id}/documents/${doc.id}/file`, fd);
-        await openDeal(deal.id);
-      }catch(err){ alert(err.message); }
-    };
-    ul.appendChild(li);
-  });
+  docs.forEach(doc => ul.appendChild(buildDocItemLi(deal, doc)));
   box.appendChild(ul);
   return box;
 }
@@ -1460,6 +1609,17 @@ function buildTaskList(deal){
     <div class="progress-track"><div class="progress-fill" style="width:${pct}%;"></div></div>
   `;
   ul.appendChild(pctRow);
+  if(deal.dueDiligenceEndDate){
+    const today = new Date().toISOString().slice(0,10);
+    const ddOver = today >= deal.dueDiligenceEndDate;
+    const ddBanner = document.createElement('div');
+    ddBanner.className = 'field-hint';
+    ddBanner.style.cssText = `margin:8px 0 0; padding:6px 10px; border-radius:8px; background:${ddOver?'var(--jade-soft)':'var(--stone)'}; color:${ddOver?'var(--jade)':'var(--ink-soft)'};`;
+    ddBanner.textContent = ddOver
+      ? `Due diligence terminó el ${deal.dueDiligenceEndDate} — ya se puede avanzar con el resto del tracker.`
+      : `Due diligence termina el ${deal.dueDiligenceEndDate}.`;
+    ul.appendChild(ddBanner);
+  }
   deal.tasks.forEach((t, idx) => {
     const row = document.createElement('div');
     row.className = 'task-row';
@@ -1507,6 +1667,7 @@ function buildInviteForm(deal){
       <button class="btn primary" id="inv-generate">Generar invitación</button>
     </div>
     <div id="inv-result" style="display:none;">
+      <div class="field-hint" id="inv-email-status" style="margin:0 0 6px;"></div>
       <div class="form-row">
         <label style="flex:1;">Link de invitación (cópialo y compártelo)
           <input type="text" id="inv-link" readonly>
@@ -1544,9 +1705,14 @@ function buildInviteForm(deal){
           return { dealId: deal.id, dealPartyEntityId: party.id, roleInDeal: party.side, name, email };
         })();
     try {
-      const { url } = await apiFetch('/api/invites', { method: 'POST', body: JSON.stringify(body) });
+      const { url, emailSent, emailError } = await apiFetch('/api/invites', { method: 'POST', body: JSON.stringify(body) });
       const linkInput = card.querySelector('#inv-link');
       linkInput.value = window.location.origin + url;
+      const statusEl = card.querySelector('#inv-email-status');
+      statusEl.textContent = emailSent
+        ? `Correo de invitación enviado a ${email}.`
+        : `No se pudo mandar el correo automático (${emailError || 'Resend no configurado'}) — comparte el link manualmente.`;
+      statusEl.style.color = emailSent ? 'var(--jade)' : 'var(--oxblood)';
       card.querySelector('#inv-result').style.display = 'block';
     } catch(e) {
       errEl.textContent = e.message;
@@ -1617,7 +1783,7 @@ function buildContractSection(deal, isStaffView){
     return box;
   }
 
-  // --- Vista de admin/agente/abogado ---
+  // --- Vista de admin/abogado ---
   const tplRow = document.createElement('div');
   tplRow.style.cssText = 'margin-top:8px; display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;';
   const templates = data.templates || [];
@@ -1882,6 +2048,12 @@ function renderPortal(body){
   `;
   body.appendChild(header);
 
+  const pt = document.createElement('div'); pt.className='section-title'; pt.textContent='Propiedad';
+  body.appendChild(pt);
+  const pcard = document.createElement('div'); pcard.className='card';
+  pcard.appendChild(buildPropertyDocsSection(deal));
+  body.appendChild(pcard);
+
   if(myParty){
     const t = document.createElement('div'); t.className='section-title'; t.textContent='Tu checklist de documentos (KYC)';
     body.appendChild(t);
@@ -1898,7 +2070,7 @@ function renderPortal(body){
     const t = document.createElement('div'); t.className='section-title'; t.textContent='Checklist de todas las partes';
     body.appendChild(t);
     const card = document.createElement('div'); card.className='card';
-    deal.parties.forEach(p => card.appendChild(buildDocListForParty(deal, p)));
+    card.appendChild(buildDocsBySideGrouping(deal));
     body.appendChild(card);
   }
 

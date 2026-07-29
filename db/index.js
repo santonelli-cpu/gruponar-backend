@@ -33,6 +33,12 @@ ensureColumn('tasks', 'docusign_status', "docusign_status TEXT NOT NULL DEFAULT 
 ensureColumn('documents', 'mime_type', 'mime_type TEXT');
 ensureColumn('documents', 'size_bytes', 'size_bytes INTEGER');
 ensureColumn('documents', 'original_name', 'original_name TEXT');
+// Solo aplica a los 3 documentos societarios de LLC que llegan primero sin
+// notarizar/apostillar y después ya completos (ver checklist en
+// data/scenario-docs.json) — la app decide cuándo mostrar esta casilla
+// comparando el nombre del documento, no hace falta un flag separado de
+// "aplica o no".
+ensureColumn('documents', 'apostille_done', 'apostille_done INTEGER NOT NULL DEFAULT 0');
 // SQLite exige que el DEFAULT de un ADD COLUMN sea una constante — ni
 // datetime('now') ni CURRENT_TIMESTAMP califican para una columna NOT NULL
 // agregada después. En vez de pelear con eso: columna sin default (nullable),
@@ -84,11 +90,19 @@ ensureUserRoleAllowsLawyer();
 // 'active' es una constante literal (no una función como datetime('now')),
 // así que sí califica como DEFAULT válido en un ADD COLUMN normal.
 ensureColumn('users', 'status', "status TEXT NOT NULL DEFAULT 'active'");
+ensureColumn('users', 'agency', 'agency TEXT');
 
 // Qué escrow company usa la operación — determina qué plantilla KYC/escrow
 // se ofrece (Armour o TLA). Sin CHECK aquí, igual que el resto de columnas
 // agregadas por ensureColumn — se valida en la aplicación (routes/deals.js).
 ensureColumn('deals', 'escrow_company', 'escrow_company TEXT');
+// Fechas clave que define el contrato de promesa — se capturan aparte (no
+// se intentan extraer de los campos de texto libre del machote, que
+// mezclan prosa legal con la fecha) para poder mostrar los tiempos del
+// cierre en orden y, más adelante, condicionar el tracker al fin del
+// periodo de due diligence.
+ensureColumn('deals', 'closing_date', 'closing_date TEXT');
+ensureColumn('deals', 'due_diligence_end_date', 'due_diligence_end_date TEXT');
 
 // Contrato de promesa: qué machote se eligió y en qué estado va (mismo
 // patrón de estado/DocuSign que kyc_submissions, pero uno solo por
@@ -394,5 +408,73 @@ function ensureDealPartyEntitiesModel() {
   console.log('[migration] modelo deal_party_entities aplicado (vendedores/compradores múltiples + estructura de propiedad)');
 }
 ensureDealPartyEntitiesModel();
+
+// Escritura pública y Predial son de LA PROPIEDAD, no de cada vendedor — con
+// el modelo de partes múltiples (ver ensureDealPartyEntitiesModel arriba)
+// terminaban pidiéndose una vez POR CADA vendedor, duplicados. Se vuelve
+// deal_party_entity_id nullable (NULL = documento a nivel de operación,
+// "Propiedad") y se deduplican los que ya existan de operaciones creadas
+// mientras existió el bug.
+function ensureDocumentsPropertyLevel() {
+  const col = db.prepare(`PRAGMA table_info(documents)`).all().find(c => c.name === 'deal_party_entity_id');
+  if (!col || col.notnull === 0) return; // ya migrado
+
+  db.pragma('foreign_keys = OFF');
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE documents_migration_new3 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+        deal_party_entity_id INTEGER REFERENCES deal_party_entities(id) ON DELETE CASCADE,
+        sub_label TEXT,
+        name TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','done')),
+        file_url TEXT,
+        uploaded_by INTEGER REFERENCES users(id),
+        uploaded_at TEXT,
+        mime_type TEXT,
+        size_bytes INTEGER,
+        original_name TEXT,
+        created_at TEXT,
+        apostille_done INTEGER NOT NULL DEFAULT 0
+      );
+      INSERT INTO documents_migration_new3
+        (id, deal_id, deal_party_entity_id, sub_label, name, status, file_url, uploaded_by, uploaded_at, mime_type, size_bytes, original_name, created_at, apostille_done)
+        SELECT id, deal_id, deal_party_entity_id, sub_label, name, status, file_url, uploaded_by, uploaded_at, mime_type, size_bytes, original_name, created_at, apostille_done
+        FROM documents;
+      DROP TABLE documents;
+      ALTER TABLE documents_migration_new3 RENAME TO documents;
+    `);
+
+    // Deduplicar Escritura pública / Predial ya insertados por vendedor
+    // (bug de antes de este cambio): nos quedamos con 1 copia por operación
+    // — la que ya tenga archivo subido, si alguna lo tiene — la volvemos
+    // documento de operación (deal_party_entity_id NULL), conservamos
+    // "done" si CUALQUIERA de las copias ya estaba marcada, y borramos el
+    // resto.
+    const PROPERTY_DOC_NAMES = ['Escritura pública', 'Predial'];
+    const dealIds = db.prepare('SELECT id FROM deals').all().map(d => d.id);
+    const findDocs = db.prepare(`SELECT * FROM documents WHERE deal_id = ? AND name = ? AND deal_party_entity_id IS NOT NULL ORDER BY id`);
+    dealIds.forEach(dealId => {
+      PROPERTY_DOC_NAMES.forEach(name => {
+        const rows = findDocs.all(dealId, name);
+        if (!rows.length) return;
+        const keep = rows.find(r => r.file_url) || rows[0];
+        const anyDone = rows.some(r => r.status === 'done');
+        db.prepare('UPDATE documents SET deal_party_entity_id = NULL, status = ? WHERE id = ?').run(anyDone ? 'done' : keep.status, keep.id);
+        const dropIds = rows.filter(r => r.id !== keep.id).map(r => r.id);
+        if (dropIds.length) db.prepare(`DELETE FROM documents WHERE id IN (${dropIds.map(() => '?').join(',')})`).run(...dropIds);
+      });
+    });
+
+    const violations = db.prepare('PRAGMA foreign_key_check').all();
+    if (violations.length) {
+      throw new Error('Migración de documentos a nivel de operación dejaría foreign keys rotas: ' + JSON.stringify(violations));
+    }
+  })();
+  db.pragma('foreign_keys = ON');
+  console.log('[migration] documents.deal_party_entity_id nullable (documentos de Propiedad a nivel de operación) + deduplicación de Escritura/Predial');
+}
+ensureDocumentsPropertyLevel();
 
 module.exports = db;

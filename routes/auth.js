@@ -7,6 +7,21 @@ const router = express.Router();
 
 const rateLimitRegister = createRateLimiter({ windowMs: 15 * 60 * 1000, maxAttempts: 10 });
 
+// Agencias con las que trabaja Grupo Nar — un agente que no es de ninguna de
+// estas elige "Otro" y escribe la suya. Solo aplica a role='agent' (un
+// abogado/empleado interno no tiene agencia). Ver también APOSTILLE... no,
+// ver public/index.html (mismo listado, duplicado a propósito: no hay un
+// endpoint público de "catálogos" en esta app todavía).
+const KNOWN_AGENCIES = ['LPR Luxury', 'Applegate Realtors', 'JPM Real Estate', 'Interamerican'];
+
+function resolveAgency(agency, agencyOther) {
+  if (agency === 'Otro') {
+    const other = (agencyOther || '').trim();
+    return other || null;
+  }
+  return KNOWN_AGENCIES.includes(agency) ? agency : null;
+}
+
 function logAccess(userId, action, req) {
   db.prepare('INSERT INTO access_log (user_id, action, ip) VALUES (?, ?, ?)')
     .run(userId, action, req.ip);
@@ -17,20 +32,25 @@ function logAccess(userId, action, req) {
 // — 'lawyer' ve TODAS las operaciones sin restricción, así que no puede
 // entrar de inmediato sin que alguien lo revise primero.
 router.post('/register', rateLimitRegister, (req, res) => {
-  const { name, email, password, role } = req.body || {};
+  const { name, email, password, role, agency, agencyOther } = req.body || {};
   if (!name || !email || !password || !['agent', 'lawyer'].includes(role)) {
     return res.status(400).json({ error: 'Datos inválidos.' });
   }
   if (password.length < 8) {
     return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres.' });
   }
+  let resolvedAgency = null;
+  if (role === 'agent') {
+    resolvedAgency = resolveAgency(agency, agencyOther);
+    if (!resolvedAgency) return res.status(400).json({ error: 'Elige tu agencia (o escribe cuál si no está en la lista).' });
+  }
   const normalizedEmail = email.toLowerCase().trim();
   const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
   if (existing) return res.status(409).json({ error: 'Ya existe una cuenta con ese correo.' });
 
   const hash = bcrypt.hashSync(password, 12);
-  db.prepare("INSERT INTO users (name, email, password_hash, role, status) VALUES (?,?,?,?,'pending')")
-    .run(name, normalizedEmail, hash, role);
+  db.prepare("INSERT INTO users (name, email, password_hash, role, status, agency) VALUES (?,?,?,?,'pending',?)")
+    .run(name, normalizedEmail, hash, role, resolvedAgency);
 
   res.status(201).json({ ok: true, message: 'Cuenta creada. Un administrador debe aprobarla antes de que puedas iniciar sesión.' });
 });
@@ -68,7 +88,7 @@ router.post('/logout', (req, res) => {
 
 router.get('/me', (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'No autenticado.' });
-  const user = db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(req.session.userId);
+  const user = db.prepare('SELECT id, name, email, role, agency FROM users WHERE id = ?').get(req.session.userId);
   if (!user) return res.status(401).json({ error: 'No autenticado.' });
   res.json(user);
 });
@@ -87,4 +107,4 @@ function requireRole(...roles) {
   };
 }
 
-module.exports = { router, requireAuth, requireRole };
+module.exports = { router, requireAuth, requireRole, resolveAgency, KNOWN_AGENCIES };

@@ -6,6 +6,7 @@ const db = require('../db');
 const { requireAuth, requireRole } = require('./auth');
 const { UPLOADS_ROOT, dealDir, genFilename } = require('../lib/storage');
 const { canAccessDeal, myRoleInDeal, myDealPartyEntityId, UNRESTRICTED_ROLES } = require('../lib/access');
+const mailer = require('../lib/email');
 
 const router = express.Router();
 
@@ -25,6 +26,15 @@ const SCENARIO_TASKS = require('../data/scenario-tasks.json');
 
 const MAX_PARTIES_PER_SIDE = 4;
 const TRUST_DOCS = ['Trust Agreement', 'Certificate of Trust'];
+
+// Estos 3 documentos societarios de la LLC normalmente llegan dos veces:
+// primero una copia escaneada sin notarizar/apostillar, y después la versión
+// notarizada y apostillada — se marcan por separado del "recibido" normal.
+const APOSTILLE_DOC_NAMES = [
+  'Acta constitutiva de LLC (notariada y apostillada)',
+  'Acuerdo operativo (notariado y apostillado)',
+  'Certificado de vigencia / good standing (apostillado)'
+];
 
 // Arma el checklist de documentos de UNA parte (vendedor o comprador),
 // según su tipo y — si es entidad (corporation/llc) — su estructura de
@@ -88,6 +98,15 @@ function validateParty(p) {
     if (!p.directTrustName) return `"${p.name}" necesita el nombre del trust.`;
   }
   return null;
+}
+
+// Documentos de LA PROPIEDAD (Escritura pública, Predial) — se piden UNA
+// VEZ por operación, no una vez por cada vendedor. deal_party_entity_id
+// queda NULL para marcarlos como "de operación" en vez de "de una parte".
+function insertPropertyDocs(dealId, scenario) {
+  const names = SCENARIO_DOCS[scenario].property || [];
+  const insertDoc = db.prepare("INSERT INTO documents (deal_id, deal_party_entity_id, name, created_at) VALUES (?,NULL,?,datetime('now'))");
+  names.forEach(name => insertDoc.run(dealId, name));
 }
 
 function insertPartyWithDocs(dealId, scenario, side, sortOrder, p) {
@@ -183,6 +202,7 @@ router.post('/', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
              currency || 'USD', startDate, escrowCompany || null, req.session.userId);
       const id = dealInfo.lastInsertRowid;
 
+      insertPropertyDocs(id, scenario);
       ['seller', 'buyer'].forEach(side => {
         parties.filter(p => p.side === side).forEach((p, idx) => insertPartyWithDocs(id, scenario, side, idx, p));
       });
@@ -242,15 +262,29 @@ router.get('/:id', requireAuth, (req, res) => {
   res.json({ ...deal, parties, documents, tasks });
 });
 
-// PATCH /api/deals/:id — cambia la escrow company de una operación ya creada.
+// PATCH /api/deals/:id — cambia la escrow company y/o las fechas clave
+// (cierre, fin de due diligence) de una operación ya creada. Ambos grupos
+// de campos son independientes entre sí (solo se actualiza lo que venga en
+// el body).
 router.patch('/:id', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
-  const { escrowCompany } = req.body || {};
-  if (!['armour', 'tla'].includes(escrowCompany)) {
-    return res.status(400).json({ error: 'Escrow company inválida.' });
+  const { escrowCompany, closingDate, dueDiligenceEndDate } = req.body || {};
+
+  if (escrowCompany !== undefined) {
+    if (!['armour', 'tla'].includes(escrowCompany)) {
+      return res.status(400).json({ error: 'Escrow company inválida.' });
+    }
+    db.prepare('UPDATE deals SET escrow_company = ? WHERE id = ?').run(escrowCompany, req.params.id);
   }
-  const info = db.prepare('UPDATE deals SET escrow_company = ? WHERE id = ?').run(escrowCompany, req.params.id);
-  if (!info.changes) return res.status(404).json({ error: 'Operación no encontrada.' });
+  if (closingDate !== undefined) {
+    db.prepare('UPDATE deals SET closing_date = ? WHERE id = ?').run(closingDate || null, req.params.id);
+  }
+  if (dueDiligenceEndDate !== undefined) {
+    db.prepare('UPDATE deals SET due_diligence_end_date = ? WHERE id = ?').run(dueDiligenceEndDate || null, req.params.id);
+  }
+
+  const info = db.prepare('SELECT id FROM deals WHERE id = ?').get(req.params.id);
+  if (!info) return res.status(404).json({ error: 'Operación no encontrada.' });
   res.json({ ok: true });
 });
 
@@ -363,13 +397,56 @@ router.delete('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer'), 
   res.json({ ok: true });
 });
 
-// PATCH /api/deals/:id/documents/:docId — marcar documento recibido.
+// POST /api/deals/:id/parties/:partyId/remind — manda un correo (Resend) a
+// la persona ligada a esta parte listando sus documentos pendientes. Los
+// documentos de Propiedad (deal_party_entity_id NULL) se incluyen solo si
+// esta parte es del lado vendedor, que es quien realísticamente los provee.
+router.post('/:id/parties/:partyId/remind', requireRole('admin', 'agent', 'lawyer'), async (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
+  if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
+  const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id);
+
+  const linked = db.prepare(`
+    SELECT u.name, u.email FROM deal_parties dp JOIN users u ON u.id = dp.user_id WHERE dp.deal_party_entity_id = ?
+  `).get(party.id);
+  if (!linked) return res.status(400).json({ error: 'Esta parte todavía no tiene una cuenta ligada — invítala primero.' });
+
+  const pending = party.side === 'seller'
+    ? db.prepare("SELECT name FROM documents WHERE status = 'pending' AND deal_id = ? AND (deal_party_entity_id = ? OR deal_party_entity_id IS NULL)").all(req.params.id, party.id)
+    : db.prepare("SELECT name FROM documents WHERE status = 'pending' AND deal_party_entity_id = ?").all(party.id);
+  if (!pending.length) return res.status(400).json({ error: 'Esta parte ya no tiene documentos pendientes.' });
+
+  if (!mailer.isConfigured()) return res.status(501).json({ error: 'Resend no está configurado todavía (falta RESEND_API_KEY).' });
+  const url = `${req.protocol}://${req.get('host')}/`;
+  const result = await mailer.sendDocumentReminderEmail({
+    to: linked.email, name: linked.name, dealProperty: deal.property, pendingDocNames: pending.map(p => p.name), url
+  });
+  if (!result.ok) return res.status(502).json({ error: result.error });
+  db.prepare(`
+    INSERT INTO document_reminders_log (deal_party_entity_id, last_sent_at) VALUES (?, datetime('now'))
+    ON CONFLICT(deal_party_entity_id) DO UPDATE SET last_sent_at = datetime('now')
+  `).run(party.id);
+  res.json({ ok: true, count: pending.length });
+});
+
+// PATCH /api/deals/:id/documents/:docId — marcar documento recibido y/o
+// (solo para los 3 documentos de LLC que lo requieren) marcar que ya llegó
+// la versión notarizada y apostillada.
 router.patch('/:id/documents/:docId', requireAuth, (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
-  const { status } = req.body || {};
-  if (!['pending', 'done'].includes(status)) return res.status(400).json({ error: 'Status inválido.' });
-  db.prepare('UPDATE documents SET status = ?, uploaded_by = ?, uploaded_at = datetime(\'now\') WHERE id = ? AND deal_id = ?')
-    .run(status, req.session.userId, req.params.docId, req.params.id);
+  const { status, apostilleDone } = req.body || {};
+  if (status !== undefined) {
+    if (!['pending', 'done'].includes(status)) return res.status(400).json({ error: 'Status inválido.' });
+    db.prepare('UPDATE documents SET status = ?, uploaded_by = ?, uploaded_at = datetime(\'now\') WHERE id = ? AND deal_id = ?')
+      .run(status, req.session.userId, req.params.docId, req.params.id);
+  }
+  if (apostilleDone !== undefined) {
+    const doc = db.prepare('SELECT name FROM documents WHERE id = ? AND deal_id = ?').get(req.params.docId, req.params.id);
+    if (!doc) return res.status(404).json({ error: 'Documento no encontrado.' });
+    if (!APOSTILLE_DOC_NAMES.includes(doc.name)) return res.status(400).json({ error: 'Este documento no lleva casilla de apostilla.' });
+    db.prepare('UPDATE documents SET apostille_done = ? WHERE id = ? AND deal_id = ?').run(apostilleDone ? 1 : 0, req.params.docId, req.params.id);
+  }
   res.json({ ok: true });
 });
 
@@ -379,11 +456,13 @@ router.post('/:id/documents/:docId/file', requireAuth, (req, res, next) => {
   const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deal_id = ?').get(req.params.docId, req.params.id);
   if (!doc) return res.status(404).json({ error: 'Documento no encontrado.' });
   // Comprador/vendedor solo puede subir documentos de su propia parte (no
-  // la de otro comprador/vendedor del mismo lado); admin/agente/abogado sin
+  // la de otro comprador/vendedor del mismo lado); los de la Propiedad
+  // (deal_party_entity_id NULL) no son de nadie en particular, cualquiera
+  // con acceso a la operación puede subirlos; admin/agente/abogado sin
   // restricción.
   const role = myRoleInDeal(req, req.params.id);
   const myPartyId = myDealPartyEntityId(req, req.params.id);
-  if (!['admin', 'agent', 'lawyer'].includes(role) && myPartyId !== doc.deal_party_entity_id) {
+  if (doc.deal_party_entity_id !== null && !['admin', 'agent', 'lawyer'].includes(role) && myPartyId !== doc.deal_party_entity_id) {
     return res.status(403).json({ error: 'No puedes subir documentos de otra parte.' });
   }
   upload.single('file')(req, res, (err) => {
@@ -406,7 +485,7 @@ router.get('/:id/documents/:docId/file', requireAuth, (req, res) => {
 
   const role = myRoleInDeal(req, req.params.id);
   const myPartyId = myDealPartyEntityId(req, req.params.id);
-  if (!['admin', 'agent', 'lawyer'].includes(role) && myPartyId !== doc.deal_party_entity_id) {
+  if (doc.deal_party_entity_id !== null && !['admin', 'agent', 'lawyer'].includes(role) && myPartyId !== doc.deal_party_entity_id) {
     return res.status(403).json({ error: 'No puedes ver documentos de otra parte.' });
   }
 
