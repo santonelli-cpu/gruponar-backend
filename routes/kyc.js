@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const docusign = require('docusign-esign');
 const db = require('../db');
-const { requireAuth } = require('./auth');
+const { requireAuth, requireRole } = require('./auth');
 const { canAccessDeal, myRoleInDeal } = require('../lib/access');
 const { dealDir } = require('../lib/storage');
 const docusignClient = require('../lib/docusignClient');
@@ -127,6 +127,30 @@ router.get('/deals/:id/kyc/:role', requireAuth, (req, res) => {
     availableTemplates: Object.keys(TEMPLATES)
       .filter(k => resolveTemplateKey(deal, role, 'es') === k || resolveTemplateKey(deal, role, 'en') === k)
   });
+});
+
+// DELETE /api/deals/:id/kyc/:role — reinicia el expediente (ej. se llenó con
+// el idioma/compañía equivocada — típicamente porque la operación tenía la
+// escrow company incorrecta, ver PATCH /api/deals/:id). Solo staff, y solo
+// si todavía no se envió a firma — una vez enviado, borrar la fila local no
+// cancela el sobre de DocuSign, así que no se permite.
+router.delete('/deals/:id/kyc/:role', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+  const { id, role } = req.params;
+  if (!['buyer', 'seller'].includes(role)) return res.status(400).json({ error: 'Rol inválido.' });
+  if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
+
+  const submission = getLatestSubmission(id, role);
+  if (!submission) return res.json({ ok: true });
+  if (!['draft', 'generated'].includes(submission.status)) {
+    return res.status(400).json({ error: 'Este expediente ya se envió a firma, no se puede reiniciar.' });
+  }
+  if (submission.generated_file_url) {
+    const { UPLOADS_ROOT } = require('../lib/storage');
+    const resolved = path.resolve(UPLOADS_ROOT, submission.generated_file_url);
+    if (resolved.startsWith(path.resolve(UPLOADS_ROOT) + path.sep)) fs.rmSync(resolved, { force: true });
+  }
+  db.prepare('DELETE FROM kyc_submissions WHERE id = ?').run(submission.id);
+  res.json({ ok: true });
 });
 
 // POST /api/deals/:id/kyc/:role — guarda respuestas como borrador.

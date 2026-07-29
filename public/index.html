@@ -221,6 +221,7 @@ function adaptDealSummary(row){
   return {
     id: row.id, scenario: row.scenario, development: row.development, property: row.property,
     price: row.price, furniturePrice: row.furniture_price, currency: row.currency, startDate: row.start_date,
+    escrowCompany: row.escrow_company || 'armour',
     seller: { name: row.seller_name, type: row.seller_type },
     buyer: { name: row.buyer_name, type: row.buyer_type },
     docs: { seller: [], buyer: [] }, tasks: [], _loaded: false,
@@ -722,9 +723,26 @@ function buildAdminDealDetail(deal){
     <div class="deal-sub">${DEVELOPMENT_LABEL[deal.development||'punta_mita']}</div>
     <div class="deal-sub">Inmueble: ${deal.currency||'USD'} ${Number(deal.price||0).toLocaleString()}${deal.furniturePrice ? ' · Muebles: '+Number(deal.furniturePrice).toLocaleString() : ''} · Inicio ${deal.startDate}</div>
     <div class="deal-sub">Documentos: ${pctDocs(deal)}% completo · Tracker: ${pctTasks(deal)}% completo</div>
+    <div class="deal-sub" style="margin-top:6px; display:flex; align-items:center; gap:6px;">Escrow company
+      <select id="escrow-company-select" style="font-size:11.5px; padding:2px 6px;">
+        <option value="armour" ${deal.escrowCompany==='armour'?'selected':''}>Armour Secure</option>
+        <option value="tla" ${deal.escrowCompany==='tla'?'selected':''}>TLA Financial Services</option>
+      </select>
+    </div>
     <button class="btn" id="delDeal" style="margin-top:10px;"><i class="ti ti-trash" aria-hidden="true"></i> Eliminar operación</button>
   `;
   wrap.appendChild(header);
+  header.querySelector('#escrow-company-select').onchange = async (e) => {
+    const next = e.target.value;
+    if(!confirm(`¿Cambiar la escrow company a ${next==='armour'?'Armour Secure':'TLA Financial Services'}? Si ya hay expedientes KYC guardados con la plantilla vieja, van a seguir con esa plantilla hasta que los reinicies desde su sección.`)){
+      e.target.value = deal.escrowCompany;
+      return;
+    }
+    try{
+      await apiFetch('/api/deals/' + deal.id, { method:'PATCH', body: JSON.stringify({ escrowCompany: next }) });
+      await openDeal(deal.id);
+    }catch(err){ alert(err.message); e.target.value = deal.escrowCompany; }
+  };
   header.querySelector('#delDeal').onclick = async () => {
     if(!confirm('¿Eliminar esta operación? Esta acción no se puede deshacer.')) return;
     try{
@@ -841,6 +859,21 @@ function buildKycSection(deal, role, roleLabel, isStaffView){
       }catch(e){ alert(e.message); }
     };
     actions.appendChild(sendBtn);
+  }
+
+  if(isStaffView && ['draft','generated'].includes(data.status)){
+    const resetBtn = document.createElement('button');
+    resetBtn.className = 'btn'; resetBtn.style.fontSize = '11px';
+    resetBtn.textContent = 'Reiniciar expediente';
+    resetBtn.title = 'Empieza de cero — útil si se llenó con la plantilla o idioma equivocado (ej. cambiaste la escrow company).';
+    resetBtn.onclick = async () => {
+      if(!confirm('¿Reiniciar este expediente? Se pierden las respuestas guardadas y el documento generado (si hay uno).')) return;
+      try{
+        await apiFetch(`/api/deals/${deal.id}/kyc/${role}`, { method:'DELETE' });
+        await loadKyc(deal.id, role);
+      }catch(e){ alert(e.message); }
+    };
+    actions.appendChild(resetBtn);
   }
 
   if(!isStaffView && data.status === 'sent'){

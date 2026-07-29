@@ -114,6 +114,23 @@ router.get('/:id', requireAuth, (req, res) => {
   res.json({ ...deal, documents, tasks });
 });
 
+// PATCH /api/deals/:id — cambia la escrow company de una operación ya
+// creada (ej. se eligió TLA por error para una compraventa mexicano-mexicano
+// y hace falta el formato de Armour, que sí tiene CURP/RFC/domicilio en
+// México). Solo staff; si ya hay expedientes KYC guardados con la plantilla
+// vieja, hay que reiniciarlos aparte (ver DELETE .../kyc/:role abajo) — este
+// endpoint no los toca solo, para no borrar trabajo ya hecho sin avisar.
+router.patch('/:id', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const { escrowCompany } = req.body || {};
+  if (!['armour', 'tla'].includes(escrowCompany)) {
+    return res.status(400).json({ error: 'Escrow company inválida.' });
+  }
+  const info = db.prepare('UPDATE deals SET escrow_company = ? WHERE id = ?').run(escrowCompany, req.params.id);
+  if (!info.changes) return res.status(404).json({ error: 'Operación no encontrada.' });
+  res.json({ ok: true });
+});
+
 // PATCH /api/deals/:id/documents/:docId — marcar documento recibido.
 router.patch('/:id/documents/:docId', requireAuth, (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
