@@ -99,8 +99,9 @@
       </div>
     </div>
     <div class="tabs" id="mainTabs">
-      <button class="tab-btn active" data-tab="admin">Admin</button>
-      <button class="tab-btn" data-tab="portal">Portal cliente / agente</button>
+      <button class="tab-btn active" data-tab="admin" id="tab-admin">Admin</button>
+      <button class="tab-btn" data-tab="portal" id="tab-portal">Portal cliente / agente</button>
+      <button class="tab-btn" id="lang-toggle" title="Switch language / Cambiar idioma">ES</button>
       <button class="tab-btn" id="header-logout" style="display:none;"><i class="ti ti-logout" aria-hidden="true"></i></button>
     </div>
   </div>
@@ -109,38 +110,335 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.44.0/iconfont/tabler-icons.min.css"></script>
 <script>
-const SCENARIOS = {
+const SCENARIOS_I18N = {
   purchase: {
-    label: "Compraventa (mexicano ↔ mexicano)",
-    labelShort: "Compraventa",
+    es: { label: "Compraventa (mexicano ↔ mexicano)", labelShort: "Compraventa" },
+    en: { label: "Purchase (Mexican ↔ Mexican)", labelShort: "Purchase" },
     badgeClass: "",
     sellerTypes: ["individual","corporation","llc"],
     buyerTypes: ["individual","corporation","llc"]
   },
   trust: {
-    label: "Constitución de fideicomiso (vendedor MX, comprador extranjero)",
-    labelShort: "Constitución de fideicomiso",
+    es: { label: "Constitución de fideicomiso (vendedor MX, comprador extranjero)", labelShort: "Constitución de fideicomiso" },
+    en: { label: "Trust formation (Mexican seller, foreign buyer)", labelShort: "Trust formation" },
     badgeClass: "scn-trust",
     sellerTypes: ["individual","corporation","llc"],
     buyerTypes: ["individual","llc"]
   },
   transfer: {
-    label: "Cesión de derechos fideicomisarios (extranjero ↔ extranjero)",
-    labelShort: "Cesión de derechos",
+    es: { label: "Cesión de derechos fideicomisarios (extranjero ↔ extranjero)", labelShort: "Cesión de derechos" },
+    en: { label: "Trust rights assignment (foreign ↔ foreign)", labelShort: "Rights assignment" },
     badgeClass: "scn-transfer",
     sellerTypes: ["individual","corporation","llc"],
     buyerTypes: ["individual","llc"]
   },
   trust_termination: {
-    label: "Extinción de fideicomiso (vendedor extranjero, comprador MX)",
-    labelShort: "Extinción de fideicomiso",
+    es: { label: "Extinción de fideicomiso (vendedor extranjero, comprador MX)", labelShort: "Extinción de fideicomiso" },
+    en: { label: "Trust termination (foreign seller, Mexican buyer)", labelShort: "Trust termination" },
     badgeClass: "scn-trust-termination",
     sellerTypes: ["individual","llc"],
     buyerTypes: ["individual","corporation"]
   }
 };
 
-const TYPE_LABEL = {individual:"Individuo", corporation:"Persona moral (MX)", llc:"LLC / entidad extranjera"};
+// Selector de idioma — persistido en localStorage, aplica a toda la SPA
+// (no a los machotes de KYC/contrato, que ya eligen idioma por su cuenta
+// vía el selector propio de cada expediente). `t()` es el helper de
+// traducción: busca la clave en STRINGS[lang], cae a STRINGS.es si falta,
+// y por último a la clave misma (para no romper si falta una traducción).
+let lang = localStorage.getItem('nar_lang') || 'es';
+function t(key, vars){
+  let s = (STRINGS[lang] && STRINGS[lang][key]) ?? STRINGS.es[key] ?? key;
+  if(vars) Object.keys(vars).forEach(k => { s = s.replace(new RegExp('\\{'+k+'\\}','g'), vars[k]); });
+  return s;
+}
+function setLang(next){
+  lang = next;
+  localStorage.setItem('nar_lang', lang);
+  render();
+}
+function SCENARIOS_LABEL(key){ return SCENARIOS_I18N[key][lang] || SCENARIOS_I18N[key].es; }
+// Compatibilidad con el resto del código, que ya usaba SCENARIOS[key].label
+// / .labelShort / .badgeClass / .sellerTypes / .buyerTypes en muchos
+// lugares — en vez de tocar cada uno de esos usos, SCENARIOS queda como un
+// proxy que resuelve el idioma actual en el momento de leer la propiedad.
+const SCENARIOS = new Proxy(SCENARIOS_I18N, {
+  get(target, scenarioKey){
+    const entry = target[scenarioKey];
+    if(!entry) return undefined;
+    const i18n = entry[lang] || entry.es;
+    return { label: i18n.label, labelShort: i18n.labelShort, badgeClass: entry.badgeClass, sellerTypes: entry.sellerTypes, buyerTypes: entry.buyerTypes };
+  }
+});
+
+const TYPE_LABEL_I18N = {
+  individual: { es: "Individuo", en: "Individual" },
+  corporation: { es: "Persona moral (MX)", en: "Legal entity (MX)" },
+  llc: { es: "LLC / entidad extranjera", en: "LLC / foreign entity" }
+};
+const TYPE_LABEL = new Proxy(TYPE_LABEL_I18N, {
+  get(target, key){ const e = target[key]; return e ? (e[lang] || e.es) : undefined; }
+});
+
+// Diccionario de la interfaz — el español es literalmente el texto que ya
+// tenía cada pantalla (para no cambiar nada visualmente en es); el inglés
+// es su traducción. Contenido de datos (nombres de documentos en el
+// checklist, mensajes de error del servidor) queda fuera de este
+// diccionario — ver notas en el resumen de la sesión.
+const STRINGS = {
+  es: {
+    tabAdmin: 'Admin', tabPortal: 'Portal cliente / agente',
+    navDashboard: 'Dashboard', navOperations: 'Operaciones', navTeam: 'Equipo',
+    loginTitle: 'Iniciar sesión', loginSub: 'Ingresa con tu correo y contraseña.',
+    loginEmailPh: 'correo@ejemplo.com', loginPasswordPh: 'Contraseña', loginSubmit: 'Entrar', loginSubmitting: 'Entrando...',
+    loginNoAccount: '¿Eres agente o abogado y no tienes cuenta?', loginCreateAccount: 'Crear cuenta',
+    registerTitle: 'Crear cuenta', registerSub: 'Para agentes de venta y abogados/empleados internos. Tu cuenta queda pendiente de aprobación de un administrador.',
+    registerNamePh: 'Nombre completo', registerEmailPh: 'correo@ejemplo.com', registerPasswordPh: 'Contraseña (mínimo 8 caracteres)',
+    registerRoleAgent: 'Agente de venta', registerRoleLawyer: 'Abogado / empleado interno',
+    registerAgencyPlaceholderSelect: 'Selecciona tu agencia...', registerAgencyOther: 'Otro', registerAgencyOtherPh: '¿Cuál agencia?',
+    registerSubmit: 'Crear cuenta', registerSubmitting: 'Creando...', registerHaveAccount: 'Ya tengo cuenta, iniciar sesión',
+    registerErrFields: 'Completa todos los campos.', registerErrAgency: 'Elige tu agencia.',
+    logout: 'Cerrar sesión',
+    checkingSession: 'Verificando sesión...', loginGateSub: 'Accede con el correo y contraseña que te dio tu coordinador.',
+    loginErrFields: 'Escribe tu correo y contraseña.',
+    loginErrConnection: 'No se pudo conectar con el backend. Verifica que esté corriendo y accesible desde aquí.',
+    gateNote: 'Este login llama a tu backend real ({base}). Si aún no lo has desplegado, o este archivo no se está sirviendo desde ese mismo backend, la conexión fallará — completa esa parte en Claude Code con el proyecto <b>gruponar-backend</b>.',
+    sameOrigin: 'mismo origen',
+    banner: 'Login, operaciones, documentos y tareas ya viven en tu backend real (base de datos, no el navegador). La firma electrónica (DocuSign) queda lista para funcionar en cuanto tengas credenciales de tu cuenta sandbox.',
+    activeSession: 'Sesión activa',
+    sessionHint: 'Para dar de alta a un comprador o vendedor, entra a su operación y genera una invitación — ahí crean su propia contraseña. Para agentes o abogados internos, usa la pestaña "Equipo" de aquí abajo.',
+    operationsTitle: 'Operaciones', newDeal: 'Nueva operación',
+    emptyDeals: 'No hay operaciones activas.<br>Crea la primera con "Nueva operación".',
+    dashboard: 'Dashboard', loadingDashboard: 'Cargando dashboard...',
+    statActiveDeals: 'Operaciones activas', statDocsPending: 'Documentos pendientes', statTasksUnfinished: 'Tareas sin terminar', statAwaitingSignature: 'Esperando firma',
+    awaitingSignature: 'Esperando firma', signature: 'Firma',
+    pendingByDeal: 'Pendientes por operación', noPending: 'No hay documentos ni tareas pendientes. Al día.',
+    viewDeal: 'Ver operación', stale: 'Atrasado',
+    docLabel: 'Documento', taskLabel: 'Tarea', propertyLabel: 'Propiedad', sellerLabel: 'vendedor', buyerLabel: 'comprador',
+    pendingApprovalTitle: 'Cuentas pendientes de aprobación', loading: 'Cargando...',
+    noPendingAccounts: 'No hay cuentas esperando aprobación. Las que se autoregistran desde "Crear cuenta" en el login aparecen aquí.',
+    approve: 'Aprobar', inviteAgentLawyer: 'Invitar agente o abogado',
+    inviteTeamHint: 'Genera un link para que un agente de venta o abogado/empleado interno cree su propia cuenta — a diferencia de "Crear cuenta" en el login, esta queda activa de inmediato (ya la estás aprobando tú al invitar).',
+    role: 'Rol', name: 'Nombre', email: 'Correo', namePh: 'Nombre completo', emailPh: 'correo@ejemplo.com',
+    generateInvite: 'Generar invitación', inviteLinkLabel: 'Link de invitación (cópialo y compártelo)', copy: 'Copiar',
+    errNameOrEmail: 'Falta nombre o correo.',
+    partyNamePh: 'Nombre completo o razón social', type: 'Tipo',
+    ownershipStructure: 'Estructura de propiedad',
+    modeDirectOwners: '1-2 socios/accionistas directos', modeParentEntity: 'Otra entidad es dueña', modeDirectTrust: 'Un revocable trust es dueño directo',
+    directOwners: 'Socios/accionistas directos (1-2)', owner1Ph: 'Nombre del socio 1', owner2Ph: 'Nombre del socio 2 (opcional)',
+    parentEntityName: 'Nombre de la entidad padre', parentHasTrust: 'Esa entidad padre tiene un revocable trust arriba', trustNamePh: 'Nombre del trust',
+    directTrustNamePh: 'Nombre del revocable trust',
+    corpMx: 'Persona moral (MX)', llcForeign: 'LLC / entidad extranjera',
+    newDealTitle: 'Nueva operación', scenarioType: 'Tipo de escenario', development: 'Desarrollo',
+    devPuntaMita: 'Punta Mita', devMandarina: 'Mandarina', devGeneral: 'Bahía de Banderas / otro',
+    property: 'Propiedad', propertyPh: 'Villa 22, Kupuri, Punta de Mita',
+    propertyPrice: 'Precio del inmueble', furniturePrice: 'Precio de muebles (opcional)', currency: 'Moneda',
+    sellers: 'Vendedores', buyers: 'Compradores', addSeller: '+ Agregar vendedor', addBuyer: '+ Agregar comprador', remove: 'Quitar',
+    offerSignedDate: 'Fecha de oferta firmada', escrowCompany: 'Escrow company',
+    cancel: 'Cancelar', createDeal: 'Crear operación',
+    errMissingPropertyName: 'Falta el nombre de la propiedad.', errMissingPartyName: 'Falta el nombre de alguna parte.',
+    partners: 'Socios', noName: '(sin nombre)', parentEntity: 'Entidad padre', trustAbove: 'Trust arriba', directTrust: 'Trust directo',
+    incompleteOwnership: 'Falta completar la estructura de propiedad',
+    accountLinked: 'cuenta ligada', add: '+ Agregar', addPlain: 'Agregar', edit: 'Editar', save: 'Guardar',
+    confirmRemoveParty: '¿Quitar a "{name}" de esta operación?',
+    allDeals: 'Todas las operaciones',
+    propertyLabelColon: 'Inmueble', furnitureLabel: 'Muebles', startLabel: 'Inicio',
+    documentsLabel: 'Documentos', completeLabel: 'completo', trackerLabel: 'Tracker',
+    closingDateLabel: 'Fecha de cierre', ddEndLabel: 'Fin de due diligence',
+    deleteDeal: 'Eliminar operación',
+    confirmChangeEscrow: '¿Cambiar la escrow company a {company}? Si ya hay expedientes KYC guardados con la plantilla vieja, van a seguir con esa plantilla hasta que los reinicies desde su sección.',
+    confirmDeleteDeal: '¿Eliminar esta operación? Esta acción no se puede deshacer.',
+    sellersAndBuyers: 'Vendedores y compradores', propertySection: 'Propiedad', docsChecklist: 'Checklist de documentos (KYC)',
+    kycFile: 'Expediente KYC (firma electrónica)', closingTracker: 'Tracker de cierre', inviteToThisDeal: 'Invitar a esta operación',
+    contractPromise: 'Contrato de promesa (firma electrónica)',
+    loadingEllipsis: 'cargando...', formLanguage: 'Idioma del formulario', spanish: 'Español', english: 'English',
+    fillForm: 'Llenar formulario', viewEditForm: 'Ver / editar formulario', viewDocument: 'Ver documento',
+    sendForSignature: 'Enviar a firma', resetFile: 'Reiniciar expediente',
+    resetFileTitle: 'Empieza de cero — útil si se llenó con la plantilla o idioma equivocado (ej. cambiaste la escrow company).',
+    confirmResetFile: '¿Reiniciar este expediente? Se pierden las respuestas guardadas y el documento generado (si hay uno).',
+    signNow: 'Firmar ahora', optional: '(opcional)',
+    sellerLabel2: 'Vendedor', buyerLabel2: 'Comprador',
+    saveDraft: 'Guardar borrador', saveGenerateSend: 'Guardar, generar y enviar a firma', close: 'Cerrar',
+    alertGeneratedSent: 'Documento generado y enviado a firma automáticamente.',
+    alertAutoSendFailed: 'El documento se generó, pero no se pudo enviar a firma automáticamente: {error}\nPuedes reintentar con el botón "Enviar a firma".',
+    kycSignModalTitle: 'Firma del expediente KYC',
+    viewFile: 'Ver archivo', attachDocument: 'Adjuntar documento',
+    remindDocuments: 'Recordar documentos', sentCount: 'Enviado ({count})',
+    incompleteEntityWarning: 'Falta completar la estructura de propiedad de esta entidad — hazlo en "Vendedores y compradores" arriba para que el checklist incluya los documentos de sus dueños.',
+    closingProgress: 'Avance del cierre',
+    ddEndedBanner: 'Due diligence terminó el {date} — ya se puede avanzar con el resto del tracker.',
+    ddPendingBanner: 'Due diligence termina el {date}.',
+    requiresSignature: 'Requiere firma',
+    inviteHint: 'Genera un link para que una persona específica de esta operación (o un agente) cree su propia cuenta.',
+    personToInvite: 'Persona a invitar', agentThisDeal: 'Agente (esta operación)',
+    inviteLinkCopyShare: 'Link de invitación (cópialo y compártelo)',
+    inviteEmailSent: 'Correo de invitación enviado a {email}.',
+    inviteEmailFailed: 'No se pudo mandar el correo automático ({error}) — comparte el link manualmente.',
+    resendNotConfigured: 'Resend no configurado',
+    contractPromiseShort: 'Contrato de promesa', viewContract: 'Ver contrato',
+    coordinatorPreparing: 'Tu coordinador todavía está preparando el contrato.',
+    template: 'Machote', selectTemplate: 'Selecciona un machote...', uploadNewTemplate: 'Subir machote nuevo',
+    deleteTemplateTitle: 'Borra este machote de la lista (no afecta contratos ya generados con él)', deleteCurrentTemplate: 'Borrar machote actual',
+    confirmDeleteTemplate: '¿Borrar este machote de la lista? No afecta contratos que ya se hayan generado con él.',
+    uploadTemplateHint: 'Sube el machote en .docx para el tipo de operación <b>{scenario}</b>, con los campos escritos como <code>{{CLAVE}}</code> — la plataforma los detecta solos, no hace falta definir nada más.',
+    templateName: 'Nombre del machote', templateNamePh: 'Ej. Compraventa individual — Punta Mita', docxFile: 'Archivo .docx', upload: 'Subir',
+    errNameOrFile: 'Falta el nombre o el archivo.',
+    detectedFields: 'Campos detectados en el machote — se llenan aquí y se insertan donde esté cada <code>{{CLAVE}}</code> en el documento final.',
+    noFieldsTitle: 'Este machote no tiene ningún campo <code>{{CLAVE}}</code> — la plataforma no encontró nada que llenar.',
+    noFieldsHint1: 'Para que se detecten campos, abre el .docx y escribe el marcador directamente en el texto donde va cada dato, por ejemplo:',
+    noFieldsExample: 'Entre <b>{{VENDEDOR_NOMBRE}}</b> y <b>{{COMPRADOR_NOMBRE}}</b>, por un precio de <b>{{PRECIO_LETRA}}</b>...',
+    noFieldsHint2: 'Guarda el Word y súbelo de nuevo como machote (puedes borrar este con el botón ⋯ de la lista si ya no lo necesitas). Mientras tanto, igual puedes generar el documento tal cual está, sin campos dinámicos.',
+    generateDownloadDocx: 'Generar y descargar .docx', viewPdf: 'Ver PDF',
+    contractSignModalTitle: 'Firma del contrato de promesa',
+    portalPreviewBanner: 'Vista previa del portal de cliente — así lo ve un comprador o vendedor real.',
+    selectEllipsis: 'Selecciona...',
+    selectDealToView: 'Selecciona una operación para ver tu expediente.',
+    loadingFile: 'Cargando expediente...',
+    viewAs: 'Ver como', agentSeesAll: 'Agente (ve todo)',
+    yourDocsChecklist: 'Tu checklist de documentos (KYC)', yourKycFile: 'Tu expediente KYC',
+    allPartiesChecklist: 'Checklist de todas las partes', dealSingular: 'Operación',
+    closingFollowup: 'Seguimiento del cierre', eSignature: 'Firma electrónica',
+    eSignHintStaff: 'Sube el documento y envíalo a firma — comprador y vendedor firman de forma embebida, sin salir de la plataforma.',
+    eSignHintClient: 'Cuando tu coordinador envíe un documento a firma, aparecerá aquí para que lo firmes en línea.',
+    docusignNotSent: 'Sin enviar', docusignSent: 'Enviado', docusignDelivered: 'Entregado', docusignCompleted: 'Firmado', docusignDeclined: 'Rechazado', docusignVoided: 'Anulado',
+    documentColon: 'Documento', notUploaded: 'sin subir', docusignStatusColon: 'Estado DocuSign',
+    generateEscrow: 'Generar escrow (Armour)', signed: 'Firmado', checkStatus: 'Verificar estado',
+    escrowFormHint: 'Genera el escrow agreement de Armour Secure con vendedor/comprador ya llenados desde esta operación — el resto lo capturas aquí.',
+    placeDate: 'Lugar y fecha', placeDatePh: 'Puerto Vallarta, Jalisco, 29 de julio de 2026',
+    expirationDate: 'Fecha de terminación', expirationDatePh: '31 de diciembre de 2026',
+    purchaseAgreementDesc: 'Descripción del contrato de compraventa',
+    depositAmount: 'Monto del depósito', depositAmountPh: 'USD $310,000.00',
+    fees: 'Comisiones', feesPh: 'USD $1,500.00 a cargo del comprador',
+    noticeAddress: 'Domicilio para notificaciones', generateDocument: 'Generar documento',
+    signatureModalTitle: 'Firma electrónica'
+  },
+  en: {
+    tabAdmin: 'Admin', tabPortal: 'Client / agent portal',
+    navDashboard: 'Dashboard', navOperations: 'Deals', navTeam: 'Team',
+    loginTitle: 'Log in', loginSub: 'Enter your email and password.',
+    loginEmailPh: 'email@example.com', loginPasswordPh: 'Password', loginSubmit: 'Log in', loginSubmitting: 'Logging in...',
+    loginNoAccount: 'Are you an agent or lawyer without an account?', loginCreateAccount: 'Create account',
+    registerTitle: 'Create account', registerSub: 'For sales agents and lawyers/internal staff. Your account stays pending until an administrator approves it.',
+    registerNamePh: 'Full name', registerEmailPh: 'email@example.com', registerPasswordPh: 'Password (minimum 8 characters)',
+    registerRoleAgent: 'Sales agent', registerRoleLawyer: 'Lawyer / internal staff',
+    registerAgencyPlaceholderSelect: 'Select your agency...', registerAgencyOther: 'Other', registerAgencyOtherPh: 'Which agency?',
+    registerSubmit: 'Create account', registerSubmitting: 'Creating...', registerHaveAccount: 'I already have an account, log in',
+    registerErrFields: 'Fill out all fields.', registerErrAgency: 'Choose your agency.',
+    logout: 'Log out',
+    checkingSession: 'Checking session...', loginGateSub: 'Sign in with the email and password your coordinator gave you.',
+    loginErrFields: 'Enter your email and password.',
+    loginErrConnection: "Couldn't connect to the backend. Check that it's running and reachable from here.",
+    gateNote: "This login calls your real backend ({base}). If you haven't deployed it yet, or this file isn't being served from that same backend, the connection will fail — finish that part in Claude Code with the <b>gruponar-backend</b> project.",
+    sameOrigin: 'same origin',
+    banner: 'Login, deals, documents and tasks already live in your real backend (database, not the browser). E-signature (DocuSign) is ready to go as soon as you have your sandbox account credentials.',
+    activeSession: 'Active session',
+    sessionHint: 'To onboard a buyer or seller, go into their deal and generate an invitation — that\'s where they create their own password. For agents or internal lawyers, use the "Team" tab below.',
+    operationsTitle: 'Deals', newDeal: 'New deal',
+    emptyDeals: 'No active deals.<br>Create the first one with "New deal".',
+    dashboard: 'Dashboard', loadingDashboard: 'Loading dashboard...',
+    statActiveDeals: 'Active deals', statDocsPending: 'Pending documents', statTasksUnfinished: 'Unfinished tasks', statAwaitingSignature: 'Awaiting signature',
+    awaitingSignature: 'Awaiting signature', signature: 'Signature',
+    pendingByDeal: 'Pending by deal', noPending: 'No pending documents or tasks. All caught up.',
+    viewDeal: 'View deal', stale: 'Overdue',
+    docLabel: 'Document', taskLabel: 'Task', propertyLabel: 'Property', sellerLabel: 'seller', buyerLabel: 'buyer',
+    pendingApprovalTitle: 'Accounts pending approval', loading: 'Loading...',
+    noPendingAccounts: 'No accounts awaiting approval. Ones that self-register from "Create account" on the login screen show up here.',
+    approve: 'Approve', inviteAgentLawyer: 'Invite agent or lawyer',
+    inviteTeamHint: 'Generate a link so a sales agent or lawyer/internal staff member can create their own account — unlike "Create account" on the login screen, this one is active right away (you\'re already approving it by inviting them).',
+    role: 'Role', name: 'Name', email: 'Email', namePh: 'Full name', emailPh: 'email@example.com',
+    generateInvite: 'Generate invitation', inviteLinkLabel: 'Invitation link (copy and share it)', copy: 'Copy',
+    errNameOrEmail: 'Missing name or email.',
+    partyNamePh: 'Full name or company name', type: 'Type',
+    ownershipStructure: 'Ownership structure',
+    modeDirectOwners: '1-2 direct partners/shareholders', modeParentEntity: 'Another entity owns it', modeDirectTrust: 'A revocable trust is the direct owner',
+    directOwners: 'Direct partners/shareholders (1-2)', owner1Ph: 'Partner 1 name', owner2Ph: 'Partner 2 name (optional)',
+    parentEntityName: 'Parent entity name', parentHasTrust: 'That parent entity has a revocable trust above it', trustNamePh: 'Trust name',
+    directTrustNamePh: 'Revocable trust name',
+    corpMx: 'Legal entity (MX)', llcForeign: 'LLC / foreign entity',
+    newDealTitle: 'New deal', scenarioType: 'Scenario type', development: 'Development',
+    devPuntaMita: 'Punta Mita', devMandarina: 'Mandarina', devGeneral: 'Bahía de Banderas / other',
+    property: 'Property', propertyPh: 'Villa 22, Kupuri, Punta de Mita',
+    propertyPrice: 'Property price', furniturePrice: 'Furniture price (optional)', currency: 'Currency',
+    sellers: 'Sellers', buyers: 'Buyers', addSeller: '+ Add seller', addBuyer: '+ Add buyer', remove: 'Remove',
+    offerSignedDate: 'Offer signed date', escrowCompany: 'Escrow company',
+    cancel: 'Cancel', createDeal: 'Create deal',
+    errMissingPropertyName: 'Missing property name.', errMissingPartyName: 'Missing a party\'s name.',
+    partners: 'Partners', noName: '(no name)', parentEntity: 'Parent entity', trustAbove: 'Trust above', directTrust: 'Direct trust',
+    incompleteOwnership: 'Ownership structure still needs to be completed',
+    accountLinked: 'account linked', add: '+ Add', addPlain: 'Add', edit: 'Edit', save: 'Save',
+    confirmRemoveParty: 'Remove "{name}" from this deal?',
+    allDeals: 'All deals',
+    propertyLabelColon: 'Property', furnitureLabel: 'Furniture', startLabel: 'Start',
+    documentsLabel: 'Documents', completeLabel: 'complete', trackerLabel: 'Tracker',
+    closingDateLabel: 'Closing date', ddEndLabel: 'Due diligence end',
+    deleteDeal: 'Delete deal',
+    confirmChangeEscrow: "Change the escrow company to {company}? If there are already saved KYC records with the old template, they'll keep using that template until you reset them from their own section.",
+    confirmDeleteDeal: 'Delete this deal? This action cannot be undone.',
+    sellersAndBuyers: 'Sellers and buyers', propertySection: 'Property', docsChecklist: 'Document checklist (KYC)',
+    kycFile: 'KYC file (e-signature)', closingTracker: 'Closing tracker', inviteToThisDeal: 'Invite to this deal',
+    contractPromise: 'Promise of purchase contract (e-signature)',
+    loadingEllipsis: 'loading...', formLanguage: 'Form language', spanish: 'Español', english: 'English',
+    fillForm: 'Fill out form', viewEditForm: 'View / edit form', viewDocument: 'View document',
+    sendForSignature: 'Send for signature', resetFile: 'Reset file',
+    resetFileTitle: "Start from scratch — useful if it was filled with the wrong template or language (e.g. you changed the escrow company).",
+    confirmResetFile: 'Reset this file? Saved answers and the generated document (if any) will be lost.',
+    signNow: 'Sign now', optional: '(optional)',
+    sellerLabel2: 'Seller', buyerLabel2: 'Buyer',
+    saveDraft: 'Save draft', saveGenerateSend: 'Save, generate and send for signature', close: 'Close',
+    alertGeneratedSent: 'Document generated and sent for signature automatically.',
+    alertAutoSendFailed: "The document was generated, but couldn't be sent for signature automatically: {error}\nYou can retry with the \"Send for signature\" button.",
+    kycSignModalTitle: 'KYC file signature',
+    viewFile: 'View file', attachDocument: 'Attach document',
+    remindDocuments: 'Remind about documents', sentCount: 'Sent ({count})',
+    incompleteEntityWarning: 'This entity\'s ownership structure still needs to be completed — do it in "Sellers and buyers" above so the checklist includes its owners\' documents.',
+    closingProgress: 'Closing progress',
+    ddEndedBanner: 'Due diligence ended on {date} — you can now move ahead with the rest of the tracker.',
+    ddPendingBanner: 'Due diligence ends on {date}.',
+    requiresSignature: 'Requires signature',
+    inviteHint: 'Generate a link so a specific person in this deal (or an agent) can create their own account.',
+    personToInvite: 'Person to invite', agentThisDeal: 'Agent (this deal)',
+    inviteLinkCopyShare: 'Invitation link (copy and share it)',
+    inviteEmailSent: 'Invitation email sent to {email}.',
+    inviteEmailFailed: "Couldn't send the automatic email ({error}) — share the link manually.",
+    resendNotConfigured: 'Resend not configured',
+    contractPromiseShort: 'Promise contract', viewContract: 'View contract',
+    coordinatorPreparing: 'Your coordinator is still preparing the contract.',
+    template: 'Template', selectTemplate: 'Select a template...', uploadNewTemplate: 'Upload new template',
+    deleteTemplateTitle: "Delete this template from the list (doesn't affect contracts already generated with it)", deleteCurrentTemplate: 'Delete current template',
+    confirmDeleteTemplate: "Delete this template from the list? It won't affect contracts already generated with it.",
+    uploadTemplateHint: 'Upload the .docx template for the <b>{scenario}</b> deal type, with fields written as <code>{{FIELD}}</code> — the platform detects them automatically, nothing else to configure.',
+    templateName: 'Template name', templateNamePh: 'E.g. Individual purchase — Punta Mita', docxFile: '.docx file', upload: 'Upload',
+    errNameOrFile: 'Missing name or file.',
+    detectedFields: 'Fields detected in the template — fill them in here and they get inserted wherever each <code>{{FIELD}}</code> appears in the final document.',
+    noFieldsTitle: 'This template has no <code>{{FIELD}}</code> placeholders — the platform found nothing to fill in.',
+    noFieldsHint1: 'For fields to be detected, open the .docx and type the marker directly in the text where each piece of data goes, for example:',
+    noFieldsExample: 'Between <b>{{SELLER_NAME}}</b> and <b>{{BUYER_NAME}}</b>, for a price of <b>{{PRICE_WORDS}}</b>...',
+    noFieldsHint2: "Save the Word file and upload it again as a template (you can delete this one with the ⋯ button on the list if you don't need it anymore). Meanwhile, you can still generate the document as-is, with no dynamic fields.",
+    generateDownloadDocx: 'Generate and download .docx', viewPdf: 'View PDF',
+    contractSignModalTitle: 'Promise contract signature',
+    portalPreviewBanner: "Client portal preview — this is what a real buyer or seller sees.",
+    selectEllipsis: 'Select...',
+    selectDealToView: 'Select a deal to view your file.',
+    loadingFile: 'Loading file...',
+    viewAs: 'View as', agentSeesAll: 'Agent (sees everything)',
+    yourDocsChecklist: 'Your document checklist (KYC)', yourKycFile: 'Your KYC file',
+    allPartiesChecklist: 'Checklist for all parties', dealSingular: 'Deal',
+    closingFollowup: 'Closing follow-up', eSignature: 'E-signature',
+    eSignHintStaff: 'Upload the document and send it for signature — buyer and seller sign embedded, without leaving the platform.',
+    eSignHintClient: "When your coordinator sends a document for signature, it'll show up here for you to sign online.",
+    docusignNotSent: 'Not sent', docusignSent: 'Sent', docusignDelivered: 'Delivered', docusignCompleted: 'Signed', docusignDeclined: 'Declined', docusignVoided: 'Voided',
+    documentColon: 'Document', notUploaded: 'not uploaded', docusignStatusColon: 'DocuSign status',
+    generateEscrow: 'Generate escrow (Armour)', signed: 'Signed', checkStatus: 'Check status',
+    escrowFormHint: "Generate Armour Secure's escrow agreement with seller/buyer already filled in from this deal — you capture the rest here.",
+    placeDate: 'Place and date', placeDatePh: 'Puerto Vallarta, Jalisco, July 29, 2026',
+    expirationDate: 'Expiration date', expirationDatePh: 'December 31, 2026',
+    purchaseAgreementDesc: 'Purchase agreement description',
+    depositAmount: 'Deposit amount', depositAmountPh: 'USD $310,000.00',
+    fees: 'Fees', feesPh: "USD $1,500.00, buyer's expense",
+    noticeAddress: 'Notice address', generateDocument: 'Generate document',
+    signatureModalTitle: 'E-signature'
+  }
+};
 
 // Apunta esto a la URL de tu backend una vez desplegado (ver gruponar-backend/).
 // Vacío = mismo origen (funciona automáticamente si sirves este archivo
@@ -348,10 +646,15 @@ function pctTasks(deal){
 function render(){
   document.getElementById('mainTabs').style.visibility = authenticated ? 'visible' : 'hidden';
   document.getElementById('header-logout').style.display = authenticated ? '' : 'none';
+  document.getElementById('tab-admin').textContent = t('tabAdmin');
+  document.getElementById('tab-portal').textContent = t('tabPortal');
+  document.getElementById('lang-toggle').textContent = lang === 'es' ? 'EN' : 'ES';
+  document.getElementById('lang-toggle').onclick = () => setLang(lang === 'es' ? 'en' : 'es');
+  document.documentElement.lang = lang;
   const body = document.getElementById('body');
   body.innerHTML = '';
   if(checkingSession){
-    body.innerHTML = `<div class="empty"><i class="ti ti-loader-2" aria-hidden="true"></i><div>Verificando sesión...</div></div>`;
+    body.innerHTML = `<div class="empty"><i class="ti ti-loader-2" aria-hidden="true"></i><div>${t('checkingSession')}</div></div>`;
     return;
   }
   if(!authenticated){
@@ -374,22 +677,22 @@ function renderLogin(body){
   wrap.innerHTML = `
     <div class="gate-card">
       <div class="gate-mark">Grupo Nar Legal Consultants</div>
-      <div class="gate-title">Iniciar sesión</div>
-      <div class="gate-sub">Accede con el correo y contraseña que te dio tu coordinador.</div>
+      <div class="gate-title">${t('loginTitle')}</div>
+      <div class="gate-sub">${t('loginGateSub')}</div>
       <div class="gate-error">${escapeHtml(loginError)}</div>
       ${registerSuccess ? `<div class="field-hint" style="color:var(--jade); margin-bottom:8px;">${escapeHtml(registerSuccess)}</div>` : ''}
-      <input type="email" id="login-email" placeholder="correo@ejemplo.com" autocomplete="username">
-      <input type="password" id="login-password" placeholder="Contraseña" autocomplete="current-password">
-      <button class="btn primary" id="login-submit" style="width:100%;" ${loginLoading ? 'disabled' : ''}>${loginLoading ? 'Entrando...' : 'Entrar'}</button>
-      <div class="field-hint" style="text-align:center; margin-top:12px;">¿Eres agente o abogado y no tienes cuenta? <a href="#" id="go-register">Crear cuenta</a></div>
-      <div class="gate-note"><i class="ti ti-server" aria-hidden="true"></i> Este login llama a tu backend real (${API_BASE || 'mismo origen'}). Si aún no lo has desplegado, o este archivo no se está sirviendo desde ese mismo backend, la conexión fallará — completa esa parte en Claude Code con el proyecto <b>gruponar-backend</b>.</div>
+      <input type="email" id="login-email" placeholder="${t('loginEmailPh')}" autocomplete="username">
+      <input type="password" id="login-password" placeholder="${t('loginPasswordPh')}" autocomplete="current-password">
+      <button class="btn primary" id="login-submit" style="width:100%;" ${loginLoading ? 'disabled' : ''}>${loginLoading ? t('loginSubmitting') : t('loginSubmit')}</button>
+      <div class="field-hint" style="text-align:center; margin-top:12px;">${t('loginNoAccount')} <a href="#" id="go-register">${t('loginCreateAccount')}</a></div>
+      <div class="gate-note"><i class="ti ti-server" aria-hidden="true"></i> ${t('gateNote', { base: API_BASE || t('sameOrigin') })}</div>
     </div>
   `;
   body.appendChild(wrap);
   const submit = async () => {
     const email = wrap.querySelector('#login-email').value.trim();
     const password = wrap.querySelector('#login-password').value;
-    if(!email || !password){ loginError = 'Escribe tu correo y contraseña.'; render(); return; }
+    if(!email || !password){ loginError = t('loginErrFields'); render(); return; }
     loginLoading = true; loginError=''; render();
     try{
       const user = await apiFetch('/api/auth/login', {method:'POST', body: JSON.stringify({email, password})});
@@ -401,9 +704,7 @@ function renderLogin(body){
       await loadData();
     }catch(e){
       loginLoading = false;
-      loginError = e.message === 'Failed to fetch'
-        ? 'No se pudo conectar con el backend. Verifica que esté corriendo y accesible desde aquí.'
-        : e.message;
+      loginError = e.message === 'Failed to fetch' ? t('loginErrConnection') : e.message;
       render();
     }
   };
@@ -418,24 +719,24 @@ function renderRegister(body){
   wrap.innerHTML = `
     <div class="gate-card">
       <div class="gate-mark">Grupo Nar Legal Consultants</div>
-      <div class="gate-title">Crear cuenta</div>
-      <div class="gate-sub">Para agentes de venta y abogados/empleados internos. Tu cuenta queda pendiente de aprobación de un administrador.</div>
+      <div class="gate-title">${t('registerTitle')}</div>
+      <div class="gate-sub">${t('registerSub')}</div>
       <div class="gate-error">${escapeHtml(registerError)}</div>
-      <input type="text" id="reg-name" placeholder="Nombre completo" autocomplete="name">
-      <input type="email" id="reg-email" placeholder="correo@ejemplo.com" autocomplete="username">
-      <input type="password" id="reg-password" placeholder="Contraseña (mínimo 8 caracteres)" autocomplete="new-password">
+      <input type="text" id="reg-name" placeholder="${t('registerNamePh')}" autocomplete="name">
+      <input type="email" id="reg-email" placeholder="${t('registerEmailPh')}" autocomplete="username">
+      <input type="password" id="reg-password" placeholder="${t('registerPasswordPh')}" autocomplete="new-password">
       <select id="reg-role" style="width:100%; margin-bottom:10px;">
-        <option value="agent">Agente de venta</option>
-        <option value="lawyer">Abogado / empleado interno</option>
+        <option value="agent">${t('registerRoleAgent')}</option>
+        <option value="lawyer">${t('registerRoleLawyer')}</option>
       </select>
       <select id="reg-agency" style="width:100%; margin-bottom:10px;">
-        <option value="">Selecciona tu agencia...</option>
+        <option value="">${t('registerAgencyPlaceholderSelect')}</option>
         ${AGENCIES.map(a => `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join('')}
-        <option value="Otro">Otro</option>
+        <option value="Otro">${t('registerAgencyOther')}</option>
       </select>
-      <input type="text" id="reg-agency-other" placeholder="¿Cuál agencia?" style="display:none;">
-      <button class="btn primary" id="register-submit" style="width:100%;" ${registerLoading ? 'disabled' : ''}>${registerLoading ? 'Creando...' : 'Crear cuenta'}</button>
-      <div class="field-hint" style="text-align:center; margin-top:12px;"><a href="#" id="go-login">Ya tengo cuenta, iniciar sesión</a></div>
+      <input type="text" id="reg-agency-other" placeholder="${t('registerAgencyOtherPh')}" style="display:none;">
+      <button class="btn primary" id="register-submit" style="width:100%;" ${registerLoading ? 'disabled' : ''}>${registerLoading ? t('registerSubmitting') : t('registerSubmit')}</button>
+      <div class="field-hint" style="text-align:center; margin-top:12px;"><a href="#" id="go-login">${t('registerHaveAccount')}</a></div>
     </div>
   `;
   body.appendChild(wrap);
@@ -458,8 +759,8 @@ function renderRegister(body){
     const role = roleSelect.value;
     const agency = agencySelect.value;
     const agencyOther = agencyOtherInput.value.trim();
-    if(!name || !email || !password){ registerError = 'Completa todos los campos.'; render(); return; }
-    if(role === 'agent' && (!agency || (agency==='Otro' && !agencyOther))){ registerError = 'Elige tu agencia.'; render(); return; }
+    if(!name || !email || !password){ registerError = t('registerErrFields'); render(); return; }
+    if(role === 'agent' && (!agency || (agency==='Otro' && !agencyOther))){ registerError = t('registerErrAgency'); render(); return; }
     registerLoading = true; registerError=''; render();
     try{
       const result = await apiFetch('/api/auth/register', { method:'POST', body: JSON.stringify({name, email, password, role, agency, agencyOther}) });
@@ -494,7 +795,7 @@ document.getElementById('header-logout').addEventListener('click', logout);
 function renderAdmin(body){
   const banner = document.createElement('div');
   banner.className = 'banner';
-  banner.innerHTML = `<i class="ti ti-info-circle" aria-hidden="true"></i> Login, operaciones, documentos y tareas ya viven en tu backend real (base de datos, no el navegador). La firma electrónica (DocuSign) queda lista para funcionar en cuanto tengas credenciales de tu cuenta sandbox.`;
+  banner.innerHTML = `<i class="ti ti-info-circle" aria-hidden="true"></i> ${t('banner')}`;
   body.appendChild(banner);
 
   if(adminView === 'list' || adminView === 'dashboard' || adminView === 'team' || adminView === null){
@@ -503,13 +804,13 @@ function renderAdmin(body){
     secCard.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
         <div>
-          <div style="font-size:12px; color:var(--ink-soft);">Sesión activa</div>
+          <div style="font-size:12px; color:var(--ink-soft);">${t('activeSession')}</div>
           <div style="font-weight:600; font-size:15px;">${escapeHtml(currentUser.name)} <span style="font-weight:400; color:var(--ink-soft); font-size:12.5px;">— ${escapeHtml(currentUser.email)}</span></div>
           <span class="badge" style="background:var(--oxblood-soft); color:var(--oxblood);">${currentUser.role}</span>
         </div>
-        <button class="btn" id="do-logout"><i class="ti ti-logout" aria-hidden="true"></i> Cerrar sesión</button>
+        <button class="btn" id="do-logout"><i class="ti ti-logout" aria-hidden="true"></i> ${t('logout')}</button>
       </div>
-      <div class="field-hint" style="margin-top:10px;">Para dar de alta a un comprador o vendedor, entra a su operación y genera una invitación — ahí crean su propia contraseña. Para agentes o abogados internos, usa la pestaña "Equipo" de aquí abajo.</div>
+      <div class="field-hint" style="margin-top:10px;">${t('sessionHint')}</div>
     `;
     body.appendChild(secCard);
     secCard.querySelector('#do-logout').onclick = logout;
@@ -517,9 +818,9 @@ function renderAdmin(body){
     const nav = document.createElement('div');
     nav.style.cssText = 'display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;';
     nav.innerHTML = `
-      <button class="btn ${adminView==='dashboard'?'primary':''}" id="nav-dashboard">Dashboard</button>
-      <button class="btn ${adminView==='list'?'primary':''}" id="nav-list">Operaciones</button>
-      ${currentUser.role==='admin' ? `<button class="btn ${adminView==='team'?'primary':''}" id="nav-team">Equipo${pendingUsers && pendingUsers.length ? ` (${pendingUsers.length})` : ''}</button>` : ''}
+      <button class="btn ${adminView==='dashboard'?'primary':''}" id="nav-dashboard">${t('navDashboard')}</button>
+      <button class="btn ${adminView==='list'?'primary':''}" id="nav-list">${t('navOperations')}</button>
+      ${currentUser.role==='admin' ? `<button class="btn ${adminView==='team'?'primary':''}" id="nav-team">${t('navTeam')}${pendingUsers && pendingUsers.length ? ` (${pendingUsers.length})` : ''}</button>` : ''}
     `;
     body.appendChild(nav);
     nav.querySelector('#nav-dashboard').onclick = () => { adminView='dashboard'; activeDealId=null; loadDashboard(); };
@@ -549,20 +850,20 @@ function renderAdmin(body){
 
   const title = document.createElement('div');
   title.className = 'section-title';
-  title.textContent = 'Operaciones';
+  title.textContent = t('operationsTitle');
   body.appendChild(title);
 
   const addBtn = document.createElement('button');
   addBtn.className = 'btn primary';
   addBtn.style.marginBottom = '14px';
-  addBtn.innerHTML = '<i class="ti ti-plus" aria-hidden="true"></i> Nueva operación';
+  addBtn.innerHTML = `<i class="ti ti-plus" aria-hidden="true"></i> ${t('newDeal')}`;
   addBtn.onclick = () => { adminView = 'newDeal'; render(); };
   body.appendChild(addBtn);
 
   if(!deals.length){
     const empty = document.createElement('div');
     empty.className = 'empty';
-    empty.innerHTML = `<i class="ti ti-building-estate" aria-hidden="true"></i><div>No hay operaciones activas.<br>Crea la primera con "Nueva operación".</div>`;
+    empty.innerHTML = `<i class="ti ti-building-estate" aria-hidden="true"></i><div>${t('emptyDeals')}</div>`;
     body.appendChild(empty);
     return;
   }
@@ -586,13 +887,13 @@ function renderAdmin(body){
 function buildDashboard(){
   const wrap = document.createElement('div');
   const title = document.createElement('div');
-  title.className = 'section-title'; title.textContent = 'Dashboard';
+  title.className = 'section-title'; title.textContent = t('dashboard');
   wrap.appendChild(title);
 
   if(!dashboardData){
     const loading = document.createElement('div');
     loading.className = 'empty';
-    loading.innerHTML = `<i class="ti ti-loader-2" aria-hidden="true"></i><div>Cargando dashboard...</div>`;
+    loading.innerHTML = `<i class="ti ti-loader-2" aria-hidden="true"></i><div>${t('loadingDashboard')}</div>`;
     wrap.appendChild(loading);
     return wrap;
   }
@@ -602,10 +903,10 @@ function buildDashboard(){
   totalsCard.className = 'card';
   totalsCard.innerHTML = `
     <div class="grid2">
-      <div><div style="font-size:26px; font-weight:600; color:var(--oxblood-deep);">${d.totalDeals}</div><div class="field-hint" style="margin:0;">Operaciones activas</div></div>
-      <div><div style="font-size:26px; font-weight:600; color:var(--oxblood-deep);">${d.documentsPending}</div><div class="field-hint" style="margin:0;">Documentos pendientes</div></div>
-      <div><div style="font-size:26px; font-weight:600; color:var(--oxblood-deep);">${d.tasksPending + d.tasksInProgress}</div><div class="field-hint" style="margin:0;">Tareas sin terminar</div></div>
-      <div><div style="font-size:26px; font-weight:600; color:var(--oxblood-deep);">${d.signaturesAwaiting.length}</div><div class="field-hint" style="margin:0;">Esperando firma</div></div>
+      <div><div style="font-size:26px; font-weight:600; color:var(--oxblood-deep);">${d.totalDeals}</div><div class="field-hint" style="margin:0;">${t('statActiveDeals')}</div></div>
+      <div><div style="font-size:26px; font-weight:600; color:var(--oxblood-deep);">${d.documentsPending}</div><div class="field-hint" style="margin:0;">${t('statDocsPending')}</div></div>
+      <div><div style="font-size:26px; font-weight:600; color:var(--oxblood-deep);">${d.tasksPending + d.tasksInProgress}</div><div class="field-hint" style="margin:0;">${t('statTasksUnfinished')}</div></div>
+      <div><div style="font-size:26px; font-weight:600; color:var(--oxblood-deep);">${d.signaturesAwaiting.length}</div><div class="field-hint" style="margin:0;">${t('statAwaitingSignature')}</div></div>
     </div>
     ${d.dealsByScenario.length ? `<div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap;">${d.dealsByScenario.map(s=>`<span class="badge">${(SCENARIOS[s.scenario]&&SCENARIOS[s.scenario].labelShort)||s.scenario}: ${s.count}</span>`).join('')}</div>` : ''}
   `;
@@ -613,13 +914,13 @@ function buildDashboard(){
 
   if(d.signaturesAwaiting.length){
     const signTitle = document.createElement('div');
-    signTitle.className = 'section-title'; signTitle.textContent = 'Esperando firma';
+    signTitle.className = 'section-title'; signTitle.textContent = t('awaitingSignature');
     wrap.appendChild(signTitle);
     const signCard = document.createElement('div'); signCard.className = 'card';
     d.signaturesAwaiting.forEach(item => {
       const row = document.createElement('div');
       row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:0.5px solid var(--line); cursor:pointer; gap:10px;';
-      row.innerHTML = `<span style="font-size:13px;">"${escapeHtml(item.label_es)}" · ${escapeHtml(item.property)}</span><span class="badge" style="background:var(--gold-soft); color:#6B4E1E; flex-shrink:0;">Firma</span>`;
+      row.innerHTML = `<span style="font-size:13px;">"${escapeHtml(lang==='en'?item.label_en:item.label_es)}" · ${escapeHtml(item.property)}</span><span class="badge" style="background:var(--gold-soft); color:#6B4E1E; flex-shrink:0;">${t('signature')}</span>`;
       row.onclick = () => { adminView='list'; activeDealId=item.dealId; openDeal(item.dealId); };
       signCard.appendChild(row);
     });
@@ -627,7 +928,7 @@ function buildDashboard(){
   }
 
   const pendingTitle = document.createElement('div');
-  pendingTitle.className = 'section-title'; pendingTitle.textContent = 'Pendientes por operación';
+  pendingTitle.className = 'section-title'; pendingTitle.textContent = t('pendingByDeal');
   wrap.appendChild(pendingTitle);
 
   const groups = {};
@@ -642,14 +943,14 @@ function buildDashboard(){
 
   if(!Object.keys(groups).length){
     const emptyCard = document.createElement('div'); emptyCard.className = 'card';
-    emptyCard.innerHTML = `<div class="field-hint" style="margin:0;">No hay documentos ni tareas pendientes. Al día.</div>`;
+    emptyCard.innerHTML = `<div class="field-hint" style="margin:0;">${t('noPending')}</div>`;
     wrap.appendChild(emptyCard);
   } else {
     Object.entries(groups).forEach(([dealId, g]) => {
       const card = document.createElement('div'); card.className = 'card';
       const header = document.createElement('div');
       header.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; cursor:pointer;';
-      header.innerHTML = `<span style="font-weight:600; font-size:13.5px;">${escapeHtml(g.property)}</span><span class="field-hint" style="margin:0;">Ver operación <i class="ti ti-arrow-right" aria-hidden="true"></i></span>`;
+      header.innerHTML = `<span style="font-weight:600; font-size:13.5px;">${escapeHtml(g.property)}</span><span class="field-hint" style="margin:0;">${t('viewDeal')} <i class="ti ti-arrow-right" aria-hidden="true"></i></span>`;
       header.onclick = () => { adminView='list'; activeDealId=Number(dealId); openDeal(Number(dealId)); };
       card.appendChild(header);
 
@@ -658,8 +959,8 @@ function buildDashboard(){
         row.style.cssText = 'display:flex; align-items:center; gap:10px; padding:6px 0; border-bottom:0.5px solid var(--line);';
         row.innerHTML = `
           <span class="doc-check" style="flex-shrink:0;"></span>
-          <span style="font-size:12.5px; flex:1;">Documento: ${escapeHtml(doc.name)} <span class="field-hint" style="margin:0;">(${doc.partyName ? escapeHtml(doc.partyName) + ' · ' + (doc.side==='seller'?'vendedor':'comprador') : 'Propiedad'})</span></span>
-          ${doc.stale ? `<span class="badge" style="background:var(--oxblood-soft); color:var(--oxblood); flex-shrink:0;">Atrasado</span>` : ''}
+          <span style="font-size:12.5px; flex:1;">${t('docLabel')}: ${escapeHtml(doc.name)} <span class="field-hint" style="margin:0;">(${doc.partyName ? escapeHtml(doc.partyName) + ' · ' + (doc.side==='seller'?t('sellerLabel'):t('buyerLabel')) : t('propertyLabel')})</span></span>
+          ${doc.stale ? `<span class="badge" style="background:var(--oxblood-soft); color:var(--oxblood); flex-shrink:0;">${t('stale')}</span>` : ''}
         `;
         row.querySelector('.doc-check').onclick = async () => {
           try{
@@ -676,8 +977,8 @@ function buildDashboard(){
         const cls = task.status==='progress' ? 'progress' : '';
         row.innerHTML = `
           <div class="task-stamp ${cls}" style="width:22px; height:22px; font-size:10px; flex-shrink:0;">${task.status==='progress'?'<i class=\"ti ti-clock\" aria-hidden=\"true\"></i>':''}</div>
-          <span style="font-size:12.5px; flex:1;">Tarea: ${escapeHtml(task.label_es)}</span>
-          ${task.stale ? `<span class="badge" style="background:var(--oxblood-soft); color:var(--oxblood); flex-shrink:0;">Atrasado</span>` : ''}
+          <span style="font-size:12.5px; flex:1;">${t('taskLabel')}: ${escapeHtml(lang==='en'?task.label_en:task.label_es)}</span>
+          ${task.stale ? `<span class="badge" style="background:var(--oxblood-soft); color:var(--oxblood); flex-shrink:0;">${t('stale')}</span>` : ''}
         `;
         row.querySelector('.task-stamp').onclick = async () => {
           const order=['pending','progress','done'];
@@ -701,21 +1002,21 @@ function buildTeamSection(){
   const wrap = document.createElement('div');
 
   const pendingTitle = document.createElement('div');
-  pendingTitle.className = 'section-title'; pendingTitle.textContent = 'Cuentas pendientes de aprobación';
+  pendingTitle.className = 'section-title'; pendingTitle.textContent = t('pendingApprovalTitle');
   wrap.appendChild(pendingTitle);
   const pendingCard = document.createElement('div'); pendingCard.className = 'card';
   if(pendingUsers === null){
-    pendingCard.innerHTML = `<div class="field-hint" style="margin:0;">Cargando...</div>`;
+    pendingCard.innerHTML = `<div class="field-hint" style="margin:0;">${t('loading')}</div>`;
     loadPendingUsers();
   } else if(!pendingUsers.length){
-    pendingCard.innerHTML = `<div class="field-hint" style="margin:0;">No hay cuentas esperando aprobación. Las que se autoregistran desde "Crear cuenta" en el login aparecen aquí.</div>`;
+    pendingCard.innerHTML = `<div class="field-hint" style="margin:0;">${t('noPendingAccounts')}</div>`;
   } else {
     pendingUsers.forEach(u => {
       const row = document.createElement('div');
       row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:0.5px solid var(--line); gap:10px;';
       row.innerHTML = `<span style="font-size:13px;">${escapeHtml(u.name)} <span class="field-hint" style="margin:0;">— ${escapeHtml(u.email)} · ${u.role}${u.agency ? ' · ' + escapeHtml(u.agency) : ''}</span></span>`;
       const approveBtn = document.createElement('button');
-      approveBtn.className = 'btn primary'; approveBtn.textContent = 'Aprobar';
+      approveBtn.className = 'btn primary'; approveBtn.textContent = t('approve');
       approveBtn.onclick = async () => {
         try{
           await apiFetch(`/api/users/${u.id}/approve`, { method:'PATCH' });
@@ -729,28 +1030,28 @@ function buildTeamSection(){
   wrap.appendChild(pendingCard);
 
   const inviteTitle = document.createElement('div');
-  inviteTitle.className = 'section-title'; inviteTitle.textContent = 'Invitar agente o abogado';
+  inviteTitle.className = 'section-title'; inviteTitle.textContent = t('inviteAgentLawyer');
   wrap.appendChild(inviteTitle);
   const inviteCard = document.createElement('div'); inviteCard.className = 'card';
   inviteCard.innerHTML = `
-    <div class="field-hint" style="margin-top:0;">Genera un link para que un agente de venta o abogado/empleado interno cree su propia cuenta — a diferencia de "Crear cuenta" en el login, esta queda activa de inmediato (ya la estás aprobando tú al invitar).</div>
+    <div class="field-hint" style="margin-top:0;">${t('inviteTeamHint')}</div>
     <div class="form-row">
-      <label>Rol <select id="team-inv-role">
-        <option value="agent">Agente de venta</option>
-        <option value="lawyer">Abogado / empleado interno</option>
+      <label>${t('role')} <select id="team-inv-role">
+        <option value="agent">${t('registerRoleAgent')}</option>
+        <option value="lawyer">${t('registerRoleLawyer')}</option>
       </select></label>
-      <label>Nombre <input type="text" id="team-inv-name" placeholder="Nombre completo"></label>
-      <label>Correo <input type="email" id="team-inv-email" placeholder="correo@ejemplo.com"></label>
+      <label>${t('name')} <input type="text" id="team-inv-name" placeholder="${t('namePh')}"></label>
+      <label>${t('email')} <input type="email" id="team-inv-email" placeholder="${t('emailPh')}"></label>
     </div>
     <div class="form-actions" style="display:flex; justify-content:flex-end;">
-      <button class="btn primary" id="team-inv-generate">Generar invitación</button>
+      <button class="btn primary" id="team-inv-generate">${t('generateInvite')}</button>
     </div>
     <div id="team-inv-result" style="display:none;">
       <div class="form-row">
-        <label style="flex:1;">Link de invitación (cópialo y compártelo)
+        <label style="flex:1;">${t('inviteLinkLabel')}
           <input type="text" id="team-inv-link" readonly>
         </label>
-        <button class="btn" id="team-inv-copy" style="align-self:flex-end;">Copiar</button>
+        <button class="btn" id="team-inv-copy" style="align-self:flex-end;">${t('copy')}</button>
       </div>
     </div>
     <div class="gate-error" id="team-inv-error"></div>
@@ -762,7 +1063,7 @@ function buildTeamSection(){
     const email = inviteCard.querySelector('#team-inv-email').value.trim();
     const errEl = inviteCard.querySelector('#team-inv-error');
     errEl.textContent = '';
-    if(!name || !email){ errEl.textContent = 'Falta nombre o correo.'; return; }
+    if(!name || !email){ errEl.textContent = t('errNameOrEmail'); return; }
     try{
       const { url } = await apiFetch('/api/invites', { method:'POST', body: JSON.stringify({ roleInDeal, name, email }) });
       const linkInput = inviteCard.querySelector('#team-inv-link');
@@ -789,38 +1090,38 @@ const MAX_PARTIES_PER_SIDE = 4;
 function buildPartyFieldsBlock(allowedTypes, existing){
   const box = document.createElement('div');
   box.style.cssText = 'border:0.5px solid var(--line); border-radius:10px; padding:12px; margin-bottom:10px; background:var(--stone-card);';
-  const typeOptions = allowedTypes.map(t => `<option value="${t}">${TYPE_LABEL[t]}</option>`).join('');
+  const typeOptions = allowedTypes.map(ty => `<option value="${ty}">${TYPE_LABEL[ty]}</option>`).join('');
   box.innerHTML = `
     <div class="form-row">
-      <label>Nombre <input type="text" class="pf-name" placeholder="Nombre completo o razón social"></label>
-      <label>Tipo <select class="pf-type">${typeOptions}</select></label>
+      <label>${t('name')} <input type="text" class="pf-name" placeholder="${t('partyNamePh')}"></label>
+      <label>${t('type')} <select class="pf-type">${typeOptions}</select></label>
     </div>
     <div class="pf-ownership" style="display:none;">
-      <label>Estructura de propiedad <select class="pf-mode">
-        <option value="direct_owners">1-2 socios/accionistas directos</option>
-        <option value="parent_entity">Otra entidad es dueña</option>
-        <option value="direct_trust">Un revocable trust es dueño directo</option>
+      <label>${t('ownershipStructure')} <select class="pf-mode">
+        <option value="direct_owners">${t('modeDirectOwners')}</option>
+        <option value="parent_entity">${t('modeParentEntity')}</option>
+        <option value="direct_trust">${t('modeDirectTrust')}</option>
       </select></label>
       <div class="pf-mode-owners">
-        <div class="field-hint" style="margin:6px 0 4px;">Socios/accionistas directos (1-2)</div>
-        <input type="text" class="pf-owner1" placeholder="Nombre del socio 1">
-        <input type="text" class="pf-owner2" placeholder="Nombre del socio 2 (opcional)" style="margin-top:6px;">
+        <div class="field-hint" style="margin:6px 0 4px;">${t('directOwners')}</div>
+        <input type="text" class="pf-owner1" placeholder="${t('owner1Ph')}">
+        <input type="text" class="pf-owner2" placeholder="${t('owner2Ph')}" style="margin-top:6px;">
       </div>
       <div class="pf-mode-parent" style="display:none;">
         <div class="form-row" style="margin-top:6px;">
-          <label>Nombre de la entidad padre <input type="text" class="pf-parent-name"></label>
-          <label>Tipo <select class="pf-parent-type">
-            <option value="corporation">Persona moral (MX)</option>
-            <option value="llc">LLC / entidad extranjera</option>
+          <label>${t('parentEntityName')} <input type="text" class="pf-parent-name"></label>
+          <label>${t('type')} <select class="pf-parent-type">
+            <option value="corporation">${t('corpMx')}</option>
+            <option value="llc">${t('llcForeign')}</option>
           </select></label>
         </div>
         <label style="display:flex; align-items:center; gap:6px; font-size:12.5px; margin-top:6px;">
-          <input type="checkbox" class="pf-parent-trust"> Esa entidad padre tiene un revocable trust arriba
+          <input type="checkbox" class="pf-parent-trust"> ${t('parentHasTrust')}
         </label>
-        <input type="text" class="pf-parent-trust-name" placeholder="Nombre del trust" style="display:none; margin-top:6px;">
+        <input type="text" class="pf-parent-trust-name" placeholder="${t('trustNamePh')}" style="display:none; margin-top:6px;">
       </div>
       <div class="pf-mode-trust" style="display:none; margin-top:6px;">
-        <input type="text" class="pf-trust-name" placeholder="Nombre del revocable trust">
+        <input type="text" class="pf-trust-name" placeholder="${t('directTrustNamePh')}">
       </div>
     </div>
   `;
@@ -885,12 +1186,12 @@ function buildPartyFieldsBlock(allowedTypes, existing){
 
 function buildNewDealForm(){
   const wrap = document.createElement('div');
-  wrap.innerHTML = `<div class="section-title">Nueva operación</div>`;
+  wrap.innerHTML = `<div class="section-title">${t('newDealTitle')}</div>`;
   const card = document.createElement('div');
   card.className = 'card';
   card.innerHTML = `
     <div class="form-row">
-      <label>Tipo de escenario
+      <label>${t('scenarioType')}
         <select id="nd-scenario">
           <option value="purchase">${SCENARIOS.purchase.label}</option>
           <option value="trust">${SCENARIOS.trust.label}</option>
@@ -900,45 +1201,45 @@ function buildNewDealForm(){
       </label>
     </div>
     <div class="form-row">
-      <label>Desarrollo <select id="nd-development">
-        <option value="punta_mita">Punta Mita</option>
-        <option value="mandarina">Mandarina</option>
-        <option value="general">Bahía de Banderas / otro</option>
+      <label>${t('development')} <select id="nd-development">
+        <option value="punta_mita">${t('devPuntaMita')}</option>
+        <option value="mandarina">${t('devMandarina')}</option>
+        <option value="general">${t('devGeneral')}</option>
       </select></label>
-      <label>Propiedad <input type="text" id="nd-property" placeholder="Villa 22, Kupuri, Punta de Mita"></label>
+      <label>${t('property')} <input type="text" id="nd-property" placeholder="${t('propertyPh')}"></label>
     </div>
     <div class="form-row">
-      <label>Precio del inmueble <input type="text" id="nd-price" placeholder="3100000"></label>
-      <label>Precio de muebles (opcional) <input type="text" id="nd-furniture" placeholder="0"></label>
-      <label>Moneda <select id="nd-currency"><option>USD</option><option>MXN</option></select></label>
+      <label>${t('propertyPrice')} <input type="text" id="nd-price" placeholder="3100000"></label>
+      <label>${t('furniturePrice')} <input type="text" id="nd-furniture" placeholder="0"></label>
+      <label>${t('currency')} <select id="nd-currency"><option>USD</option><option>MXN</option></select></label>
     </div>
     <div class="grid2">
       <div>
         <div style="display:flex; justify-content:space-between; align-items:center;">
-          <div class="field-hint" style="margin:0;">Vendedores</div>
-          <button class="btn" id="nd-add-seller" style="font-size:11px;" type="button">+ Agregar vendedor</button>
+          <div class="field-hint" style="margin:0;">${t('sellers')}</div>
+          <button class="btn" id="nd-add-seller" style="font-size:11px;" type="button">${t('addSeller')}</button>
         </div>
         <div id="nd-sellers"></div>
       </div>
       <div>
         <div style="display:flex; justify-content:space-between; align-items:center;">
-          <div class="field-hint" style="margin:0;">Compradores</div>
-          <button class="btn" id="nd-add-buyer" style="font-size:11px;" type="button">+ Agregar comprador</button>
+          <div class="field-hint" style="margin:0;">${t('buyers')}</div>
+          <button class="btn" id="nd-add-buyer" style="font-size:11px;" type="button">${t('addBuyer')}</button>
         </div>
         <div id="nd-buyers"></div>
       </div>
     </div>
     <div class="form-row">
-      <label>Fecha de oferta firmada <input type="date" id="nd-start"></label>
-      <label>Escrow company <select id="nd-escrow-company">
+      <label>${t('offerSignedDate')} <input type="date" id="nd-start"></label>
+      <label>${t('escrowCompany')} <select id="nd-escrow-company">
         <option value="armour">Armour Secure</option>
         <option value="tla">TLA Financial Services</option>
       </select></label>
     </div>
     <div class="gate-error" id="nd-error"></div>
     <div class="form-actions" style="display:flex; gap:8px; justify-content:flex-end;">
-      <button class="btn" id="nd-cancel">Cancelar</button>
-      <button class="btn primary" id="nd-create">Crear operación</button>
+      <button class="btn" id="nd-cancel">${t('cancel')}</button>
+      <button class="btn primary" id="nd-create">${t('createDeal')}</button>
     </div>
   `;
   wrap.appendChild(card);
@@ -954,7 +1255,7 @@ function buildNewDealForm(){
     if(container.children.length > 0){
       const removeBtn = document.createElement('button');
       removeBtn.className = 'btn'; removeBtn.style.cssText = 'font-size:11px; margin-top:-6px; margin-bottom:8px;'; removeBtn.type = 'button';
-      removeBtn.textContent = 'Quitar';
+      removeBtn.textContent = t('remove');
       removeBtn.onclick = () => block.remove();
       block.appendChild(removeBtn);
     }
@@ -977,10 +1278,10 @@ function buildNewDealForm(){
     errEl.textContent = '';
     const scenario = card.querySelector('#nd-scenario').value;
     const property = card.querySelector('#nd-property').value.trim();
-    if(!property){ errEl.textContent = 'Falta el nombre de la propiedad.'; return; }
+    if(!property){ errEl.textContent = t('errMissingPropertyName'); return; }
     const sellers = Array.from(sellersWrap.children).map(b => b.collectParty('seller'));
     const buyers = Array.from(buyersWrap.children).map(b => b.collectParty('buyer'));
-    if(sellers.some(p=>!p.name) || buyers.some(p=>!p.name)){ errEl.textContent = 'Falta el nombre de alguna parte.'; return; }
+    if(sellers.some(p=>!p.name) || buyers.some(p=>!p.name)){ errEl.textContent = t('errMissingPartyName'); return; }
     const development = card.querySelector('#nd-development').value;
     const body = {
       scenario, development, property,
@@ -1006,14 +1307,14 @@ function buildNewDealForm(){
 // junto a su nombre sin tener que abrir el editor.
 function partyOwnershipSummary(p){
   if(p.partyType === 'individual') return '';
-  if(p.ownershipMode === 'direct_owners') return `Socios: ${p.owners.map(o=>o.name).join(', ') || '(sin nombre)'}`;
+  if(p.ownershipMode === 'direct_owners') return `${t('partners')}: ${p.owners.map(o=>o.name).join(', ') || t('noName')}`;
   if(p.ownershipMode === 'parent_entity'){
-    let s = `Entidad padre: ${p.parentEntityName} (${TYPE_LABEL[p.parentEntityType]||p.parentEntityType})`;
-    if(p.parentHasTrustAbove) s += ` · Trust arriba: ${p.parentTrustName}`;
+    let s = `${t('parentEntity')}: ${p.parentEntityName} (${TYPE_LABEL[p.parentEntityType]||p.parentEntityType})`;
+    if(p.parentHasTrustAbove) s += ` · ${t('trustAbove')}: ${p.parentTrustName}`;
     return s;
   }
-  if(p.ownershipMode === 'direct_trust') return `Trust directo: ${p.directTrustName}`;
-  return 'Falta completar la estructura de propiedad';
+  if(p.ownershipMode === 'direct_trust') return `${t('directTrust')}: ${p.directTrustName}`;
+  return t('incompleteOwnership');
 }
 
 function buildPartiesSection(deal){
@@ -1027,7 +1328,7 @@ function buildPartiesSection(deal){
     const parties = deal.parties.filter(p => p.side === side);
     header.innerHTML = `<span style="font-weight:600; font-size:13px;">${label} (${parties.length})</span>`;
     const addBtn = document.createElement('button');
-    addBtn.className = 'btn'; addBtn.style.fontSize = '11px'; addBtn.textContent = '+ Agregar';
+    addBtn.className = 'btn'; addBtn.style.fontSize = '11px'; addBtn.textContent = t('add');
     addBtn.disabled = parties.length >= MAX_PARTIES_PER_SIDE;
     header.appendChild(addBtn);
     card.appendChild(header);
@@ -1037,10 +1338,10 @@ function buildPartiesSection(deal){
       row.style.cssText = 'padding:8px 0; border-bottom:0.5px solid var(--line);';
       row.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-          <span style="font-size:13px;">${escapeHtml(p.name)} <span class="field-hint" style="margin:0;">(${TYPE_LABEL[p.partyType]})</span>${p.linkedUser ? ` <span class="badge" style="background:var(--jade-soft); color:var(--jade);">cuenta ligada</span>` : ''}</span>
+          <span style="font-size:13px;">${escapeHtml(p.name)} <span class="field-hint" style="margin:0;">(${TYPE_LABEL[p.partyType]})</span>${p.linkedUser ? ` <span class="badge" style="background:var(--jade-soft); color:var(--jade);">${t('accountLinked')}</span>` : ''}</span>
           <span style="display:flex; gap:6px;">
-            <button class="btn pty-edit" style="font-size:11px;">Editar</button>
-            ${parties.length > 1 ? `<button class="btn pty-remove" style="font-size:11px;">Quitar</button>` : ''}
+            <button class="btn pty-edit" style="font-size:11px;">${t('edit')}</button>
+            ${parties.length > 1 ? `<button class="btn pty-remove" style="font-size:11px;">${t('remove')}</button>` : ''}
           </span>
         </div>
         ${p.partyType !== 'individual' ? `<div class="field-hint" style="margin:4px 0 0;">${escapeHtml(partyOwnershipSummary(p))}</div>` : ''}
@@ -1055,7 +1356,7 @@ function buildPartiesSection(deal){
         const block = buildPartyFieldsBlock(allowed, p);
         block.style.marginTop = '8px';
         const saveBtn = document.createElement('button');
-        saveBtn.className = 'btn primary'; saveBtn.style.fontSize = '11px'; saveBtn.textContent = 'Guardar';
+        saveBtn.className = 'btn primary'; saveBtn.style.fontSize = '11px'; saveBtn.textContent = t('save');
         const errEl = document.createElement('div');
         errEl.className = 'gate-error';
         saveBtn.onclick = async () => {
@@ -1071,7 +1372,7 @@ function buildPartiesSection(deal){
       };
       const removeBtn = row.querySelector('.pty-remove');
       if(removeBtn) removeBtn.onclick = async () => {
-        if(!confirm(`¿Quitar a "${p.name}" de esta operación?`)) return;
+        if(!confirm(t('confirmRemoveParty', { name: p.name }))) return;
         try{
           await apiFetch(`/api/deals/${deal.id}/parties/${p.id}`, { method:'DELETE' });
           await openDeal(deal.id);
@@ -1088,7 +1389,7 @@ function buildPartiesSection(deal){
       const block = buildPartyFieldsBlock(allowed);
       block.style.marginTop = '8px';
       const saveBtn = document.createElement('button');
-      saveBtn.className = 'btn primary'; saveBtn.style.fontSize = '11px'; saveBtn.textContent = 'Agregar';
+      saveBtn.className = 'btn primary'; saveBtn.style.fontSize = '11px'; saveBtn.textContent = t('addPlain');
       const errEl = document.createElement('div');
       errEl.className = 'gate-error';
       saveBtn.onclick = async () => {
@@ -1106,8 +1407,8 @@ function buildPartiesSection(deal){
     return card;
   }
 
-  wrap.appendChild(renderSide('seller', 'Vendedores'));
-  wrap.appendChild(renderSide('buyer', 'Compradores'));
+  wrap.appendChild(renderSide('seller', t('sellers')));
+  wrap.appendChild(renderSide('buyer', t('buyers')));
   return wrap;
 }
 
@@ -1116,7 +1417,7 @@ function buildAdminDealDetail(deal){
   const wrap = document.createElement('div');
   const back = document.createElement('button');
   back.className = 'btn'; back.style.marginBottom='12px';
-  back.innerHTML = '<i class="ti ti-arrow-left" aria-hidden="true"></i> Todas las operaciones';
+  back.innerHTML = `<i class="ti ti-arrow-left" aria-hidden="true"></i> ${t('allDeals')}`;
   back.onclick = () => { activeDealId=null; render(); };
   wrap.appendChild(back);
 
@@ -1127,24 +1428,24 @@ function buildAdminDealDetail(deal){
     <span class="badge ${s.badgeClass}">${s.labelShort}</span>
     <div class="deal-sub" style="margin-top:8px;">${sellerParties(deal).map(p=>`${escapeHtml(p.name)} (${TYPE_LABEL[p.partyType]})`).join(', ')} → ${buyerParties(deal).map(p=>`${escapeHtml(p.name)} (${TYPE_LABEL[p.partyType]})`).join(', ')}</div>
     <div class="deal-sub">${DEVELOPMENT_LABEL[deal.development||'punta_mita']}</div>
-    <div class="deal-sub">Inmueble: ${deal.currency||'USD'} ${Number(deal.price||0).toLocaleString()}${deal.furniturePrice ? ' · Muebles: '+Number(deal.furniturePrice).toLocaleString() : ''} · Inicio ${deal.startDate}</div>
-    <div class="deal-sub">Documentos: ${pctDocs(deal)}% completo · Tracker: ${pctTasks(deal)}% completo</div>
-    <div class="deal-sub" style="margin-top:6px; display:flex; align-items:center; gap:6px;">Escrow company
+    <div class="deal-sub">${t('propertyLabelColon')}: ${deal.currency||'USD'} ${Number(deal.price||0).toLocaleString()}${deal.furniturePrice ? ' · '+t('furnitureLabel')+': '+Number(deal.furniturePrice).toLocaleString() : ''} · ${t('startLabel')} ${deal.startDate}</div>
+    <div class="deal-sub">${t('documentsLabel')}: ${pctDocs(deal)}% ${t('completeLabel')} · ${t('trackerLabel')}: ${pctTasks(deal)}% ${t('completeLabel')}</div>
+    <div class="deal-sub" style="margin-top:6px; display:flex; align-items:center; gap:6px;">${t('escrowCompany')}
       <select id="escrow-company-select" style="font-size:11.5px; padding:2px 6px;">
         <option value="armour" ${deal.escrowCompany==='armour'?'selected':''}>Armour Secure</option>
         <option value="tla" ${deal.escrowCompany==='tla'?'selected':''}>TLA Financial Services</option>
       </select>
     </div>
     <div class="deal-sub" style="margin-top:6px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
-      <span style="display:flex; align-items:center; gap:6px;">Fecha de cierre <input type="date" id="closing-date-input" value="${deal.closingDate}" style="font-size:11.5px; padding:2px 6px;"></span>
-      <span style="display:flex; align-items:center; gap:6px;">Fin de due diligence <input type="date" id="dd-end-date-input" value="${deal.dueDiligenceEndDate}" style="font-size:11.5px; padding:2px 6px;"></span>
+      <span style="display:flex; align-items:center; gap:6px;">${t('closingDateLabel')} <input type="date" id="closing-date-input" value="${deal.closingDate}" style="font-size:11.5px; padding:2px 6px;"></span>
+      <span style="display:flex; align-items:center; gap:6px;">${t('ddEndLabel')} <input type="date" id="dd-end-date-input" value="${deal.dueDiligenceEndDate}" style="font-size:11.5px; padding:2px 6px;"></span>
     </div>
-    <button class="btn" id="delDeal" style="margin-top:10px;"><i class="ti ti-trash" aria-hidden="true"></i> Eliminar operación</button>
+    <button class="btn" id="delDeal" style="margin-top:10px;"><i class="ti ti-trash" aria-hidden="true"></i> ${t('deleteDeal')}</button>
   `;
   wrap.appendChild(header);
   header.querySelector('#escrow-company-select').onchange = async (e) => {
     const next = e.target.value;
-    if(!confirm(`¿Cambiar la escrow company a ${next==='armour'?'Armour Secure':'TLA Financial Services'}? Si ya hay expedientes KYC guardados con la plantilla vieja, van a seguir con esa plantilla hasta que los reinicies desde su sección.`)){
+    if(!confirm(t('confirmChangeEscrow', { company: next==='armour'?'Armour Secure':'TLA Financial Services' }))){
       e.target.value = deal.escrowCompany;
       return;
     }
@@ -1167,7 +1468,7 @@ function buildAdminDealDetail(deal){
     }catch(err){ alert(err.message); e.target.value = deal.dueDiligenceEndDate; }
   };
   header.querySelector('#delDeal').onclick = async () => {
-    if(!confirm('¿Eliminar esta operación? Esta acción no se puede deshacer.')) return;
+    if(!confirm(t('confirmDeleteDeal'))) return;
     try{
       await apiFetch('/api/deals/' + deal.id, { method: 'DELETE' });
       deals = deals.filter(d=>d.id!==deal.id);
@@ -1176,12 +1477,12 @@ function buildAdminDealDetail(deal){
   };
 
   const partiesTitle = document.createElement('div');
-  partiesTitle.className = 'section-title'; partiesTitle.textContent = 'Vendedores y compradores';
+  partiesTitle.className = 'section-title'; partiesTitle.textContent = t('sellersAndBuyers');
   wrap.appendChild(partiesTitle);
   wrap.appendChild(buildPartiesSection(deal));
 
   const propTitle = document.createElement('div');
-  propTitle.className = 'section-title'; propTitle.textContent = 'Propiedad';
+  propTitle.className = 'section-title'; propTitle.textContent = t('propertySection');
   wrap.appendChild(propTitle);
   const propCard = document.createElement('div');
   propCard.className = 'card';
@@ -1189,7 +1490,7 @@ function buildAdminDealDetail(deal){
   wrap.appendChild(propCard);
 
   const docsTitle = document.createElement('div');
-  docsTitle.className = 'section-title'; docsTitle.textContent = 'Checklist de documentos (KYC)';
+  docsTitle.className = 'section-title'; docsTitle.textContent = t('docsChecklist');
   wrap.appendChild(docsTitle);
   const docsCard = document.createElement('div');
   docsCard.className = 'card';
@@ -1197,14 +1498,14 @@ function buildAdminDealDetail(deal){
   wrap.appendChild(docsCard);
 
   const kycTitle = document.createElement('div');
-  kycTitle.className = 'section-title'; kycTitle.textContent = 'Expediente KYC (firma electrónica)';
+  kycTitle.className = 'section-title'; kycTitle.textContent = t('kycFile');
   wrap.appendChild(kycTitle);
   const kycCard = document.createElement('div'); kycCard.className = 'card';
   deal.parties.forEach(p => kycCard.appendChild(buildKycSection(deal, p, true)));
   wrap.appendChild(kycCard);
 
   const tasksTitle = document.createElement('div');
-  tasksTitle.className = 'section-title'; tasksTitle.textContent = 'Tracker de cierre';
+  tasksTitle.className = 'section-title'; tasksTitle.textContent = t('closingTracker');
   wrap.appendChild(tasksTitle);
   const tasksCard = document.createElement('div');
   tasksCard.className = 'card';
@@ -1212,12 +1513,12 @@ function buildAdminDealDetail(deal){
   wrap.appendChild(tasksCard);
 
   const inviteTitle = document.createElement('div');
-  inviteTitle.className = 'section-title'; inviteTitle.textContent = 'Invitar a esta operación';
+  inviteTitle.className = 'section-title'; inviteTitle.textContent = t('inviteToThisDeal');
   wrap.appendChild(inviteTitle);
   wrap.appendChild(buildInviteForm(deal));
 
   const contractTitle = document.createElement('div');
-  contractTitle.className = 'section-title'; contractTitle.textContent = 'Contrato de promesa (firma electrónica)';
+  contractTitle.className = 'section-title'; contractTitle.textContent = t('contractPromise');
   wrap.appendChild(contractTitle);
   const contractCard = document.createElement('div'); contractCard.className = 'card';
   // Generar/editar el contrato es trabajo exclusivo de admin/abogado — el
@@ -1229,18 +1530,24 @@ function buildAdminDealDetail(deal){
   return wrap;
 }
 
-const KYC_STATUS_LABEL = { draft:'Sin generar', generated:'Generado, sin enviar', sent:'Enviado a firma', signed:'Firmado' };
+const KYC_STATUS_LABEL_I18N = {
+  draft: { es: 'Sin generar', en: 'Not generated' }, generated: { es: 'Generado, sin enviar', en: 'Generated, not sent' },
+  sent: { es: 'Enviado a firma', en: 'Sent for signature' }, signed: { es: 'Firmado', en: 'Signed' }
+};
+const KYC_STATUS_LABEL = new Proxy(KYC_STATUS_LABEL_I18N, {
+  get(target, key){ const e = target[key]; return e ? (e[lang] || e.es) : undefined; }
+});
 
 function buildKycSection(deal, party, isStaffView){
   const role = party.id;
   const key = deal.id + '-' + role;
-  const roleLabel = `${party.name} (${party.side === 'seller' ? 'Vendedor' : 'Comprador'} · ${TYPE_LABEL[party.partyType]})`;
+  const roleLabel = `${party.name} (${party.side === 'seller' ? t('sellerLabel2') : t('buyerLabel2')} · ${TYPE_LABEL[party.partyType]})`;
   const box = document.createElement('div');
   box.style.cssText = 'padding:10px 0; border-bottom:0.5px solid var(--line);';
 
   const data = kycCache[key];
   if(data === undefined){
-    box.innerHTML = `<div class="field-hint" style="margin:0;">${escapeHtml(roleLabel)}: cargando...</div>`;
+    box.innerHTML = `<div class="field-hint" style="margin:0;">${escapeHtml(roleLabel)}: ${t('loadingEllipsis')}</div>`;
     loadKyc(deal.id, role);
     return box;
   }
@@ -1258,10 +1565,10 @@ function buildKycSection(deal, party, isStaffView){
   if(isStaffView && data.status === 'draft' && Object.keys(data.answers||{}).length === 0 && data.availableTemplates && data.availableTemplates.length > 1){
     const langRow = document.createElement('div');
     langRow.style.cssText = 'margin-top:4px;';
-    langRow.innerHTML = `<label class="field-hint" style="margin:0; display:inline-flex; gap:6px; align-items:center;">Idioma del formulario
+    langRow.innerHTML = `<label class="field-hint" style="margin:0; display:inline-flex; gap:6px; align-items:center;">${t('formLanguage')}
       <select id="kyc-lang-${key}" style="font-size:11px; padding:2px 6px;">
-        <option value="es">Español</option>
-        <option value="en">English</option>
+        <option value="es">${t('spanish')}</option>
+        <option value="en">${t('english')}</option>
       </select>
     </label>`;
     langRow.querySelector('select').value = data.templateKey.endsWith('-en') ? 'en' : 'es';
@@ -1274,7 +1581,7 @@ function buildKycSection(deal, party, isStaffView){
 
   const fillBtn = document.createElement('button');
   fillBtn.className = 'btn';
-  fillBtn.textContent = data.status === 'draft' ? 'Llenar formulario' : 'Ver / editar formulario';
+  fillBtn.textContent = data.status === 'draft' ? t('fillForm') : t('viewEditForm');
   fillBtn.onclick = () => { kycFormOpenFor = key; render(); };
   actions.appendChild(fillBtn);
 
@@ -1283,14 +1590,14 @@ function buildKycSection(deal, party, isStaffView){
     viewLink.href = `/api/deals/${deal.id}/kyc/${role}/file`;
     viewLink.target = '_blank';
     viewLink.className = 'btn';
-    viewLink.textContent = 'Ver documento';
+    viewLink.textContent = t('viewDocument');
     actions.appendChild(viewLink);
   }
 
   if(isStaffView && data.status === 'generated'){
     const sendBtn = document.createElement('button');
     sendBtn.className = 'btn gold';
-    sendBtn.textContent = 'Enviar a firma';
+    sendBtn.textContent = t('sendForSignature');
     sendBtn.onclick = async () => {
       try{
         await apiFetch(`/api/deals/${deal.id}/kyc/${role}/send-for-signature`, { method:'POST' });
@@ -1303,10 +1610,10 @@ function buildKycSection(deal, party, isStaffView){
   if(isStaffView && ['draft','generated'].includes(data.status)){
     const resetBtn = document.createElement('button');
     resetBtn.className = 'btn'; resetBtn.style.fontSize = '11px';
-    resetBtn.textContent = 'Reiniciar expediente';
-    resetBtn.title = 'Empieza de cero — útil si se llenó con la plantilla o idioma equivocado (ej. cambiaste la escrow company).';
+    resetBtn.textContent = t('resetFile');
+    resetBtn.title = t('resetFileTitle');
     resetBtn.onclick = async () => {
-      if(!confirm('¿Reiniciar este expediente? Se pierden las respuestas guardadas y el documento generado (si hay uno).')) return;
+      if(!confirm(t('confirmResetFile'))) return;
       try{
         await apiFetch(`/api/deals/${deal.id}/kyc/${role}`, { method:'DELETE' });
         await loadKyc(deal.id, role);
@@ -1318,7 +1625,7 @@ function buildKycSection(deal, party, isStaffView){
   if(!isStaffView && data.status === 'sent'){
     const signBtn = document.createElement('button');
     signBtn.className = 'btn gold';
-    signBtn.textContent = 'Firmar ahora';
+    signBtn.textContent = t('signNow');
     signBtn.onclick = async () => {
       try{
         const { url } = await apiFetch(`/api/deals/${deal.id}/kyc/${role}/signing-url`, { method:'POST' });
@@ -1343,8 +1650,8 @@ function buildKycSection(deal, party, isStaffView){
 // igual de "obligatorios" que el resto para un extranjero llenando el form.
 function fieldLabelHtml(f){
   if(f.required) return `${escapeHtml(f.label)} <span style="color:var(--oxblood);">*</span>`;
-  if(/opcional/i.test(f.label)) return escapeHtml(f.label);
-  return `${escapeHtml(f.label)} <span class="field-hint" style="margin:0; display:inline;">(opcional)</span>`;
+  if(/opcional|optional/i.test(f.label)) return escapeHtml(f.label);
+  return `${escapeHtml(f.label)} <span class="field-hint" style="margin:0; display:inline;">${t('optional')}</span>`;
 }
 
 function buildKycForm(deal, role, data, isStaffView){
@@ -1400,7 +1707,7 @@ function buildKycForm(deal, role, data, isStaffView){
   actions.style.cssText = 'display:flex; gap:8px; margin-top:12px;';
   const lang = (data.templateKey || '').endsWith('-en') ? 'en' : 'es';
   const saveBtn = document.createElement('button');
-  saveBtn.className = 'btn'; saveBtn.textContent = 'Guardar borrador';
+  saveBtn.className = 'btn'; saveBtn.textContent = t('saveDraft');
   saveBtn.onclick = async () => {
     try{
       await apiFetch(`/api/deals/${deal.id}/kyc/${role}`, { method:'POST', body: JSON.stringify({ answers: collectAnswers(), lang }) });
@@ -1408,7 +1715,7 @@ function buildKycForm(deal, role, data, isStaffView){
     }catch(e){ alert(e.message); }
   };
   const generateBtn = document.createElement('button');
-  generateBtn.className = 'btn primary'; generateBtn.textContent = 'Guardar, generar y enviar a firma';
+  generateBtn.className = 'btn primary'; generateBtn.textContent = t('saveGenerateSend');
   generateBtn.onclick = async () => {
     try{
       await apiFetch(`/api/deals/${deal.id}/kyc/${role}`, { method:'POST', body: JSON.stringify({ answers: collectAnswers(), lang }) });
@@ -1423,14 +1730,14 @@ function buildKycForm(deal, role, data, isStaffView){
           openKycSigningModal(url, deal.id, role);
         }catch(e){ /* si falla, se queda en la sección con el botón "Firmar ahora" como respaldo */ }
       } else if(result.sentForSignature){
-        alert('Documento generado y enviado a firma automáticamente.');
+        alert(t('alertGeneratedSent'));
       } else if(result.autoSendError){
-        alert('El documento se generó, pero no se pudo enviar a firma automáticamente: ' + result.autoSendError + '\nPuedes reintentar con el botón "Enviar a firma".');
+        alert(t('alertAutoSendFailed', { error: result.autoSendError }));
       }
     }catch(e){ alert(e.message); }
   };
   const closeBtn = document.createElement('button');
-  closeBtn.className = 'btn'; closeBtn.textContent = 'Cerrar';
+  closeBtn.className = 'btn'; closeBtn.textContent = t('close');
   closeBtn.onclick = () => { kycFormOpenFor = null; render(); };
   actions.appendChild(saveBtn); actions.appendChild(generateBtn); actions.appendChild(closeBtn);
   wrap.appendChild(actions);
@@ -1444,8 +1751,8 @@ function openKycSigningModal(url, dealId, role){
   overlay.innerHTML = `
     <div style="background:#fff; border-radius:14px; width:min(900px,92vw); height:min(720px,88vh); display:flex; flex-direction:column; overflow:hidden;">
       <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 16px; border-bottom:0.5px solid var(--line);">
-        <div class="section-title" style="margin:0;">Firma del expediente KYC</div>
-        <button class="btn" id="kyc-sign-modal-close">Cerrar</button>
+        <div class="section-title" style="margin:0;">${t('kycSignModalTitle')}</div>
+        <button class="btn" id="kyc-sign-modal-close">${t('close')}</button>
       </div>
       <iframe src="${url}" style="flex:1; border:0;"></iframe>
     </div>
@@ -1480,8 +1787,8 @@ function buildDocItemLi(deal, doc){
   li.innerHTML = `<span class="doc-check ${doc.status==='done'?'done':''}">${doc.status==='done'?'<i class=\"ti ti-check\" aria-hidden=\"true\"></i>':''}</span><span>${label}</span>
     <span style="margin-left:auto; display:flex; align-items:center; gap:8px;">
       ${subChecksHtml}
-      ${doc.fileUrl ? `<a href="/api/deals/${deal.id}/documents/${doc.id}/file" target="_blank" style="font-size:11px;">Ver archivo</a>` : ''}
-      <input type="file" style="font-size:11px; max-width:130px;" accept=".pdf,.jpg,.jpeg,.png,.heic" title="Adjuntar documento">
+      ${doc.fileUrl ? `<a href="/api/deals/${deal.id}/documents/${doc.id}/file" target="_blank" style="font-size:11px;">${t('viewFile')}</a>` : ''}
+      <input type="file" style="font-size:11px; max-width:130px;" accept=".pdf,.jpg,.jpeg,.png,.heic" title="${t('attachDocument')}">
     </span>`;
   li.querySelector('.doc-check').onclick = async () => {
     const next = doc.status==='done' ? 'pending' : 'done';
@@ -1519,7 +1826,7 @@ function buildDocItemLi(deal, doc){
 // no tienen un checklist de documentos propio en la plataforma.
 function buildDocsBySideGrouping(deal){
   const wrap = document.createElement('div');
-  [['seller', 'Vendedores'], ['buyer', 'Compradores']].forEach(([side, label]) => {
+  [['seller', t('sellers')], ['buyer', t('buyers')]].forEach(([side, label]) => {
     const parties = deal.parties.filter(p => p.side === side);
     if (!parties.length) return;
     const sub = document.createElement('div');
@@ -1534,7 +1841,7 @@ function buildDocsBySideGrouping(deal){
 function buildDocListForParty(deal, party){
   const box = document.createElement('div');
   box.style.marginBottom = '14px';
-  const sideLabel = party.side === 'seller' ? 'Vendedor' : 'Comprador';
+  const sideLabel = party.side === 'seller' ? t('sellerLabel2') : t('buyerLabel2');
   const h = document.createElement('div');
   h.style.cssText = 'font-weight:500; font-size:13px; color:var(--ink-soft); margin-bottom:6px; display:flex; align-items:center; gap:8px;';
   const hLabel = document.createElement('span');
@@ -1543,12 +1850,12 @@ function buildDocListForParty(deal, party){
   if(['admin','agent','lawyer'].includes(currentUser.role) && party.linkedUser){
     const remindBtn = document.createElement('button');
     remindBtn.className = 'btn'; remindBtn.style.cssText = 'font-size:11px; padding:3px 10px;';
-    remindBtn.textContent = 'Recordar documentos';
+    remindBtn.textContent = t('remindDocuments');
     remindBtn.onclick = async () => {
       remindBtn.disabled = true;
       try{
         const r = await apiFetch(`/api/deals/${deal.id}/parties/${party.id}/remind`, { method:'POST' });
-        remindBtn.textContent = `Enviado (${r.count})`;
+        remindBtn.textContent = t('sentCount', { count: r.count });
       }catch(e){ alert(e.message); remindBtn.disabled = false; }
     };
     h.appendChild(remindBtn);
@@ -1558,7 +1865,7 @@ function buildDocListForParty(deal, party){
   if(party.partyType !== 'individual' && !party.ownershipMode){
     const warn = document.createElement('div');
     warn.className = 'field-hint'; warn.style.cssText = 'margin:0 0 8px; color:var(--oxblood);';
-    warn.textContent = 'Falta completar la estructura de propiedad de esta entidad — hazlo en "Vendedores y compradores" arriba para que el checklist incluya los documentos de sus dueños.';
+    warn.textContent = t('incompleteEntityWarning');
     box.appendChild(warn);
   }
 
@@ -1609,7 +1916,7 @@ function buildTaskList(deal){
   const pctRow = document.createElement('div');
   pctRow.innerHTML = `
     <div style="display:flex; justify-content:space-between; align-items:baseline; font-size:12px; color:var(--ink-soft);">
-      <span>Avance del cierre</span><span style="font-weight:600; color:var(--oxblood-deep);">${pct}%</span>
+      <span>${t('closingProgress')}</span><span style="font-weight:600; color:var(--oxblood-deep);">${pct}%</span>
     </div>
     <div class="progress-track"><div class="progress-fill" style="width:${pct}%;"></div></div>
   `;
@@ -1621,27 +1928,27 @@ function buildTaskList(deal){
     ddBanner.className = 'field-hint';
     ddBanner.style.cssText = `margin:8px 0 0; padding:6px 10px; border-radius:8px; background:${ddOver?'var(--jade-soft)':'var(--stone)'}; color:${ddOver?'var(--jade)':'var(--ink-soft)'};`;
     ddBanner.textContent = ddOver
-      ? `Due diligence terminó el ${deal.dueDiligenceEndDate} — ya se puede avanzar con el resto del tracker.`
-      : `Due diligence termina el ${deal.dueDiligenceEndDate}.`;
+      ? t('ddEndedBanner', { date: deal.dueDiligenceEndDate })
+      : t('ddPendingBanner', { date: deal.dueDiligenceEndDate });
     ul.appendChild(ddBanner);
   }
-  deal.tasks.forEach((t, idx) => {
+  deal.tasks.forEach((task, idx) => {
     const row = document.createElement('div');
     row.className = 'task-row';
-    const cls = t.status==='done'?'done':(t.status==='progress'?'progress':'');
+    const cls = task.status==='done'?'done':(task.status==='progress'?'progress':'');
     row.innerHTML = `
-      <div class="task-stamp ${cls}">${t.status==='done'?'<i class=\"ti ti-check\" aria-hidden=\"true\"></i>':(idx+1)}</div>
+      <div class="task-stamp ${cls}">${task.status==='done'?'<i class=\"ti ti-check\" aria-hidden=\"true\"></i>':(idx+1)}</div>
       <div style="flex:1;">
-        <div class="task-en">${escapeHtml(t.en)}${t.sign?'<span class="sign-tag">Requiere firma</span>':''}</div>
-        <div class="task-es">${escapeHtml(t.es)}</div>
+        <div class="task-en">${escapeHtml(task.en)}${task.sign?`<span class="sign-tag">${t('requiresSignature')}</span>`:''}</div>
+        <div class="task-es">${escapeHtml(task.es)}</div>
       </div>
     `;
     row.querySelector('.task-stamp').onclick = async () => {
       const order=['pending','progress','done'];
-      const next = order[(order.indexOf(t.status)+1)%order.length];
+      const next = order[(order.indexOf(task.status)+1)%order.length];
       try{
-        await apiFetch(`/api/deals/${deal.id}/tasks/${t.id}`, { method:'PATCH', body: JSON.stringify({status: next}) });
-        t.status = next; render();
+        await apiFetch(`/api/deals/${deal.id}/tasks/${task.id}`, { method:'PATCH', body: JSON.stringify({status: next}) });
+        task.status = next; render();
       }catch(e){ alert(e.message); }
     };
     ul.appendChild(row);
@@ -1649,41 +1956,48 @@ function buildTaskList(deal){
   return ul;
 }
 
-const DEVELOPMENT_LABEL = {punta_mita: 'Punta Mita (machote Palmas)', mandarina: 'Mandarina (machote Mandarina)', general: 'Bahía de Banderas / otro (sin machote específico aún)'};
+const DEVELOPMENT_LABEL_I18N = {
+  punta_mita: { es: 'Punta Mita (machote Palmas)', en: 'Punta Mita (Palmas template)' },
+  mandarina: { es: 'Mandarina (machote Mandarina)', en: 'Mandarina (Mandarina template)' },
+  general: { es: 'Bahía de Banderas / otro (sin machote específico aún)', en: 'Bahía de Banderas / other (no specific template yet)' }
+};
+const DEVELOPMENT_LABEL = new Proxy(DEVELOPMENT_LABEL_I18N, {
+  get(target, key){ const e = target[key]; return e ? (e[lang] || e.es) : undefined; }
+});
 
 function buildInviteForm(deal){
   const card = document.createElement('div');
   card.className = 'card';
   const unlinked = deal.parties.filter(p => !p.linkedUser);
   const partyOptions = unlinked.map(p =>
-    `<option value="party:${p.id}">${escapeHtml(p.name)} (${p.side==='seller'?'Vendedor':'Comprador'} · ${TYPE_LABEL[p.partyType]})</option>`
+    `<option value="party:${p.id}">${escapeHtml(p.name)} (${p.side==='seller'?t('sellerLabel2'):t('buyerLabel2')} · ${TYPE_LABEL[p.partyType]})</option>`
   ).join('');
   card.innerHTML = `
-    <div class="field-hint" style="margin-top:0;">Genera un link para que una persona específica de esta operación (o un agente) cree su propia cuenta.</div>
+    <div class="field-hint" style="margin-top:0;">${t('inviteHint')}</div>
     <div class="form-row">
-      <label>Persona a invitar <select id="inv-target">
+      <label>${t('personToInvite')} <select id="inv-target">
         ${partyOptions}
-        <option value="agent">Agente (esta operación)</option>
+        <option value="agent">${t('agentThisDeal')}</option>
       </select></label>
-      <label>Nombre <input type="text" id="inv-name" placeholder="Nombre completo"></label>
-      <label>Correo <input type="email" id="inv-email" placeholder="correo@ejemplo.com"></label>
+      <label>${t('name')} <input type="text" id="inv-name" placeholder="${t('namePh')}"></label>
+      <label>${t('email')} <input type="email" id="inv-email" placeholder="${t('emailPh')}"></label>
     </div>
     <div class="form-row" style="align-items:flex-end;">
-      <button class="btn primary" id="inv-generate">Generar invitación</button>
+      <button class="btn primary" id="inv-generate">${t('generateInvite')}</button>
     </div>
     <div id="inv-result" style="display:none;">
       <div class="field-hint" id="inv-email-status" style="margin:0 0 6px;"></div>
       <div class="form-row">
-        <label style="flex:1;">Link de invitación (cópialo y compártelo)
+        <label style="flex:1;">${t('inviteLinkCopyShare')}
           <input type="text" id="inv-link" readonly>
         </label>
-        <button class="btn" id="inv-copy" style="align-self:flex-end;">Copiar</button>
+        <button class="btn" id="inv-copy" style="align-self:flex-end;">${t('copy')}</button>
       </div>
     </div>
     <div class="gate-error" id="inv-error"></div>
   `;
   if(!unlinked.length){
-    card.querySelector('#inv-target').innerHTML = `<option value="agent">Agente (esta operación)</option>`;
+    card.querySelector('#inv-target').innerHTML = `<option value="agent">${t('agentThisDeal')}</option>`;
   }
   const targetSel = card.querySelector('#inv-target');
   const nameInput = card.querySelector('#inv-name');
@@ -1702,7 +2016,7 @@ function buildInviteForm(deal){
     const email = card.querySelector('#inv-email').value.trim();
     const errEl = card.querySelector('#inv-error');
     errEl.textContent = '';
-    if (!name || !email) { errEl.textContent = 'Falta nombre o correo.'; return; }
+    if (!name || !email) { errEl.textContent = t('errNameOrEmail'); return; }
     const body = target === 'agent'
       ? { dealId: deal.id, roleInDeal: 'agent', name, email }
       : (() => {
@@ -1715,8 +2029,8 @@ function buildInviteForm(deal){
       linkInput.value = window.location.origin + url;
       const statusEl = card.querySelector('#inv-email-status');
       statusEl.textContent = emailSent
-        ? `Correo de invitación enviado a ${email}.`
-        : `No se pudo mandar el correo automático (${emailError || 'Resend no configurado'}) — comparte el link manualmente.`;
+        ? t('inviteEmailSent', { email })
+        : t('inviteEmailFailed', { error: emailError || t('resendNotConfigured') });
       statusEl.style.color = emailSent ? 'var(--jade)' : 'var(--oxblood)';
       card.querySelector('#inv-result').style.display = 'block';
     } catch(e) {
@@ -1731,7 +2045,7 @@ function buildInviteForm(deal){
   return card;
 }
 
-const CONTRACT_STATUS_LABEL = { draft:'Sin generar', generated:'Generado, sin enviar', sent:'Enviado a firma', signed:'Firmado' };
+const CONTRACT_STATUS_LABEL = KYC_STATUS_LABEL;
 
 // Reemplaza la vieja exportación de JSON por un sistema real de machotes:
 // el admin/abogado sube el .docx de la operación (con placeholders
@@ -1742,7 +2056,7 @@ function buildContractSection(deal, isStaffView){
   const box = document.createElement('div');
   const data = contractCache[deal.id];
   if(data === undefined){
-    box.innerHTML = `<div class="field-hint" style="margin:0;">Cargando...</div>`;
+    box.innerHTML = `<div class="field-hint" style="margin:0;">${t('loading')}</div>`;
     loadContract(deal.id);
     return box;
   }
@@ -1752,7 +2066,7 @@ function buildContractSection(deal, isStaffView){
   }
 
   const statusLabel = CONTRACT_STATUS_LABEL[data.status] || data.status;
-  box.innerHTML = `<div style="font-weight:500; font-size:13px;">Contrato de promesa <span class="badge" style="margin-left:6px; background:var(--stone); border:0.5px solid var(--line); color:var(--ink-soft);">${escapeHtml(statusLabel)}</span></div>`;
+  box.innerHTML = `<div style="font-weight:500; font-size:13px;">${t('contractPromiseShort')} <span class="badge" style="margin-left:6px; background:var(--stone); border:0.5px solid var(--line); color:var(--ink-soft);">${escapeHtml(statusLabel)}</span></div>`;
 
   if(!isStaffView){
     // Comprador/vendedor: solo ver el contrato ya preparado + firmar cuando
@@ -1764,18 +2078,18 @@ function buildContractSection(deal, isStaffView){
       viewLink.href = `/api/deals/${deal.id}/contract/file?format=pdf`;
       viewLink.target = '_blank';
       viewLink.className = 'btn';
-      viewLink.textContent = 'Ver contrato';
+      viewLink.textContent = t('viewContract');
       actions.appendChild(viewLink);
     } else {
       const hint = document.createElement('div');
       hint.className = 'field-hint'; hint.style.margin = '0';
-      hint.textContent = 'Tu coordinador todavía está preparando el contrato.';
+      hint.textContent = t('coordinatorPreparing');
       actions.appendChild(hint);
     }
     if(data.status === 'sent'){
       const signBtn = document.createElement('button');
       signBtn.className = 'btn gold';
-      signBtn.textContent = 'Firmar ahora';
+      signBtn.textContent = t('signNow');
       signBtn.onclick = async () => {
         try{
           const { url } = await apiFetch(`/api/deals/${deal.id}/contract/signing-url`, { method:'POST' });
@@ -1793,14 +2107,14 @@ function buildContractSection(deal, isStaffView){
   tplRow.style.cssText = 'margin-top:8px; display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;';
   const templates = data.templates || [];
   tplRow.innerHTML = `
-    <label style="display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--ink-soft); min-width:220px;">Machote
+    <label style="display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--ink-soft); min-width:220px;">${t('template')}
       <select id="ct-template">
-        <option value="">Selecciona un machote...</option>
-        ${templates.map(t => `<option value="${t.id}" ${data.selectedTemplateId===t.id?'selected':''}>${escapeHtml(t.label)}</option>`).join('')}
+        <option value="">${t('selectTemplate')}</option>
+        ${templates.map(tpl => `<option value="${tpl.id}" ${data.selectedTemplateId===tpl.id?'selected':''}>${escapeHtml(tpl.label)}</option>`).join('')}
       </select>
     </label>
-    <button class="btn" id="ct-upload-toggle" style="font-size:12px;">Subir machote nuevo</button>
-    ${data.selectedTemplateId ? `<button class="btn" id="ct-delete" style="font-size:12px;" title="Borra este machote de la lista (no afecta contratos ya generados con él)"><i class="ti ti-trash" aria-hidden="true"></i> Borrar machote actual</button>` : ''}
+    <button class="btn" id="ct-upload-toggle" style="font-size:12px;">${t('uploadNewTemplate')}</button>
+    ${data.selectedTemplateId ? `<button class="btn" id="ct-delete" style="font-size:12px;" title="${t('deleteTemplateTitle')}"><i class="ti ti-trash" aria-hidden="true"></i> ${t('deleteCurrentTemplate')}</button>` : ''}
   `;
   box.appendChild(tplRow);
   tplRow.querySelector('#ct-template').onchange = async (e) => {
@@ -1814,7 +2128,7 @@ function buildContractSection(deal, isStaffView){
   const deleteBtn = tplRow.querySelector('#ct-delete');
   if(deleteBtn){
     deleteBtn.onclick = async () => {
-      if(!confirm('¿Borrar este machote de la lista? No afecta contratos que ya se hayan generado con él.')) return;
+      if(!confirm(t('confirmDeleteTemplate'))) return;
       try{
         await apiFetch(`/api/contract-templates/${data.selectedTemplateId}`, { method:'DELETE' });
         await loadContract(deal.id);
@@ -1825,12 +2139,12 @@ function buildContractSection(deal, isStaffView){
   const uploadBox = document.createElement('div');
   uploadBox.style.cssText = 'display:none; margin-top:8px; padding:10px; background:var(--stone); border-radius:8px;';
   uploadBox.innerHTML = `
-    <div class="field-hint" style="margin-top:0;">Sube el machote en .docx para el tipo de operación <b>${SCENARIOS[deal.scenario].labelShort}</b>, con los campos escritos como <code>{{CLAVE}}</code> — la plataforma los detecta solos, no hace falta definir nada más.</div>
+    <div class="field-hint" style="margin-top:0;">${t('uploadTemplateHint', { scenario: SCENARIOS[deal.scenario].labelShort })}</div>
     <div class="form-row">
-      <label style="flex:1;">Nombre del machote <input type="text" id="ct-new-label" placeholder="Ej. Compraventa individual — Punta Mita"></label>
-      <label>Archivo .docx <input type="file" id="ct-new-file" accept=".docx"></label>
+      <label style="flex:1;">${t('templateName')} <input type="text" id="ct-new-label" placeholder="${t('templateNamePh')}"></label>
+      <label>${t('docxFile')} <input type="file" id="ct-new-file" accept=".docx"></label>
     </div>
-    <button class="btn primary" id="ct-new-save">Subir</button>
+    <button class="btn primary" id="ct-new-save">${t('upload')}</button>
     <div class="gate-error" id="ct-upload-error"></div>
   `;
   box.appendChild(uploadBox);
@@ -1842,7 +2156,7 @@ function buildContractSection(deal, isStaffView){
     const file = uploadBox.querySelector('#ct-new-file').files[0];
     const errEl = uploadBox.querySelector('#ct-upload-error');
     errEl.textContent = '';
-    if(!label || !file){ errEl.textContent = 'Falta el nombre o el archivo.'; return; }
+    if(!label || !file){ errEl.textContent = t('errNameOrFile'); return; }
     const fd = new FormData();
     fd.append('scenario', deal.scenario);
     fd.append('label', label);
@@ -1863,7 +2177,7 @@ function buildContractSection(deal, isStaffView){
   fieldsWrap.style.cssText = 'margin-top:12px; padding:14px; background:var(--stone); border-radius:10px;';
 
   if(fields.length){
-    fieldsWrap.innerHTML = `<div class="field-hint" style="margin-top:0;">Campos detectados en el machote — se llenan aquí y se insertan donde esté cada <code>{{CLAVE}}</code> en el documento final.</div>`;
+    fieldsWrap.innerHTML = `<div class="field-hint" style="margin-top:0;">${t('detectedFields')}</div>`;
     fields.forEach(key => {
       const row = document.createElement('div');
       row.style.marginBottom = '8px';
@@ -1874,10 +2188,10 @@ function buildContractSection(deal, isStaffView){
     });
   } else {
     fieldsWrap.innerHTML = `
-      <div class="field-hint" style="margin-top:0; color:var(--ink);">Este machote no tiene ningún campo <code>{{CLAVE}}</code> — la plataforma no encontró nada que llenar.</div>
-      <div class="field-hint" style="margin:6px 0 0;">Para que se detecten campos, abre el .docx y escribe el marcador directamente en el texto donde va cada dato, por ejemplo:</div>
-      <div style="font-size:12px; font-family:monospace; background:var(--stone-card); border:0.5px solid var(--line); border-radius:6px; padding:8px 10px; margin-top:6px;">Entre <b>{{VENDEDOR_NOMBRE}}</b> y <b>{{COMPRADOR_NOMBRE}}</b>, por un precio de <b>{{PRECIO_LETRA}}</b>...</div>
-      <div class="field-hint" style="margin:6px 0 0;">Guarda el Word y súbelo de nuevo como machote (puedes borrar este con el botón ⋯ de la lista si ya no lo necesitas). Mientras tanto, igual puedes generar el documento tal cual está, sin campos dinámicos.</div>
+      <div class="field-hint" style="margin-top:0; color:var(--ink);">${t('noFieldsTitle')}</div>
+      <div class="field-hint" style="margin:6px 0 0;">${t('noFieldsHint1')}</div>
+      <div style="font-size:12px; font-family:monospace; background:var(--stone-card); border:0.5px solid var(--line); border-radius:6px; padding:8px 10px; margin-top:6px;">${t('noFieldsExample')}</div>
+      <div class="field-hint" style="margin:6px 0 0;">${t('noFieldsHint2')}</div>
     `;
   }
   box.appendChild(fieldsWrap);
@@ -1896,7 +2210,7 @@ function buildContractSection(deal, isStaffView){
 
   if(fields.length){
     const saveBtn = document.createElement('button');
-    saveBtn.className = 'btn'; saveBtn.textContent = 'Guardar borrador';
+    saveBtn.className = 'btn'; saveBtn.textContent = t('saveDraft');
     saveBtn.onclick = async () => {
       try{
         await apiFetch(`/api/deals/${deal.id}/contract`, { method:'POST', body: JSON.stringify({ values: collectValues() }) });
@@ -1907,7 +2221,7 @@ function buildContractSection(deal, isStaffView){
   }
 
   const genDownloadBtn = document.createElement('button');
-  genDownloadBtn.className = 'btn primary'; genDownloadBtn.textContent = 'Generar y descargar .docx';
+  genDownloadBtn.className = 'btn primary'; genDownloadBtn.textContent = t('generateDownloadDocx');
   genDownloadBtn.onclick = async () => {
     try{
       await apiFetch(`/api/deals/${deal.id}/contract`, { method:'POST', body: JSON.stringify({ values: collectValues() }) });
@@ -1923,13 +2237,13 @@ function buildContractSection(deal, isStaffView){
     viewLink.href = `/api/deals/${deal.id}/contract/file?format=pdf`;
     viewLink.target = '_blank';
     viewLink.className = 'btn';
-    viewLink.textContent = 'Ver PDF';
+    viewLink.textContent = t('viewPdf');
     actions.appendChild(viewLink);
   }
 
   if(data.status === 'generated'){
     const sendBtn = document.createElement('button');
-    sendBtn.className = 'btn gold'; sendBtn.textContent = 'Enviar a firma';
+    sendBtn.className = 'btn gold'; sendBtn.textContent = t('sendForSignature');
     sendBtn.onclick = async () => {
       try{
         await apiFetch(`/api/deals/${deal.id}/contract/send-for-signature`, { method:'POST' });
@@ -1950,8 +2264,8 @@ function openContractSigningModal(url, dealId){
   overlay.innerHTML = `
     <div style="background:#fff; border-radius:14px; width:min(900px,92vw); height:min(720px,88vh); display:flex; flex-direction:column; overflow:hidden;">
       <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 16px; border-bottom:0.5px solid var(--line);">
-        <div class="section-title" style="margin:0;">Firma del contrato de promesa</div>
-        <button class="btn" id="contract-sign-modal-close">Cerrar</button>
+        <div class="section-title" style="margin:0;">${t('contractSignModalTitle')}</div>
+        <button class="btn" id="contract-sign-modal-close">${t('close')}</button>
       </div>
       <iframe src="${url}" style="flex:1; border:0;"></iframe>
     </div>
@@ -1983,7 +2297,7 @@ function renderPortal(body){
   if(isPreview){
     const banner = document.createElement('div');
     banner.className = 'banner';
-    banner.innerHTML = `<i class="ti ti-eye" aria-hidden="true"></i> Vista previa del portal de cliente — así lo ve un comprador o vendedor real.`;
+    banner.innerHTML = `<i class="ti ti-eye" aria-hidden="true"></i> ${t('portalPreviewBanner')}`;
     body.appendChild(banner);
   }
 
@@ -1991,7 +2305,7 @@ function renderPortal(body){
   controls.className = 'card';
   controls.innerHTML = `
     <div class="form-row" style="margin-bottom:0;">
-      <label>Operación <select id="p-deal"><option value="">Selecciona...</option>${deals.map(d=>`<option value="${d.id}">${escapeHtml(d.property)}</option>`).join('')}</select></label>
+      <label>${t('dealSingular')} <select id="p-deal"><option value="">${t('selectEllipsis')}</option>${deals.map(d=>`<option value="${d.id}">${escapeHtml(d.property)}</option>`).join('')}</select></label>
     </div>
   `;
   body.appendChild(controls);
@@ -2006,7 +2320,7 @@ function renderPortal(body){
   if(!deal){
     const empty = document.createElement('div');
     empty.className = 'empty';
-    empty.innerHTML = `<i class="ti ti-folder-search" aria-hidden="true"></i><div>Selecciona una operación para ver tu expediente.</div>`;
+    empty.innerHTML = `<i class="ti ti-folder-search" aria-hidden="true"></i><div>${t('selectDealToView')}</div>`;
     body.appendChild(empty);
     return;
   }
@@ -2015,7 +2329,7 @@ function renderPortal(body){
   if(!deal._loaded){
     const loading = document.createElement('div');
     loading.className = 'empty';
-    loading.innerHTML = `<i class="ti ti-loader-2" aria-hidden="true"></i><div>Cargando expediente...</div>`;
+    loading.innerHTML = `<i class="ti ti-loader-2" aria-hidden="true"></i><div>${t('loadingFile')}</div>`;
     body.appendChild(loading);
     return;
   }
@@ -2028,9 +2342,9 @@ function renderPortal(body){
   if(isPreview){
     const roleRow = document.createElement('div');
     roleRow.className = 'card';
-    roleRow.innerHTML = `<label>Ver como <select id="p-party">
-      <option value="agent">Agente (ve todo)</option>
-      ${deal.parties.map(p=>`<option value="${p.id}">${escapeHtml(p.name)} (${p.side==='seller'?'Vendedor':'Comprador'})</option>`).join('')}
+    roleRow.innerHTML = `<label>${t('viewAs')} <select id="p-party">
+      <option value="agent">${t('agentSeesAll')}</option>
+      ${deal.parties.map(p=>`<option value="${p.id}">${escapeHtml(p.name)} (${p.side==='seller'?t('sellerLabel2'):t('buyerLabel2')})</option>`).join('')}
     </select></label>`;
     body.appendChild(roleRow);
     roleRow.querySelector('#p-party').value = portalRole==='agent' ? 'agent' : String(portalPartyId||'');
@@ -2053,55 +2367,55 @@ function renderPortal(body){
   `;
   body.appendChild(header);
 
-  const pt = document.createElement('div'); pt.className='section-title'; pt.textContent='Propiedad';
+  const pt = document.createElement('div'); pt.className='section-title'; pt.textContent=t('propertySection');
   body.appendChild(pt);
   const pcard = document.createElement('div'); pcard.className='card';
   pcard.appendChild(buildPropertyDocsSection(deal));
   body.appendChild(pcard);
 
   if(myParty){
-    const t = document.createElement('div'); t.className='section-title'; t.textContent='Tu checklist de documentos (KYC)';
-    body.appendChild(t);
+    const secTitle = document.createElement('div'); secTitle.className='section-title'; secTitle.textContent=t('yourDocsChecklist');
+    body.appendChild(secTitle);
     const card = document.createElement('div'); card.className='card';
     card.appendChild(buildDocListForParty(deal, myParty));
     body.appendChild(card);
 
-    const kt = document.createElement('div'); kt.className='section-title'; kt.textContent='Tu expediente KYC';
+    const kt = document.createElement('div'); kt.className='section-title'; kt.textContent=t('yourKycFile');
     body.appendChild(kt);
     const kcard = document.createElement('div'); kcard.className='card';
     kcard.appendChild(buildKycSection(deal, myParty, false));
     body.appendChild(kcard);
   } else {
-    const t = document.createElement('div'); t.className='section-title'; t.textContent='Checklist de todas las partes';
-    body.appendChild(t);
+    const secTitle = document.createElement('div'); secTitle.className='section-title'; secTitle.textContent=t('allPartiesChecklist');
+    body.appendChild(secTitle);
     const card = document.createElement('div'); card.className='card';
     card.appendChild(buildDocsBySideGrouping(deal));
     body.appendChild(card);
   }
 
-  const ct = document.createElement('div'); ct.className='section-title'; ct.textContent='Contrato de promesa';
+  const ct = document.createElement('div'); ct.className='section-title'; ct.textContent=t('contractPromiseShort');
   body.appendChild(ct);
   const ccard = document.createElement('div'); ccard.className='card';
   ccard.appendChild(buildContractSection(deal, false));
   body.appendChild(ccard);
 
-  const tt = document.createElement('div'); tt.className='section-title'; tt.textContent='Seguimiento del cierre';
+  const tt = document.createElement('div'); tt.className='section-title'; tt.textContent=t('closingFollowup');
   body.appendChild(tt);
   const tcard = document.createElement('div'); tcard.className='card';
   tcard.appendChild(buildTaskList(deal));
   body.appendChild(tcard);
 
-  const signTasks = deal.tasks.filter(t=>t.sign);
+  const signTasks = deal.tasks.filter(task=>task.sign);
   if(signTasks.length){
-    const st = document.createElement('div'); st.className='section-title'; st.textContent='Firma electrónica';
+    const st = document.createElement('div'); st.className='section-title'; st.textContent=t('eSignature');
     body.appendChild(st);
     const scard = document.createElement('div'); scard.className='card';
-    scard.innerHTML = `<div class="field-hint" style="margin-top:0;">${isPreview ? 'Sube el documento y envíalo a firma — comprador y vendedor firman de forma embebida, sin salir de la plataforma.' : 'Cuando tu coordinador envíe un documento a firma, aparecerá aquí para que lo firmes en línea.'}</div>`;
-    signTasks.forEach(t => {
+    scard.innerHTML = `<div class="field-hint" style="margin-top:0;">${isPreview ? t('eSignHintStaff') : t('eSignHintClient')}</div>`;
+    signTasks.forEach(task => {
       const row = document.createElement('div');
       row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:0.5px solid var(--line); flex-wrap:wrap; gap:8px;';
-      const statusLabel = {not_sent:'Sin enviar', sent:'Enviado', delivered:'Entregado', completed:'Firmado', declined:'Rechazado', voided:'Anulado'}[t.docusignStatus] || t.docusignStatus;
-      row.innerHTML = `<span style="font-size:13px;">${escapeHtml(t.en)} <span class="task-es">(${escapeHtml(t.es)})</span><br><span class="field-hint" style="margin:0;">Documento: ${t.documentOriginalName ? escapeHtml(t.documentOriginalName) : 'sin subir'} · Estado DocuSign: ${escapeHtml(statusLabel)}</span></span>`;
+      const statusLabel = {not_sent:t('docusignNotSent'), sent:t('docusignSent'), delivered:t('docusignDelivered'), completed:t('docusignCompleted'), declined:t('docusignDeclined'), voided:t('docusignVoided')}[task.docusignStatus] || task.docusignStatus;
+      row.innerHTML = `<span style="font-size:13px;">${escapeHtml(task.en)} <span class="task-es">(${escapeHtml(task.es)})</span><br><span class="field-hint" style="margin:0;">${t('documentColon')}: ${task.documentOriginalName ? escapeHtml(task.documentOriginalName) : t('notUploaded')} · ${t('docusignStatusColon')}: ${escapeHtml(statusLabel)}</span></span>`;
 
       const actions = document.createElement('div');
       actions.style.cssText = 'display:flex; gap:8px; align-items:center;';
@@ -2113,7 +2427,7 @@ function renderPortal(body){
           const file = e.target.files[0]; if(!file) return;
           const fd = new FormData(); fd.append('file', file);
           try{
-            await apiUpload(`/api/docusign/deals/${deal.id}/tasks/${t.id}/document`, fd);
+            await apiUpload(`/api/docusign/deals/${deal.id}/tasks/${task.id}/document`, fd);
             await openDeal(deal.id);
           }catch(err){ alert(err.message); }
         };
@@ -2121,17 +2435,17 @@ function renderPortal(body){
 
         const escrowBtn = document.createElement('button');
         escrowBtn.className = 'btn'; escrowBtn.style.fontSize = '11px';
-        escrowBtn.textContent = 'Generar escrow (Armour)';
-        escrowBtn.onclick = () => { escrowFormOpenFor = (escrowFormOpenFor === t.id ? null : t.id); render(); };
+        escrowBtn.textContent = t('generateEscrow');
+        escrowBtn.onclick = () => { escrowFormOpenFor = (escrowFormOpenFor === task.id ? null : task.id); render(); };
         actions.appendChild(escrowBtn);
 
         const sendBtn = document.createElement('button');
         sendBtn.className = 'btn gold';
-        sendBtn.textContent = 'Enviar a firma';
-        sendBtn.disabled = !t.documentOriginalName || t.docusignStatus !== 'not_sent';
+        sendBtn.textContent = t('sendForSignature');
+        sendBtn.disabled = !task.documentOriginalName || task.docusignStatus !== 'not_sent';
         sendBtn.onclick = async () => {
           try{
-            await apiFetch(`/api/docusign/deals/${deal.id}/tasks/${t.id}/send-for-signature`, { method:'POST' });
+            await apiFetch(`/api/docusign/deals/${deal.id}/tasks/${task.id}/send-for-signature`, { method:'POST' });
             await openDeal(deal.id);
           }catch(err){ alert(err.message); }
         };
@@ -2139,12 +2453,12 @@ function renderPortal(body){
       } else {
         const signBtn = document.createElement('button');
         signBtn.className = 'btn gold';
-        signBtn.textContent = t.status==='done' ? 'Firmado' : 'Firmar ahora';
-        signBtn.disabled = t.status==='done' || t.docusignStatus==='not_sent';
+        signBtn.textContent = task.status==='done' ? t('signed') : t('signNow');
+        signBtn.disabled = task.status==='done' || task.docusignStatus==='not_sent';
         signBtn.onclick = async () => {
           try{
-            const { url } = await apiFetch(`/api/docusign/deals/${deal.id}/tasks/${t.id}/signing-url`, { method:'POST' });
-            openSigningModal(url, deal.id, t.id);
+            const { url } = await apiFetch(`/api/docusign/deals/${deal.id}/tasks/${task.id}/signing-url`, { method:'POST' });
+            openSigningModal(url, deal.id, task.id);
           }catch(err){ alert(err.message); }
         };
         actions.appendChild(signBtn);
@@ -2152,11 +2466,11 @@ function renderPortal(body){
 
       const checkBtn = document.createElement('button');
       checkBtn.className = 'btn';
-      checkBtn.textContent = 'Verificar estado';
+      checkBtn.textContent = t('checkStatus');
       checkBtn.style.fontSize = '11px';
       checkBtn.onclick = async () => {
         try{
-          await apiFetch(`/api/docusign/deals/${deal.id}/tasks/${t.id}/status`);
+          await apiFetch(`/api/docusign/deals/${deal.id}/tasks/${task.id}/status`);
           await openDeal(deal.id);
         }catch(err){ alert(err.message); }
       };
@@ -2165,8 +2479,8 @@ function renderPortal(body){
       row.appendChild(actions);
       scard.appendChild(row);
 
-      if(isPreview && escrowFormOpenFor === t.id){
-        scard.appendChild(buildEscrowForm(deal, t));
+      if(isPreview && escrowFormOpenFor === task.id){
+        scard.appendChild(buildEscrowForm(deal, task));
       }
     });
     body.appendChild(scard);
@@ -2177,23 +2491,23 @@ function buildEscrowForm(deal, task){
   const wrap = document.createElement('div');
   wrap.style.cssText = 'padding:12px; margin-bottom:10px; background:var(--stone); border-radius:10px;';
   wrap.innerHTML = `
-    <div class="field-hint" style="margin-top:0;">Genera el escrow agreement de Armour Secure con vendedor/comprador ya llenados desde esta operación — el resto lo capturas aquí.</div>
+    <div class="field-hint" style="margin-top:0;">${t('escrowFormHint')}</div>
     <div class="form-row">
-      <label>Lugar y fecha <input type="text" data-escrow-field="placeDate" placeholder="Puerto Vallarta, Jalisco, 29 de julio de 2026"></label>
-      <label>Fecha de terminación <input type="text" data-escrow-field="expirationDate" placeholder="31 de diciembre de 2026"></label>
+      <label>${t('placeDate')} <input type="text" data-escrow-field="placeDate" placeholder="${t('placeDatePh')}"></label>
+      <label>${t('expirationDate')} <input type="text" data-escrow-field="expirationDate" placeholder="${t('expirationDatePh')}"></label>
     </div>
     <div class="form-row">
-      <label>Descripción del contrato de compraventa <input type="text" data-escrow-field="purchaseAgreementDescription"></label>
+      <label>${t('purchaseAgreementDesc')} <input type="text" data-escrow-field="purchaseAgreementDescription"></label>
     </div>
     <div class="form-row">
-      <label>Monto del depósito <input type="text" data-escrow-field="depositAmount" placeholder="USD $310,000.00"></label>
-      <label>Comisiones <input type="text" data-escrow-field="fees" placeholder="USD $1,500.00 a cargo del comprador"></label>
+      <label>${t('depositAmount')} <input type="text" data-escrow-field="depositAmount" placeholder="${t('depositAmountPh')}"></label>
+      <label>${t('fees')} <input type="text" data-escrow-field="fees" placeholder="${t('feesPh')}"></label>
     </div>
     <div class="form-row">
-      <label>Domicilio para notificaciones <input type="text" data-escrow-field="noticeAddress"></label>
+      <label>${t('noticeAddress')} <input type="text" data-escrow-field="noticeAddress"></label>
     </div>
     <div class="gate-error" id="escrow-error"></div>
-    <button class="btn primary" id="escrow-generate">Generar documento</button>
+    <button class="btn primary" id="escrow-generate">${t('generateDocument')}</button>
   `;
   wrap.querySelector('#escrow-generate').onclick = async () => {
     const body = {};
@@ -2214,8 +2528,8 @@ function openSigningModal(url, dealId, taskId){
   overlay.innerHTML = `
     <div style="background:#fff; border-radius:14px; width:min(900px,92vw); height:min(720px,88vh); display:flex; flex-direction:column; overflow:hidden;">
       <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 16px; border-bottom:0.5px solid var(--line);">
-        <div class="section-title" style="margin:0;">Firma electrónica</div>
-        <button class="btn" id="sign-modal-close">Cerrar</button>
+        <div class="section-title" style="margin:0;">${t('signatureModalTitle')}</div>
+        <button class="btn" id="sign-modal-close">${t('close')}</button>
       </div>
       <iframe src="${url}" style="flex:1; border:0;"></iframe>
     </div>
