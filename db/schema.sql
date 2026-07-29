@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE TABLE IF NOT EXISTS deals (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  scenario TEXT NOT NULL CHECK(scenario IN ('purchase','trust','transfer')),
+  scenario TEXT NOT NULL CHECK(scenario IN ('purchase','trust','transfer','trust_termination')),
   development TEXT NOT NULL DEFAULT 'punta_mita',
   property TEXT NOT NULL,
   price REAL NOT NULL DEFAULT 0,
@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS kyc_submissions (
 -- archivo (lib/contractFill/mergeEngine.js).
 CREATE TABLE IF NOT EXISTS contract_templates (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  scenario TEXT NOT NULL CHECK(scenario IN ('purchase','trust','transfer')),
+  scenario TEXT NOT NULL CHECK(scenario IN ('purchase','trust','transfer','trust_termination')),
   label TEXT NOT NULL,
   docx_file TEXT NOT NULL,
   created_by INTEGER REFERENCES users(id),

@@ -55,7 +55,7 @@ router.post('/contract-templates', requireRole('admin', 'agent', 'lawyer'), (req
     if (err) return res.status(400).json({ error: err.message || 'Archivo inválido.' });
     if (!req.file) return res.status(400).json({ error: 'Sube un archivo .docx.' });
     const { scenario, label } = req.body || {};
-    if (!scenario || !['purchase', 'trust', 'transfer'].includes(scenario) || !label) {
+    if (!scenario || !['purchase', 'trust', 'transfer', 'trust_termination'].includes(scenario) || !label) {
       fs.rmSync(req.file.path, { force: true });
       return res.status(400).json({ error: 'Faltan campos requeridos (scenario, label).' });
     }

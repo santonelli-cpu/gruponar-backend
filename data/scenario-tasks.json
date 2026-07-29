@@ -1,52 +1,253 @@
 {
   "purchase": [
-    {"en":"Purchase agreement signed","es":"Oferta firmada"},
-    {"en":"Escrow account opened (optional)","es":"Cuenta de escrow aperturada"},
-    {"en":"Documents received and KYC filled","es":"Documentos completados y KYC llenado"},
-    {"en":"Closing costs sent to buyer","es":"Presupuesto de cierre enviado al comprador"},
-    {"en":"Payment of closing costs by buyer","es":"Pago de presupuesto de cierre hecho por comprador"},
-    {"en":"No lien certificate","es":"Certificado de libertad de gravamen"},
-    {"en":"Appraisal","es":"Avalúo"},
-    {"en":"Certificate of no dues of property tax","es":"Certificado de no adeudo de predial"},
-    {"en":"Letter of no HOA dues","es":"Carta de no adeudo de mantenimiento"},
-    {"en":"Draft of deed sent / reviewed by parties","es":"Proyecto de escritura enviado / revisado"},
-    {"en":"Signed deed","es":"Firma de escritura"},
-    {"en":"Deed ready for pick up at notary","es":"Escritura lista para recoger en notaría"}
+    {
+      "en": "Purchase agreement signed",
+      "es": "Oferta firmada"
+    },
+    {
+      "en": "Escrow account opened (optional)",
+      "es": "Cuenta de escrow aperturada"
+    },
+    {
+      "en": "Documents received and KYC filled",
+      "es": "Documentos completados y KYC llenado"
+    },
+    {
+      "en": "Closing costs sent to buyer",
+      "es": "Presupuesto de cierre enviado al comprador"
+    },
+    {
+      "en": "Payment of closing costs by buyer",
+      "es": "Pago de presupuesto de cierre hecho por comprador"
+    },
+    {
+      "en": "No lien certificate",
+      "es": "Certificado de libertad de gravamen"
+    },
+    {
+      "en": "Appraisal",
+      "es": "Avalúo"
+    },
+    {
+      "en": "Certificate of no dues of property tax",
+      "es": "Certificado de no adeudo de predial"
+    },
+    {
+      "en": "Letter of no HOA dues",
+      "es": "Carta de no adeudo de mantenimiento"
+    },
+    {
+      "en": "Draft of deed sent / reviewed by parties",
+      "es": "Proyecto de escritura enviado / revisado"
+    },
+    {
+      "en": "Signed deed",
+      "es": "Firma de escritura"
+    },
+    {
+      "en": "Deed ready for pick up at notary",
+      "es": "Escritura lista para recoger en notaría"
+    }
   ],
   "trust": [
-    {"en":"Purchase agreement signed","es":"Oferta firmada"},
-    {"en":"Escrow account opened (optional)","es":"Cuenta de escrow aperturada"},
-    {"en":"Documents received and KYC filled","es":"Documentos completados y KYC llenado"},
-    {"en":"Closing costs sent to buyer","es":"Presupuesto de cierre enviado al comprador"},
-    {"en":"Payment of closing costs by buyer","es":"Pago de presupuesto de cierre hecho por comprador"},
-    {"en":"No lien certificate","es":"Certificado de libertad de gravamen"},
-    {"en":"Appraisal","es":"Avalúo"},
-    {"en":"Permit from Secretary of External Affairs (SRE)","es":"Permiso de Relaciones Exteriores"},
-    {"en":"Bank trust KYC and formats sent","es":"KYC y formatos del fiduciario enviados"},
-    {"en":"Bank trust KYC and formats signed","es":"KYC y formatos del fiduciario firmados","sign":true},
-    {"en":"Certificate of no dues of property tax","es":"Certificado de no adeudo de predial"},
-    {"en":"Letter of no HOA dues","es":"Carta de no adeudo de mantenimiento"},
-    {"en":"If buyer is LLC: docs notarized and apostilled","es":"Si comprador es LLC: documentos notariados y apostillados"},
-    {"en":"Draft of deed sent / reviewed by parties","es":"Proyecto de escritura enviado / revisado"},
-    {"en":"Signed deed","es":"Firma de escritura"},
-    {"en":"Deed ready for pick up at notary","es":"Escritura lista para recoger en notaría"}
+    {
+      "en": "Purchase agreement signed",
+      "es": "Oferta firmada"
+    },
+    {
+      "en": "Escrow account opened (optional)",
+      "es": "Cuenta de escrow aperturada"
+    },
+    {
+      "en": "Documents received and KYC filled",
+      "es": "Documentos completados y KYC llenado"
+    },
+    {
+      "en": "Closing costs sent to buyer",
+      "es": "Presupuesto de cierre enviado al comprador"
+    },
+    {
+      "en": "Payment of closing costs by buyer",
+      "es": "Pago de presupuesto de cierre hecho por comprador"
+    },
+    {
+      "en": "No lien certificate",
+      "es": "Certificado de libertad de gravamen"
+    },
+    {
+      "en": "Appraisal",
+      "es": "Avalúo"
+    },
+    {
+      "en": "Permit from Secretary of External Affairs (SRE)",
+      "es": "Permiso de Relaciones Exteriores"
+    },
+    {
+      "en": "Bank trust KYC and formats sent",
+      "es": "KYC y formatos del fiduciario enviados"
+    },
+    {
+      "en": "Bank trust KYC and formats signed",
+      "es": "KYC y formatos del fiduciario firmados",
+      "sign": true
+    },
+    {
+      "en": "Certificate of no dues of property tax",
+      "es": "Certificado de no adeudo de predial"
+    },
+    {
+      "en": "Letter of no HOA dues",
+      "es": "Carta de no adeudo de mantenimiento"
+    },
+    {
+      "en": "If buyer is LLC: docs notarized and apostilled",
+      "es": "Si comprador es LLC: documentos notariados y apostillados"
+    },
+    {
+      "en": "Draft of deed sent / reviewed by parties",
+      "es": "Proyecto de escritura enviado / revisado"
+    },
+    {
+      "en": "Signed deed",
+      "es": "Firma de escritura"
+    },
+    {
+      "en": "Deed ready for pick up at notary",
+      "es": "Escritura lista para recoger en notaría"
+    }
   ],
   "transfer": [
-    {"en":"Purchase agreement signed","es":"Oferta firmada"},
-    {"en":"Escrow account opened (optional)","es":"Cuenta de escrow aperturada"},
-    {"en":"Documents received and KYC filled","es":"Documentos completados y KYC llenado"},
-    {"en":"Closing costs sent to buyer","es":"Presupuesto de cierre enviado al comprador"},
-    {"en":"Payment of closing costs by buyer","es":"Pago de presupuesto de cierre hecho por comprador"},
-    {"en":"No lien certificate","es":"Certificado de libertad de gravamen"},
-    {"en":"Appraisal","es":"Avalúo"},
-    {"en":"Bank instruction letter","es":"Carta de instrucción al banco"},
-    {"en":"Bank trust KYC and formats sent","es":"KYC y formatos del fiduciario enviados"},
-    {"en":"Bank trust KYC and formats signed","es":"KYC y formatos del fiduciario firmados","sign":true},
-    {"en":"Certificate of no dues of property tax","es":"Certificado de no adeudo de predial"},
-    {"en":"Letter of no HOA dues","es":"Carta de no adeudo de mantenimiento"},
-    {"en":"If any party is LLC: docs notarized and apostilled","es":"Si alguna parte es LLC: documentos notariados y apostillados"},
-    {"en":"Draft of deed sent / reviewed by parties","es":"Proyecto de escritura enviado / revisado"},
-    {"en":"Signed deed","es":"Firma de escritura"},
-    {"en":"Deed ready for pick up at notary","es":"Escritura lista para recoger en notaría"}
+    {
+      "en": "Purchase agreement signed",
+      "es": "Oferta firmada"
+    },
+    {
+      "en": "Escrow account opened (optional)",
+      "es": "Cuenta de escrow aperturada"
+    },
+    {
+      "en": "Documents received and KYC filled",
+      "es": "Documentos completados y KYC llenado"
+    },
+    {
+      "en": "Closing costs sent to buyer",
+      "es": "Presupuesto de cierre enviado al comprador"
+    },
+    {
+      "en": "Payment of closing costs by buyer",
+      "es": "Pago de presupuesto de cierre hecho por comprador"
+    },
+    {
+      "en": "No lien certificate",
+      "es": "Certificado de libertad de gravamen"
+    },
+    {
+      "en": "Appraisal",
+      "es": "Avalúo"
+    },
+    {
+      "en": "Bank instruction letter",
+      "es": "Carta de instrucción al banco"
+    },
+    {
+      "en": "Bank trust KYC and formats sent",
+      "es": "KYC y formatos del fiduciario enviados"
+    },
+    {
+      "en": "Bank trust KYC and formats signed",
+      "es": "KYC y formatos del fiduciario firmados",
+      "sign": true
+    },
+    {
+      "en": "Certificate of no dues of property tax",
+      "es": "Certificado de no adeudo de predial"
+    },
+    {
+      "en": "Letter of no HOA dues",
+      "es": "Carta de no adeudo de mantenimiento"
+    },
+    {
+      "en": "If any party is LLC: docs notarized and apostilled",
+      "es": "Si alguna parte es LLC: documentos notariados y apostillados"
+    },
+    {
+      "en": "Draft of deed sent / reviewed by parties",
+      "es": "Proyecto de escritura enviado / revisado"
+    },
+    {
+      "en": "Signed deed",
+      "es": "Firma de escritura"
+    },
+    {
+      "en": "Deed ready for pick up at notary",
+      "es": "Escritura lista para recoger en notaría"
+    }
+  ],
+  "trust_termination": [
+    {
+      "en": "Purchase agreement signed",
+      "es": "Oferta firmada"
+    },
+    {
+      "en": "Escrow account opened (optional)",
+      "es": "Cuenta de escrow aperturada"
+    },
+    {
+      "en": "Documents received and KYC filled",
+      "es": "Documentos completados y KYC llenado"
+    },
+    {
+      "en": "Closing costs sent to buyer",
+      "es": "Presupuesto de cierre enviado al comprador"
+    },
+    {
+      "en": "Payment of closing costs by buyer",
+      "es": "Pago de presupuesto de cierre hecho por comprador"
+    },
+    {
+      "en": "No lien certificate",
+      "es": "Certificado de libertad de gravamen"
+    },
+    {
+      "en": "Appraisal",
+      "es": "Avalúo"
+    },
+    {
+      "en": "Bank instruction letter",
+      "es": "Carta de instrucción al banco"
+    },
+    {
+      "en": "Bank trust KYC and formats sent",
+      "es": "KYC y formatos del fiduciario enviados"
+    },
+    {
+      "en": "Bank trust KYC and formats signed",
+      "es": "KYC y formatos del fiduciario firmados",
+      "sign": true
+    },
+    {
+      "en": "Certificate of no dues of property tax",
+      "es": "Certificado de no adeudo de predial"
+    },
+    {
+      "en": "Letter of no HOA dues",
+      "es": "Carta de no adeudo de mantenimiento"
+    },
+    {
+      "en": "If any party is LLC: docs notarized and apostilled",
+      "es": "Si alguna parte es LLC: documentos notariados y apostillados"
+    },
+    {
+      "en": "Draft of deed sent / reviewed by parties",
+      "es": "Proyecto de escritura enviado / revisado"
+    },
+    {
+      "en": "Signed deed",
+      "es": "Firma de escritura"
+    },
+    {
+      "en": "Deed ready for pick up at notary",
+      "es": "Escritura lista para recoger en notaría"
+    }
   ]
 }

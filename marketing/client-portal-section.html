@@ -1,0 +1,91 @@
+<!--
+  Pega este bloque en un widget "HTML" de Elementor, en la p�gina donde
+  quieras que viva la promoci�n del portal de clientes.
+  Antes de publicar: cambia el href del bot�n "Request portal access" a la
+  URL real de tu formulario/contacto, y el link del bot�n de nav a la URL
+  real del portal (ej. https://portal.gruponar.com) una vez desplegado.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+.gn-portal-promo{
+  background:#3A0C08;
+  border-radius:18px;
+  padding:40px 44px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:40px;
+  flex-wrap:wrap;
+  font-family:'Inter',sans-serif;
+}
+.gn-portal-promo .gn-copy{ max-width:560px; }
+.gn-portal-promo .gn-eyebrow{
+  font-size:12px; letter-spacing:2px; text-transform:uppercase;
+  color:#C9A876; font-weight:600; margin:0 0 10px;
+}
+.gn-portal-promo h2{
+  font-family:'Cormorant Garamond',serif; font-weight:600;
+  font-size:32px; line-height:1.15; color:#FFFFFF; margin:0 0 14px;
+}
+.gn-portal-promo p{
+  font-size:15px; line-height:1.6; color:#E6D6D1; margin:0 0 26px;
+}
+.gn-portal-promo .gn-btn{
+  display:inline-block; background:#9C7A3E; color:#FFFFFF;
+  font-size:14px; font-weight:600; text-decoration:none;
+  padding:13px 28px; border-radius:26px; transition:background 0.15s;
+}
+.gn-portal-promo .gn-btn:hover{ background:#7E6231; color:#FFFFFF; }
+.gn-portal-promo .gn-card{
+  background:#FFFFFF; border-radius:14px; padding:20px 22px;
+  width:260px; flex-shrink:0;
+}
+.gn-portal-promo .gn-card .gn-card-title{
+  font-size:14px; font-weight:600; color:#211613; margin:0 0 16px;
+}
+.gn-portal-promo .gn-progress-row{
+  display:flex; align-items:center; gap:10px; margin-bottom:14px;
+}
+.gn-portal-promo .gn-progress-row:last-child{ margin-bottom:0; }
+.gn-portal-promo .gn-dot{
+  width:16px; height:16px; border-radius:50%; flex-shrink:0;
+  border:2px solid #9C7A3E;
+}
+.gn-portal-promo .gn-dot.gn-dot-empty{ border-color:#E4DED9; }
+.gn-portal-promo .gn-bar{
+  height:6px; border-radius:3px; background:#EFEAE5; flex:1;
+}
+@media (max-width: 640px){
+  .gn-portal-promo{ padding:32px 24px; }
+  .gn-portal-promo h2{ font-size:26px; }
+  .gn-portal-promo .gn-card{ width:100%; }
+}
+</style>
+
+<h2 class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;">Portal de clientes: sube documentos, sigue tu cierre paso a paso, y firma en cuanto est� listo.</h2>
+
+<div class="gn-portal-promo">
+  <div class="gn-copy">
+    <p class="gn-eyebrow">Client Portal</p>
+    <h2>Watch your closing move, live</h2>
+    <p>Upload documents, track every step, and sign when it's ready &mdash; no other firm here offers this.</p>
+    <a class="gn-btn" href="#contacto">Request portal access</a>
+  </div>
+  <div class="gn-card">
+    <p class="gn-card-title">Villa 22, Kupuri</p>
+    <div class="gn-progress-row">
+      <span class="gn-dot"></span>
+      <span class="gn-bar"></span>
+    </div>
+    <div class="gn-progress-row">
+      <span class="gn-dot"></span>
+      <span class="gn-bar"></span>
+    </div>
+    <div class="gn-progress-row">
+      <span class="gn-dot gn-dot-empty"></span>
+      <span class="gn-bar"></span>
+    </div>
+  </div>
+</div>

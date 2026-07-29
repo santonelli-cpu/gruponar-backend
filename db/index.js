@@ -100,4 +100,84 @@ ensureColumn('deals', 'contract_generated_file_url', 'contract_generated_file_ur
 ensureColumn('deals', 'contract_docusign_envelope_id', 'contract_docusign_envelope_id TEXT');
 ensureColumn('deals', 'contract_docusign_status', "contract_docusign_status TEXT NOT NULL DEFAULT 'not_sent'");
 
+// El CHECK de deals.scenario y contract_templates.scenario tampoco se puede
+// alterar con ADD COLUMN — mismo procedimiento que ensureUserRoleAllowsLawyer.
+// Van al final, después de todos los ensureColumn de arriba, porque hay que
+// copiar TODAS las columnas que ya existan en la tabla vieja (incluidas las
+// agregadas después de la creación original) o se perderían al recrearla.
+function ensureDealsScenarioAllowsTrustTermination() {
+  const row = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='deals'`).get();
+  if (row && row.sql.includes("'trust_termination'")) return;
+
+  db.pragma('foreign_keys = OFF');
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE deals_migration_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        scenario TEXT NOT NULL CHECK(scenario IN ('purchase','trust','transfer','trust_termination')),
+        development TEXT NOT NULL DEFAULT 'punta_mita',
+        property TEXT NOT NULL,
+        price REAL NOT NULL DEFAULT 0,
+        furniture_price REAL NOT NULL DEFAULT 0,
+        currency TEXT NOT NULL DEFAULT 'USD',
+        start_date TEXT NOT NULL,
+        seller_name TEXT NOT NULL,
+        seller_type TEXT NOT NULL,
+        buyer_name TEXT NOT NULL,
+        buyer_type TEXT NOT NULL,
+        escrow_company TEXT,
+        contract_json TEXT NOT NULL DEFAULT '{}',
+        created_by INTEGER REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        contract_template_id INTEGER,
+        contract_status TEXT NOT NULL DEFAULT 'draft',
+        contract_generated_file_url TEXT,
+        contract_docusign_envelope_id TEXT,
+        contract_docusign_status TEXT NOT NULL DEFAULT 'not_sent'
+      );
+      INSERT INTO deals_migration_new (id, scenario, development, property, price, furniture_price, currency, start_date, seller_name, seller_type, buyer_name, buyer_type, escrow_company, contract_json, created_by, created_at, contract_template_id, contract_status, contract_generated_file_url, contract_docusign_envelope_id, contract_docusign_status)
+        SELECT id, scenario, development, property, price, furniture_price, currency, start_date, seller_name, seller_type, buyer_name, buyer_type, escrow_company, contract_json, created_by, created_at, contract_template_id, contract_status, contract_generated_file_url, contract_docusign_envelope_id, contract_docusign_status FROM deals;
+      DROP TABLE deals;
+      ALTER TABLE deals_migration_new RENAME TO deals;
+    `);
+    const violations = db.prepare('PRAGMA foreign_key_check').all();
+    if (violations.length) {
+      throw new Error('Migración de deals dejaría foreign keys rotas: ' + JSON.stringify(violations));
+    }
+  })();
+  db.pragma('foreign_keys = ON');
+  console.log('[migration] deals.scenario ahora acepta \'trust_termination\'');
+}
+ensureDealsScenarioAllowsTrustTermination();
+
+function ensureContractTemplatesScenarioAllowsTrustTermination() {
+  const row = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='contract_templates'`).get();
+  if (!row || row.sql.includes("'trust_termination'")) return;
+
+  db.pragma('foreign_keys = OFF');
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE contract_templates_migration_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        scenario TEXT NOT NULL CHECK(scenario IN ('purchase','trust','transfer','trust_termination')),
+        label TEXT NOT NULL,
+        docx_file TEXT NOT NULL,
+        created_by INTEGER REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO contract_templates_migration_new (id, scenario, label, docx_file, created_by, created_at)
+        SELECT id, scenario, label, docx_file, created_by, created_at FROM contract_templates;
+      DROP TABLE contract_templates;
+      ALTER TABLE contract_templates_migration_new RENAME TO contract_templates;
+    `);
+    const violations = db.prepare('PRAGMA foreign_key_check').all();
+    if (violations.length) {
+      throw new Error('Migración de contract_templates dejaría foreign keys rotas: ' + JSON.stringify(violations));
+    }
+  })();
+  db.pragma('foreign_keys = ON');
+  console.log('[migration] contract_templates.scenario ahora acepta \'trust_termination\'');
+}
+ensureContractTemplatesScenarioAllowsTrustTermination();
+
 module.exports = db;

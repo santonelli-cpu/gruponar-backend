@@ -55,6 +55,7 @@
   .badge{display:inline-block; font-size:10.5px; padding:3px 10px; border-radius:20px; background:var(--jade-soft); color:var(--jade); margin-top:6px; font-weight:500;}
   .badge.scn-trust{background:var(--gold-soft); color:#6B4E1E;}
   .badge.scn-transfer{background:var(--clay-soft); color:#7A3417;}
+  .badge.scn-trust-termination{background:var(--oxblood-soft); color:var(--oxblood);}
   .doc-list{list-style:none; padding:0; margin:0;}
   .doc-item{display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:0.5px solid var(--line); font-size:13px;}
   .doc-item:last-child{border-bottom:none;}
@@ -112,98 +113,28 @@ const SCENARIOS = {
     labelShort: "Compraventa",
     badgeClass: "",
     sellerTypes: ["individual","corporation","llc"],
-    buyerTypes: ["individual","corporation","llc"],
-    docs: {
-      seller_individual: ["Escritura pública","Predial","CURP","Constancia de Situación Fiscal","Comprobante de domicilio","Identificación oficial","Acta de nacimiento","Acta de matrimonio (si aplica)"],
-      buyer_individual: ["CURP","Constancia de Situación Fiscal","Comprobante de domicilio","Identificación oficial","Acta de nacimiento","Acta de matrimonio (si aplica)"],
-      corporation_extra: ["Acta constitutiva","Poder del representante legal"],
-      legal_rep: ["CURP (rep. legal)","Constancia de Situación Fiscal (rep. legal)","Comprobante de domicilio (rep. legal)","Identificación oficial (rep. legal)","Acta de nacimiento (rep. legal)","Acta de matrimonio (rep. legal, si aplica)"],
-      llc_entity: ["Acta constitutiva de LLC (notariada y apostillada)","Acuerdo operativo (notariado y apostillado)","Certificado de vigencia / good standing (apostillado)","Constancia de facultades del gerente (notariada y apostillada)","Comprobante de domicilio de la LLC","Carta del IRS"],
-      llc_members: ["Copia de pasaporte (miembro)","Comprobante de domicilio (miembro)","Ocupación (miembro)","SSN (miembro)","Teléfono (miembro)"],
-      llc_manager: ["Copia de pasaporte (gerente/rep. legal)","Comprobante de domicilio (gerente)","Ocupación (gerente)","SSN (gerente)","Teléfono (gerente)"]
-    },
-    tasks: [
-      ["Purchase agreement signed","Oferta firmada"],
-      ["Escrow account opened (optional)","Cuenta de escrow aperturada"],
-      ["Documents received and KYC filled","Documentos completados y KYC llenado"],
-      ["Closing costs sent to buyer","Presupuesto de cierre enviado al comprador"],
-      ["Payment of closing costs by buyer","Pago de presupuesto de cierre hecho por comprador"],
-      ["No lien certificate","Certificado de libertad de gravamen"],
-      ["Appraisal","Avalúo"],
-      ["Certificate of no dues of property tax","Certificado de no adeudo de predial"],
-      ["Letter of no HOA dues","Carta de no adeudo de mantenimiento"],
-      ["Draft of deed sent / reviewed by parties","Proyecto de escritura enviado / revisado"],
-      ["Signed deed","Firma de escritura","sign"],
-      ["Deed ready for pick up at notary","Escritura lista para recoger en notaría"]
-    ]
+    buyerTypes: ["individual","corporation","llc"]
   },
   trust: {
     label: "Constitución de fideicomiso (vendedor MX, comprador extranjero)",
     labelShort: "Constitución de fideicomiso",
     badgeClass: "scn-trust",
     sellerTypes: ["individual","corporation","llc"],
-    buyerTypes: ["individual","llc"],
-    docs: {
-      seller_individual: ["Escritura pública","Predial","CURP","Constancia de Situación Fiscal","Comprobante de domicilio","Identificación oficial","Acta de nacimiento","Acta de matrimonio (si aplica)"],
-      buyer_individual: ["Pasaporte","Comprobante de domicilio","Tax ID / Seguro Social","Acta de nacimiento","Acta de matrimonio (si aplica)","Licencia de conducir","Estatus migratorio","Pasaporte y licencia de beneficiarios sustitutos"],
-      corporation_extra: ["Acta constitutiva","Poder del representante legal"],
-      legal_rep: ["CURP (rep. legal)","Constancia de Situación Fiscal (rep. legal)","Comprobante de domicilio (rep. legal)","Identificación oficial (rep. legal)","Acta de nacimiento (rep. legal)","Acta de matrimonio (rep. legal, si aplica)"],
-      llc_entity: ["Acta constitutiva de LLC (notariada y apostillada)","Acuerdo operativo (notariado y apostillado)","Certificado de vigencia / good standing (apostillado)","Constancia de facultades del gerente (notariada y apostillada)","Comprobante de domicilio de la LLC","Carta del IRS"],
-      llc_members: ["Copia de pasaporte (miembro)","Comprobante de domicilio (miembro)","Ocupación (miembro)","SSN (miembro)","Teléfono (miembro)"],
-      llc_manager: ["Copia de pasaporte (gerente/rep. legal)","Comprobante de domicilio (gerente)","Ocupación (gerente)","SSN (gerente)","Teléfono (gerente)"]
-    },
-    tasks: [
-      ["Purchase agreement signed","Oferta firmada"],
-      ["Escrow account opened (optional)","Cuenta de escrow aperturada"],
-      ["Documents received and KYC filled","Documentos completados y KYC llenado"],
-      ["Closing costs sent to buyer","Presupuesto de cierre enviado al comprador"],
-      ["Payment of closing costs by buyer","Pago de presupuesto de cierre hecho por comprador"],
-      ["No lien certificate","Certificado de libertad de gravamen"],
-      ["Appraisal","Avalúo"],
-      ["Permit from Secretary of External Affairs (SRE)","Permiso de Relaciones Exteriores"],
-      ["Bank trust KYC and formats sent","KYC y formatos del fiduciario enviados"],
-      ["Bank trust KYC and formats signed","KYC y formatos del fiduciario firmados","sign"],
-      ["Certificate of no dues of property tax","Certificado de no adeudo de predial"],
-      ["Letter of no HOA dues","Carta de no adeudo de mantenimiento"],
-      ["If buyer is LLC: docs notarized and apostilled","Si comprador es LLC: documentos notariados y apostillados"],
-      ["Draft of deed sent / reviewed by parties","Proyecto de escritura enviado / revisado"],
-      ["Signed deed","Firma de escritura","sign"],
-      ["Deed ready for pick up at notary","Escritura lista para recoger en notaría"]
-    ]
+    buyerTypes: ["individual","llc"]
   },
   transfer: {
     label: "Cesión de derechos fideicomisarios (extranjero ↔ extranjero)",
     labelShort: "Cesión de derechos",
     badgeClass: "scn-transfer",
     sellerTypes: ["individual","corporation","llc"],
-    buyerTypes: ["individual","llc"],
-    docs: {
-      seller_individual: ["Pasaporte","Comprobante de domicilio","Tax ID / Seguro Social","Acta de nacimiento","Acta de matrimonio (si aplica)","Licencia de conducir","Estatus migratorio","Escritura y recibo de predial","Último pago anual de fideicomiso"],
-      buyer_individual: ["Pasaporte","Comprobante de domicilio","Tax ID / Seguro Social","Acta de nacimiento","Acta de matrimonio (si aplica)","Licencia de conducir","Estatus migratorio","Pasaporte y licencia de beneficiarios sustitutos"],
-      corporation_extra: ["Acta constitutiva","Poder del representante legal"],
-      legal_rep: ["CURP (rep. legal)","Constancia de Situación Fiscal (rep. legal)","Comprobante de domicilio (rep. legal)","Identificación oficial (rep. legal)","Acta de nacimiento (rep. legal)","Acta de matrimonio (rep. legal, si aplica)"],
-      llc_entity: ["Acta constitutiva de LLC (notariada y apostillada)","Acuerdo operativo (notariado y apostillado)","Certificado de vigencia / good standing (apostillado)","Constancia de facultades del gerente (notariada y apostillada)","Comprobante de domicilio de la LLC","Carta del IRS"],
-      llc_members: ["Copia de pasaporte (miembro)","Comprobante de domicilio (miembro)","Ocupación (miembro)","SSN (miembro)","Teléfono (miembro)"],
-      llc_manager: ["Copia de pasaporte (gerente/rep. legal)","Comprobante de domicilio (gerente)","Ocupación (gerente)","SSN (gerente)","Teléfono (gerente)"]
-    },
-    tasks: [
-      ["Purchase agreement signed","Oferta firmada"],
-      ["Escrow account opened (optional)","Cuenta de escrow aperturada"],
-      ["Documents received and KYC filled","Documentos completados y KYC llenado"],
-      ["Closing costs sent to buyer","Presupuesto de cierre enviado al comprador"],
-      ["Payment of closing costs by buyer","Pago de presupuesto de cierre hecho por comprador"],
-      ["No lien certificate","Certificado de libertad de gravamen"],
-      ["Appraisal","Avalúo"],
-      ["Bank instruction letter","Carta de instrucción al banco"],
-      ["Bank trust KYC and formats sent","KYC y formatos del fiduciario enviados"],
-      ["Bank trust KYC and formats signed","KYC y formatos del fiduciario firmados","sign"],
-      ["Certificate of no dues of property tax","Certificado de no adeudo de predial"],
-      ["Letter of no HOA dues","Carta de no adeudo de mantenimiento"],
-      ["If any party is LLC: docs notarized and apostilled","Si alguna parte es LLC: documentos notariados y apostillados"],
-      ["Draft of deed sent / reviewed by parties","Proyecto de escritura enviado / revisado"],
-      ["Signed deed","Firma de escritura","sign"],
-      ["Deed ready for pick up at notary","Escritura lista para recoger en notaría"]
-    ]
+    buyerTypes: ["individual","llc"]
+  },
+  trust_termination: {
+    label: "Extinción de fideicomiso (vendedor extranjero, comprador MX)",
+    labelShort: "Extinción de fideicomiso",
+    badgeClass: "scn-trust-termination",
+    sellerTypes: ["individual","llc"],
+    buyerTypes: ["individual","corporation"]
   }
 };
 
@@ -687,6 +618,7 @@ function buildNewDealForm(){
           <option value="purchase">${SCENARIOS.purchase.label}</option>
           <option value="trust">${SCENARIOS.trust.label}</option>
           <option value="transfer">${SCENARIOS.transfer.label}</option>
+          <option value="trust_termination">${SCENARIOS.trust_termination.label}</option>
         </select>
       </label>
     </div>
