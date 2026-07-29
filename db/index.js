@@ -480,4 +480,33 @@ function ensureDocumentsPropertyLevel() {
 }
 ensureDocumentsPropertyLevel();
 
+// Red de seguridad idempotente: por cada operación, revisa que existan TODOS
+// los documentos de Propiedad que le tocan según su escenario (ver
+// data/scenario-docs.json .property) y agrega los que falten. Cubre
+// operaciones creadas antes de que existiera este concepto (la migración de
+// arriba solo alcanza a convertir documentos de Escritura/Predial que YA
+// existían de algún vendedor — si esa operación tenía únicamente vendedores
+// persona moral/LLC, nunca tuvo esos documentos que convertir, y se quedaba
+// sin sección de Propiedad). Corre en cada arranque porque es barato
+// (una operación con pocos documentos) y no depende de detectar "¿ya corrió
+// antes?" — simplemente no inserta lo que ya existe.
+function ensurePropertyDocsBackfill() {
+  const SCENARIO_DOCS = require('../data/scenario-docs.json');
+  const deals = db.prepare('SELECT id, scenario FROM deals').all();
+  const insertDoc = db.prepare("INSERT INTO documents (deal_id, deal_party_entity_id, name, created_at) VALUES (?,NULL,?,datetime('now'))");
+  let added = 0;
+  deals.forEach(deal => {
+    const wanted = (SCENARIO_DOCS[deal.scenario] && SCENARIO_DOCS[deal.scenario].property) || [];
+    if (!wanted.length) return;
+    const existing = new Set(
+      db.prepare('SELECT name FROM documents WHERE deal_id = ? AND deal_party_entity_id IS NULL').all(deal.id).map(d => d.name)
+    );
+    wanted.forEach(name => {
+      if (!existing.has(name)) { insertDoc.run(deal.id, name); added++; }
+    });
+  });
+  if (added) console.log(`[migration] ${added} documento(s) de Propiedad agregados a operaciones que les faltaban`);
+}
+ensurePropertyDocsBackfill();
+
 module.exports = db;

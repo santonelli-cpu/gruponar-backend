@@ -9,86 +9,314 @@
     {
       "title": "Identificación de la persona",
       "fields": [
-        { "id": "fullLegalName", "label": "Nombre legal completo", "type": "text", "required": true, "prefillFrom": "partyName" },
-        { "id": "identificationDocumentType", "label": "Documento de identificación", "type": "radio",
+        {
+          "id": "fullLegalName",
+          "label": "Nombre legal completo",
+          "type": "text",
+          "required": true,
+          "prefillFrom": "partyName"
+        },
+        {
+          "id": "identificationDocumentType",
+          "label": "Documento de identificación",
+          "type": "radio",
           "options": [
-            { "value": "passport", "label": "Pasaporte" },
-            { "value": "drivers_license", "label": "Licencia de conducir" },
-            { "value": "other", "label": "Otro" }
-          ], "required": true },
-        { "id": "identificationDocumentOther", "label": "Si es \"Otro\", especifique", "type": "text" },
-        { "id": "documentNumber", "label": "No. de documento", "type": "text", "required": true },
-        { "id": "expiration", "label": "Vencimiento", "type": "date", "required": true },
-        { "id": "issuedBy", "label": "Emitido por", "type": "text", "required": true },
-        { "id": "citizenship", "label": "Nacionalidad", "type": "text", "required": true },
-        { "id": "otherCitizenship", "label": "Otra nacionalidad", "type": "text" },
-        { "id": "placeOfBirth", "label": "Lugar de nacimiento", "type": "text", "required": true },
-        { "id": "dateOfBirth", "label": "Fecha de nacimiento", "type": "date", "required": true }
+            {
+              "value": "passport",
+              "label": "Pasaporte"
+            },
+            {
+              "value": "drivers_license",
+              "label": "Licencia de conducir"
+            },
+            {
+              "value": "other",
+              "label": "Otro"
+            }
+          ],
+          "required": true
+        },
+        {
+          "id": "identificationDocumentOther",
+          "label": "Si es \"Otro\", especifique",
+          "type": "text"
+        },
+        {
+          "id": "documentNumber",
+          "label": "No. de documento",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "expiration",
+          "label": "Vencimiento",
+          "type": "date",
+          "required": true
+        },
+        {
+          "id": "issuedBy",
+          "label": "Emitido por",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "citizenship",
+          "label": "Nacionalidad",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "otherCitizenship",
+          "label": "Otra nacionalidad",
+          "type": "text"
+        },
+        {
+          "id": "placeOfBirth",
+          "label": "Lugar de nacimiento",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "dateOfBirth",
+          "label": "Fecha de nacimiento",
+          "type": "date",
+          "required": true
+        }
       ]
     },
     {
       "title": "Residencia fiscal",
       "fields": [
-        { "id": "socialSecurityNo", "label": "RFC (si eres mexicano) o No. de Seguro Social (si eres extranjero)", "type": "text" },
-        { "id": "countryOfTaxResidency", "label": "País de residencia fiscal", "type": "text", "required": true }
+        {
+          "id": "socialSecurityNo",
+          "label": "RFC (si eres mexicano) o No. de Seguro Social (si eres extranjero)",
+          "type": "text"
+        },
+        {
+          "id": "countryOfTaxResidency",
+          "label": "País de residencia fiscal",
+          "type": "text",
+          "required": true
+        }
       ]
     },
     {
       "title": "Otros detalles",
       "fields": [
-        { "id": "residencyAddress", "label": "Dirección de residencia", "type": "textarea", "required": true },
-        { "id": "mailingAddress", "label": "Dirección (en caso de que sea diferente)", "type": "textarea" },
-        { "id": "mobilePhone", "label": "No. de celular", "type": "text", "required": true },
-        { "id": "workHomePhone", "label": "No. de trabajo/casa", "type": "text" },
-        { "id": "email", "label": "Correo electrónico", "type": "email", "required": true, "prefillFrom": "partyEmail" },
-        { "id": "occupation", "label": "Ocupación (¿en caso de ser jubilado, jubilado de qué?)", "type": "text", "required": true },
-        { "id": "employerOrBusiness", "label": "Empleador o naturaleza del negocio", "type": "text", "required": true },
-        { "id": "actsAsIntermediary", "label": "¿Actúas como intermediario en nombre de otra persona?", "type": "radio",
-          "options": [ { "value": "yes", "label": "Sí" }, { "value": "no", "label": "No" } ], "required": true },
-        { "id": "intermediaryDescription", "label": "En caso afirmativo, proporcione una descripción", "type": "textarea" }
+        {
+          "id": "residencyAddress",
+          "label": "Dirección de residencia",
+          "type": "textarea",
+          "required": true
+        },
+        {
+          "id": "mailingAddress",
+          "label": "Dirección (en caso de que sea diferente)",
+          "type": "textarea"
+        },
+        {
+          "id": "mobilePhone",
+          "label": "No. de celular",
+          "type": "text"
+        },
+        {
+          "id": "workHomePhone",
+          "label": "No. de trabajo/casa",
+          "type": "text"
+        },
+        {
+          "id": "email",
+          "label": "Correo electrónico",
+          "type": "email",
+          "required": true,
+          "prefillFrom": "partyEmail"
+        },
+        {
+          "id": "occupation",
+          "label": "Ocupación (¿en caso de ser jubilado, jubilado de qué?)",
+          "type": "text"
+        },
+        {
+          "id": "employerOrBusiness",
+          "label": "Empleador o naturaleza del negocio",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "actsAsIntermediary",
+          "label": "¿Actúas como intermediario en nombre de otra persona?",
+          "type": "radio",
+          "options": [
+            {
+              "value": "yes",
+              "label": "Sí"
+            },
+            {
+              "value": "no",
+              "label": "No"
+            }
+          ],
+          "required": true
+        },
+        {
+          "id": "intermediaryDescription",
+          "label": "En caso afirmativo, proporcione una descripción",
+          "type": "textarea"
+        }
       ]
     },
     {
       "title": "Personas políticamente expuestas",
       "fields": [
-        { "id": "hasPoliticalPosition", "label": "¿Usted, o algún miembro de la familia, actualmente o en el pasado, ocupa un cargo político?", "type": "radio",
-          "options": [ { "value": "yes", "label": "Sí" }, { "value": "no", "label": "No" } ], "required": true },
-        { "id": "familyRelationship", "label": "En caso de que sea un familiar, ¿cuál es la relación?", "type": "text" },
-        { "id": "whenAndWhichPosition", "label": "En caso afirmativo, ¿cuándo y en qué puesto?", "type": "text" },
-        { "id": "familyMemberName", "label": "Nombre del familiar (si tiene asociación política)", "type": "text" },
-        { "id": "familyMemberAddress", "label": "Dirección del familiar", "type": "textarea" },
-        { "id": "familyMemberDateOfBirth", "label": "Fecha de nacimiento del familiar", "type": "date" },
-        { "id": "familyMemberSSN", "label": "No. de Seguro Social del familiar", "type": "text" },
-        { "id": "otherPrimaryId", "label": "Otras formas de identificación primaria, si es una persona no estadounidense", "type": "text" }
+        {
+          "id": "hasPoliticalPosition",
+          "label": "¿Usted, o algún miembro de la familia, actualmente o en el pasado, ocupa un cargo político?",
+          "type": "radio",
+          "options": [
+            {
+              "value": "yes",
+              "label": "Sí"
+            },
+            {
+              "value": "no",
+              "label": "No"
+            }
+          ],
+          "required": true
+        },
+        {
+          "id": "familyRelationship",
+          "label": "En caso de que sea un familiar, ¿cuál es la relación?",
+          "type": "text"
+        },
+        {
+          "id": "whenAndWhichPosition",
+          "label": "En caso afirmativo, ¿cuándo y en qué puesto?",
+          "type": "text"
+        },
+        {
+          "id": "familyMemberName",
+          "label": "Nombre del familiar (si tiene asociación política)",
+          "type": "text"
+        },
+        {
+          "id": "familyMemberAddress",
+          "label": "Dirección del familiar",
+          "type": "textarea"
+        },
+        {
+          "id": "familyMemberDateOfBirth",
+          "label": "Fecha de nacimiento del familiar",
+          "type": "date"
+        },
+        {
+          "id": "familyMemberSSN",
+          "label": "No. de Seguro Social del familiar",
+          "type": "text"
+        },
+        {
+          "id": "otherPrimaryId",
+          "label": "Otras formas de identificación primaria, si es una persona no estadounidense",
+          "type": "text"
+        }
       ]
     },
     {
       "title": "Fuente de ingresos (complete si eres el depositante de los fondos)",
       "fields": [
-        { "id": "sourceOfFunds", "label": "Fuente de ingresos (salarios laborales, operación comercial, financiamiento, etc. / ¿de dónde provienen y cómo?)", "type": "textarea" },
-        { "id": "depositsCount", "label": "No. de depósitos/cuotas a realizar a esta cuenta escrow", "type": "radio",
+        {
+          "id": "sourceOfFunds",
+          "label": "Fuente de ingresos (salarios laborales, operación comercial, financiamiento, etc. / ¿de dónde provienen y cómo?)",
+          "type": "textarea"
+        },
+        {
+          "id": "depositsCount",
+          "label": "No. de depósitos/cuotas a realizar a esta cuenta escrow",
+          "type": "radio",
           "options": [
-            { "value": "1-2", "label": "1-2 Depósitos" },
-            { "value": "3-5", "label": "3-5 Depósitos" },
-            { "value": "5-10", "label": "5-10 Depósitos" },
-            { "value": "10+", "label": "10 o más" }
-          ] },
-        { "id": "fundsCountry", "label": "¿De qué país (países) provienen los fondos?", "type": "text" },
-        { "id": "bankAccountNames", "label": "Cuentas de las cuales provendrán los fondos", "type": "textarea" }
+            {
+              "value": "1-2",
+              "label": "1-2 Depósitos"
+            },
+            {
+              "value": "3-5",
+              "label": "3-5 Depósitos"
+            },
+            {
+              "value": "5-10",
+              "label": "5-10 Depósitos"
+            },
+            {
+              "value": "10+",
+              "label": "10 o más"
+            }
+          ]
+        },
+        {
+          "id": "fundsCountry",
+          "label": "¿De qué país (países) provienen los fondos?",
+          "type": "text"
+        },
+        {
+          "id": "bankAccountNames",
+          "label": "Cuentas de las cuales provendrán los fondos",
+          "type": "textarea"
+        }
       ]
     },
     {
       "title": "Instrucciones bancarias (a dónde debe mandar escrow los fondos que te correspondan)",
       "fields": [
-        { "id": "wireBankName", "label": "Nombre del banco", "type": "text", "required": true },
-        { "id": "wireRoutingOrSwift", "label": "No. de ABA o código SWIFT", "type": "text", "required": true },
-        { "id": "wireAccountName", "label": "Nombre del beneficiario", "type": "text", "required": true },
-        { "id": "wireAccountNumber", "label": "No. de cuenta (IBAN/CLABE)", "type": "text", "required": true },
-        { "id": "wireBeneficiaryAddress", "label": "Dirección del beneficiario", "type": "textarea", "required": true },
-        { "id": "wireReference", "label": "Referencia (opcional)", "type": "text" },
-        { "id": "intermediaryBankName", "label": "Banco intermediario (opcional — solo transferencias internacionales)", "type": "text" },
-        { "id": "intermediaryBankSwift", "label": "ABA o código SWIFT del banco intermediario (opcional)", "type": "text" },
-        { "id": "wireAdditionalDetails", "label": "Referencias adicionales (opcional)", "type": "textarea" }
+        {
+          "id": "wireBankName",
+          "label": "Nombre del banco",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "wireRoutingOrSwift",
+          "label": "No. de ABA o código SWIFT",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "wireAccountName",
+          "label": "Nombre del beneficiario",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "wireAccountNumber",
+          "label": "No. de cuenta (IBAN/CLABE)",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "wireBeneficiaryAddress",
+          "label": "Dirección del beneficiario",
+          "type": "textarea",
+          "required": true
+        },
+        {
+          "id": "wireReference",
+          "label": "Referencia (opcional)",
+          "type": "text"
+        },
+        {
+          "id": "intermediaryBankName",
+          "label": "Banco intermediario (opcional — solo transferencias internacionales)",
+          "type": "text"
+        },
+        {
+          "id": "intermediaryBankSwift",
+          "label": "ABA o código SWIFT del banco intermediario (opcional)",
+          "type": "text"
+        },
+        {
+          "id": "wireAdditionalDetails",
+          "label": "Referencias adicionales (opcional)",
+          "type": "textarea"
+        }
       ]
     }
   ]

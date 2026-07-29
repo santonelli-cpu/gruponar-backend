@@ -10,113 +10,457 @@
     {
       "title": "Authorized Representative",
       "fields": [
-        { "id": "repName", "label": "Name", "type": "text", "required": true, "prefillFrom": "partyName" },
-        { "id": "repTitle", "label": "Title", "type": "text", "required": true },
-        { "id": "repSSN", "label": "Social Security No.", "type": "text" },
-        { "id": "repEmail", "label": "Email Address", "type": "email", "required": true, "prefillFrom": "partyEmail" },
-        { "id": "repPhone", "label": "Contact Phone No.", "type": "text", "required": true }
+        {
+          "id": "repName",
+          "label": "Name",
+          "type": "text",
+          "required": true,
+          "prefillFrom": "partyName"
+        },
+        {
+          "id": "repTitle",
+          "label": "Title",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "repSSN",
+          "label": "Social Security No.",
+          "type": "text"
+        },
+        {
+          "id": "repEmail",
+          "label": "Email Address",
+          "type": "email",
+          "required": true,
+          "prefillFrom": "partyEmail"
+        },
+        {
+          "id": "repPhone",
+          "label": "Contact Phone No.",
+          "type": "text"
+        }
       ]
     },
     {
       "title": "Legal Entity",
       "fields": [
-        { "id": "companyName", "label": "Company Name", "type": "text", "required": true },
-        { "id": "entityType", "label": "Entity Type", "type": "text", "required": true },
-        { "id": "placeOfFormation", "label": "Place of Formation", "type": "text", "required": true },
-        { "id": "dba", "label": "DBA (if different)", "type": "text" },
-        { "id": "ein", "label": "Taxpayer Identification No. (EIN)", "type": "text", "required": true },
-        { "id": "registrationNo", "label": "Registration No. (other than EIN, if applicable)", "type": "text" },
-        { "id": "dateOfIncorporation", "label": "Date of Incorporation", "type": "date", "required": true },
-        { "id": "primaryBusinessAddress", "label": "Primary Business Address (no PO Boxes)", "type": "textarea", "required": true },
-        { "id": "businessMailingAddress", "label": "Business Mailing Address (if different)", "type": "textarea" },
-        { "id": "businessWebsite", "label": "Business Website", "type": "text" },
-        { "id": "businessActivities", "label": "Business Activities", "type": "textarea", "required": true }
+        {
+          "id": "companyName",
+          "label": "Company Name",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "entityType",
+          "label": "Entity Type",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "placeOfFormation",
+          "label": "Place of Formation",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "dba",
+          "label": "DBA (if different)",
+          "type": "text"
+        },
+        {
+          "id": "ein",
+          "label": "Taxpayer Identification No. (EIN)",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "registrationNo",
+          "label": "Registration No. (other than EIN, if applicable)",
+          "type": "text"
+        },
+        {
+          "id": "dateOfIncorporation",
+          "label": "Date of Incorporation",
+          "type": "date",
+          "required": true
+        },
+        {
+          "id": "primaryBusinessAddress",
+          "label": "Primary Business Address (no PO Boxes)",
+          "type": "textarea",
+          "required": true
+        },
+        {
+          "id": "businessMailingAddress",
+          "label": "Business Mailing Address (if different)",
+          "type": "textarea"
+        },
+        {
+          "id": "businessWebsite",
+          "label": "Business Website",
+          "type": "text"
+        },
+        {
+          "id": "businessActivities",
+          "label": "Business Activities",
+          "type": "textarea",
+          "required": true
+        }
       ]
     },
     {
       "title": "Beneficial Ownership (each individual, or trust, that owns 25% or more of the entity — up to 3)",
       "fields": [
-        { "id": "owner1Name", "label": "Owner 1 — Name (or trust name, if it's a trust)", "type": "text" },
-        { "id": "owner1DateOfBirth", "label": "Owner 1 — Date of Birth (leave blank if trust)", "type": "date" },
-        { "id": "owner1Address", "label": "Owner 1 — Address (Residential or Business)", "type": "textarea" },
-        { "id": "owner1SSN", "label": "Owner 1 — Social Security No. (leave blank if trust)", "type": "text" },
-        { "id": "owner2Name", "label": "Owner 2 — Name (or trust name, if it's a trust)", "type": "text" },
-        { "id": "owner2DateOfBirth", "label": "Owner 2 — Date of Birth (leave blank if trust)", "type": "date" },
-        { "id": "owner2Address", "label": "Owner 2 — Address (Residential or Business)", "type": "textarea" },
-        { "id": "owner2SSN", "label": "Owner 2 — Social Security No. (leave blank if trust)", "type": "text" },
-        { "id": "owner3Name", "label": "Owner 3 — Name (or trust name, if it's a trust)", "type": "text" },
-        { "id": "owner3DateOfBirth", "label": "Owner 3 — Date of Birth (leave blank if trust)", "type": "date" },
-        { "id": "owner3Address", "label": "Owner 3 — Address (Residential or Business)", "type": "textarea" },
-        { "id": "owner3SSN", "label": "Owner 3 — Social Security No. (leave blank if trust)", "type": "text" }
+        {
+          "id": "owner1Name",
+          "label": "Owner 1 — Name (or trust name, if it's a trust)",
+          "type": "text"
+        },
+        {
+          "id": "owner1DateOfBirth",
+          "label": "Owner 1 — Date of Birth (leave blank if trust)",
+          "type": "date"
+        },
+        {
+          "id": "owner1Address",
+          "label": "Owner 1 — Address (Residential or Business)",
+          "type": "textarea"
+        },
+        {
+          "id": "owner1SSN",
+          "label": "Owner 1 — Social Security No. (leave blank if trust)",
+          "type": "text"
+        },
+        {
+          "id": "owner2Name",
+          "label": "Owner 2 — Name (or trust name, if it's a trust)",
+          "type": "text"
+        },
+        {
+          "id": "owner2DateOfBirth",
+          "label": "Owner 2 — Date of Birth (leave blank if trust)",
+          "type": "date"
+        },
+        {
+          "id": "owner2Address",
+          "label": "Owner 2 — Address (Residential or Business)",
+          "type": "textarea"
+        },
+        {
+          "id": "owner2SSN",
+          "label": "Owner 2 — Social Security No. (leave blank if trust)",
+          "type": "text"
+        },
+        {
+          "id": "owner3Name",
+          "label": "Owner 3 — Name (or trust name, if it's a trust)",
+          "type": "text"
+        },
+        {
+          "id": "owner3DateOfBirth",
+          "label": "Owner 3 — Date of Birth (leave blank if trust)",
+          "type": "date"
+        },
+        {
+          "id": "owner3Address",
+          "label": "Owner 3 — Address (Residential or Business)",
+          "type": "textarea"
+        },
+        {
+          "id": "owner3SSN",
+          "label": "Owner 3 — Social Security No. (leave blank if trust)",
+          "type": "text"
+        }
       ]
     },
     {
       "title": "Individual(s) with Significant Responsibility for Managing the Entity (up to 3)",
       "fields": [
-        { "id": "responsible1Name", "label": "Person 1 — Name", "type": "text" },
-        { "id": "responsible1DateOfBirth", "label": "Person 1 — Date of Birth", "type": "date" },
-        { "id": "responsible1Address", "label": "Person 1 — Address (Residential or Business)", "type": "textarea" },
-        { "id": "responsible1SSN", "label": "Person 1 — Social Security No.", "type": "text" },
-        { "id": "responsible2Name", "label": "Person 2 — Name", "type": "text" },
-        { "id": "responsible2DateOfBirth", "label": "Person 2 — Date of Birth", "type": "date" },
-        { "id": "responsible2Address", "label": "Person 2 — Address (Residential or Business)", "type": "textarea" },
-        { "id": "responsible2SSN", "label": "Person 2 — Social Security No.", "type": "text" },
-        { "id": "responsible3Name", "label": "Person 3 — Name", "type": "text" },
-        { "id": "responsible3DateOfBirth", "label": "Person 3 — Date of Birth", "type": "date" },
-        { "id": "responsible3Address", "label": "Person 3 — Address (Residential or Business)", "type": "textarea" },
-        { "id": "responsible3SSN", "label": "Person 3 — Social Security No.", "type": "text" }
+        {
+          "id": "responsible1Name",
+          "label": "Person 1 — Name",
+          "type": "text"
+        },
+        {
+          "id": "responsible1DateOfBirth",
+          "label": "Person 1 — Date of Birth",
+          "type": "date"
+        },
+        {
+          "id": "responsible1Address",
+          "label": "Person 1 — Address (Residential or Business)",
+          "type": "textarea"
+        },
+        {
+          "id": "responsible1SSN",
+          "label": "Person 1 — Social Security No.",
+          "type": "text"
+        },
+        {
+          "id": "responsible2Name",
+          "label": "Person 2 — Name",
+          "type": "text"
+        },
+        {
+          "id": "responsible2DateOfBirth",
+          "label": "Person 2 — Date of Birth",
+          "type": "date"
+        },
+        {
+          "id": "responsible2Address",
+          "label": "Person 2 — Address (Residential or Business)",
+          "type": "textarea"
+        },
+        {
+          "id": "responsible2SSN",
+          "label": "Person 2 — Social Security No.",
+          "type": "text"
+        },
+        {
+          "id": "responsible3Name",
+          "label": "Person 3 — Name",
+          "type": "text"
+        },
+        {
+          "id": "responsible3DateOfBirth",
+          "label": "Person 3 — Date of Birth",
+          "type": "date"
+        },
+        {
+          "id": "responsible3Address",
+          "label": "Person 3 — Address (Residential or Business)",
+          "type": "textarea"
+        },
+        {
+          "id": "responsible3SSN",
+          "label": "Person 3 — Social Security No.",
+          "type": "text"
+        }
       ]
     },
     {
       "title": "Political Associations",
       "fields": [
-        { "id": "hasPoliticalPosition", "label": "Is any of the owners or executive officers, or in the past, holding a political position?", "type": "radio",
-          "options": [ { "value": "yes", "label": "Yes" }, { "value": "no", "label": "No" } ], "required": true },
-        { "id": "familyRelationship", "label": "If a family member, what is the relationship?", "type": "text" },
-        { "id": "whenAndWhichPosition", "label": "If yes, when and which position?", "type": "text" },
-        { "id": "familyMemberName", "label": "Name (if political association)", "type": "text" },
-        { "id": "familyMemberAddress", "label": "Physical Address", "type": "textarea" },
-        { "id": "familyMemberDateOfBirth", "label": "Date of Birth", "type": "date" },
-        { "id": "familyMemberSSN", "label": "Social Security Number", "type": "text" },
-        { "id": "otherPrimaryId", "label": "Other forms of primary ID, if non-US person", "type": "text" }
+        {
+          "id": "hasPoliticalPosition",
+          "label": "Is any of the owners or executive officers, or in the past, holding a political position?",
+          "type": "radio",
+          "options": [
+            {
+              "value": "yes",
+              "label": "Yes"
+            },
+            {
+              "value": "no",
+              "label": "No"
+            }
+          ],
+          "required": true
+        },
+        {
+          "id": "familyRelationship",
+          "label": "If a family member, what is the relationship?",
+          "type": "text"
+        },
+        {
+          "id": "whenAndWhichPosition",
+          "label": "If yes, when and which position?",
+          "type": "text"
+        },
+        {
+          "id": "familyMemberName",
+          "label": "Name (if political association)",
+          "type": "text"
+        },
+        {
+          "id": "familyMemberAddress",
+          "label": "Physical Address",
+          "type": "textarea"
+        },
+        {
+          "id": "familyMemberDateOfBirth",
+          "label": "Date of Birth",
+          "type": "date"
+        },
+        {
+          "id": "familyMemberSSN",
+          "label": "Social Security Number",
+          "type": "text"
+        },
+        {
+          "id": "otherPrimaryId",
+          "label": "Other forms of primary ID, if non-US person",
+          "type": "text"
+        }
       ]
     },
     {
       "title": "Source and Type of Funds",
       "fields": [
-        { "id": "managesThirdPartyFunds", "label": "Does the Company manage third-party funds?", "type": "radio",
-          "options": [ { "value": "yes", "label": "Yes" }, { "value": "no", "label": "No" } ], "required": true },
-        { "id": "dealsCurrency", "label": "Does the Company deal or exchange currency?", "type": "radio",
-          "options": [ { "value": "yes", "label": "Yes" }, { "value": "no", "label": "No" } ], "required": true },
-        { "id": "dealsTravelersChecks", "label": "Does the Company deal with traveler's checks, official bank checks, money orders, and stored value cards?", "type": "radio",
-          "options": [ { "value": "yes", "label": "Yes" }, { "value": "no", "label": "No" } ], "required": true },
-        { "id": "paymentsOtherJurisdictions", "label": "Does the Company's business activity involve payments into other jurisdictions?", "type": "radio",
-          "options": [ { "value": "yes", "label": "Yes" }, { "value": "no", "label": "No" } ], "required": true },
-        { "id": "taxpayerOtherCountry", "label": "Is the Company a taxpayer in any other country (for income tax purposes)? If yes, provide country and taxpayer number", "type": "text" },
-        { "id": "sourceOfFundsDescription", "label": "Describe the source of funds (business activity that generated the funds)", "type": "textarea", "required": true },
-        { "id": "depositsCount", "label": "Number of deposits/installments to be made to the escrow account", "type": "radio",
+        {
+          "id": "managesThirdPartyFunds",
+          "label": "Does the Company manage third-party funds?",
+          "type": "radio",
           "options": [
-            { "value": "1-2", "label": "1-2 Deposits" },
-            { "value": "3-5", "label": "3-5 Deposits" },
-            { "value": "5-10", "label": "5-10 Deposits" },
-            { "value": "10+", "label": "10 and more" }
-          ] },
-        { "id": "fundsCountry", "label": "Which country(ies) the funds will be coming from?", "type": "text" },
-        { "id": "accountsFundsComingFrom", "label": "Accounts where the funds will be coming from", "type": "textarea" }
+            {
+              "value": "yes",
+              "label": "Yes"
+            },
+            {
+              "value": "no",
+              "label": "No"
+            }
+          ],
+          "required": true
+        },
+        {
+          "id": "dealsCurrency",
+          "label": "Does the Company deal or exchange currency?",
+          "type": "radio",
+          "options": [
+            {
+              "value": "yes",
+              "label": "Yes"
+            },
+            {
+              "value": "no",
+              "label": "No"
+            }
+          ],
+          "required": true
+        },
+        {
+          "id": "dealsTravelersChecks",
+          "label": "Does the Company deal with traveler's checks, official bank checks, money orders, and stored value cards?",
+          "type": "radio",
+          "options": [
+            {
+              "value": "yes",
+              "label": "Yes"
+            },
+            {
+              "value": "no",
+              "label": "No"
+            }
+          ],
+          "required": true
+        },
+        {
+          "id": "paymentsOtherJurisdictions",
+          "label": "Does the Company's business activity involve payments into other jurisdictions?",
+          "type": "radio",
+          "options": [
+            {
+              "value": "yes",
+              "label": "Yes"
+            },
+            {
+              "value": "no",
+              "label": "No"
+            }
+          ],
+          "required": true
+        },
+        {
+          "id": "taxpayerOtherCountry",
+          "label": "Is the Company a taxpayer in any other country (for income tax purposes)? If yes, provide country and taxpayer number",
+          "type": "text"
+        },
+        {
+          "id": "sourceOfFundsDescription",
+          "label": "Describe the source of funds (business activity that generated the funds)",
+          "type": "textarea",
+          "required": true
+        },
+        {
+          "id": "depositsCount",
+          "label": "Number of deposits/installments to be made to the escrow account",
+          "type": "radio",
+          "options": [
+            {
+              "value": "1-2",
+              "label": "1-2 Deposits"
+            },
+            {
+              "value": "3-5",
+              "label": "3-5 Deposits"
+            },
+            {
+              "value": "5-10",
+              "label": "5-10 Deposits"
+            },
+            {
+              "value": "10+",
+              "label": "10 and more"
+            }
+          ]
+        },
+        {
+          "id": "fundsCountry",
+          "label": "Which country(ies) the funds will be coming from?",
+          "type": "text"
+        },
+        {
+          "id": "accountsFundsComingFrom",
+          "label": "Accounts where the funds will be coming from",
+          "type": "textarea"
+        }
       ]
     },
     {
       "title": "Wire Instructions (business account escrow should use to disburse funds owed to the entity)",
       "fields": [
-        { "id": "wireBankName", "label": "Bank Name", "type": "text", "required": true },
-        { "id": "wireRoutingOrSwift", "label": "ABA Number or Swift Code", "type": "text", "required": true },
-        { "id": "wireAccountName", "label": "Account Name", "type": "text", "required": true },
-        { "id": "wireAccountNumber", "label": "Account No. (IBAN/CLABE)", "type": "text", "required": true },
-        { "id": "wireBeneficiaryAddress", "label": "Beneficiary Address", "type": "textarea", "required": true },
-        { "id": "wireReference", "label": "Reference (optional)", "type": "text" },
-        { "id": "intermediaryBankName", "label": "Intermediary Bank (optional — international wires only)", "type": "text" },
-        { "id": "intermediaryBankSwift", "label": "Intermediary Bank ABA No or SWIFT Code (optional)", "type": "text" },
-        { "id": "wireAdditionalDetails", "label": "Additional Details (optional)", "type": "textarea" }
+        {
+          "id": "wireBankName",
+          "label": "Bank Name",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "wireRoutingOrSwift",
+          "label": "ABA Number or Swift Code",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "wireAccountName",
+          "label": "Account Name",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "wireAccountNumber",
+          "label": "Account No. (IBAN/CLABE)",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "wireBeneficiaryAddress",
+          "label": "Beneficiary Address",
+          "type": "textarea",
+          "required": true
+        },
+        {
+          "id": "wireReference",
+          "label": "Reference (optional)",
+          "type": "text"
+        },
+        {
+          "id": "intermediaryBankName",
+          "label": "Intermediary Bank (optional — international wires only)",
+          "type": "text"
+        },
+        {
+          "id": "intermediaryBankSwift",
+          "label": "Intermediary Bank ABA No or SWIFT Code (optional)",
+          "type": "text"
+        },
+        {
+          "id": "wireAdditionalDetails",
+          "label": "Additional Details (optional)",
+          "type": "textarea"
+        }
       ]
     }
   ]

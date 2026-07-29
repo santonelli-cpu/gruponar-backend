@@ -313,7 +313,8 @@ const STRINGS = {
     signatureModalTitle: 'Firma electrónica',
     replaceFile: 'Reemplazar', uploading: 'Subiendo...',
     upcomingClosings: 'Cierres próximos', daysToCloseSingular: '{days} día para cierre', daysToClosePlural: '{days} días para cierre',
-    closingToday: 'Cierra hoy', closingOverdue: 'Cierre atrasado'
+    closingToday: 'Cierra hoy', closingOverdue: 'Cierre atrasado',
+    noUpcomingClosingsHint: 'Ninguna operación tiene fecha de cierre capturada todavía — agrégala en el detalle de cada operación (junto a "Fin de due diligence") para que aparezca aquí.'
   },
   en: {
     tabAdmin: 'Admin', tabPortal: 'Client / agent portal',
@@ -442,7 +443,8 @@ const STRINGS = {
     signatureModalTitle: 'E-signature',
     replaceFile: 'Replace', uploading: 'Uploading...',
     upcomingClosings: 'Upcoming closings', daysToCloseSingular: '{days} day to close', daysToClosePlural: '{days} days to close',
-    closingToday: 'Closes today', closingOverdue: 'Closing overdue'
+    closingToday: 'Closes today', closingOverdue: 'Closing overdue',
+    noUpcomingClosingsHint: 'No deal has a closing date set yet — add one in each deal\'s detail (next to "Due diligence end") for it to show up here.'
   }
 };
 
@@ -956,11 +958,17 @@ function buildDashboard(){
   `;
   wrap.appendChild(totalsCard);
 
-  if(d.upcomingClosings && d.upcomingClosings.length){
+  if(d.totalDeals > 0){
     const ucTitle = document.createElement('div');
     ucTitle.className = 'section-title'; ucTitle.textContent = t('upcomingClosings');
     wrap.appendChild(ucTitle);
-    wrap.appendChild(buildUpcomingClosings(d.upcomingClosings));
+    if(d.upcomingClosings && d.upcomingClosings.length){
+      wrap.appendChild(buildUpcomingClosings(d.upcomingClosings));
+    } else {
+      const hint = document.createElement('div'); hint.className = 'card';
+      hint.innerHTML = `<div class="field-hint" style="margin:0;">${t('noUpcomingClosingsHint')}</div>`;
+      wrap.appendChild(hint);
+    }
   }
 
   if(d.signaturesAwaiting.length){
