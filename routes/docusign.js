@@ -6,7 +6,7 @@ const docusign = require('docusign-esign');
 const db = require('../db');
 const { requireAuth, requireRole } = require('./auth');
 const { canAccessDeal, myRoleInDeal } = require('../lib/access');
-const { dealDir, genFilename } = require('../lib/storage');
+const { UPLOADS_ROOT, dealDir, genFilename } = require('../lib/storage');
 const docusignClient = require('../lib/docusignClient');
 const { fillArmourEscrow } = require('../lib/kycFill/armourEscrow');
 const { convertDocxToPdf } = require('../lib/kycFill/docxFillEngine');
@@ -206,6 +206,18 @@ router.get('/deals/:id/tasks/:taskId/status', requireAuth, async (req, res) => {
 
     const docusignStatus = envelope.status;
     const newStatus = docusignStatus === 'completed' ? 'done' : task.status;
+
+    if (docusignStatus === 'completed' && task.status !== 'done' && task.document_url) {
+      try {
+        const signedBytes = await docusignClient.downloadEnvelopeDocument(task.docusign_envelope_id);
+        const resolved = path.resolve(UPLOADS_ROOT, task.document_url);
+        if (resolved.startsWith(path.resolve(UPLOADS_ROOT) + path.sep)) fs.writeFileSync(resolved, signedBytes);
+      } catch (docErr) {
+        // No bloquea la sincronización de estado — se puede reintentar en
+        // la próxima llamada a /status.
+      }
+    }
+
     db.prepare('UPDATE tasks SET docusign_status = ?, status = ? WHERE id = ?')
       .run(docusignStatus, newStatus, task.id);
 

@@ -1098,8 +1098,15 @@ function buildKycForm(deal, role, data){
       const result = await apiFetch(`/api/deals/${deal.id}/kyc/${role}/generate`, { method:'POST' });
       kycFormOpenFor = null;
       await loadKyc(deal.id, role);
-      if(result.sentForSignature){
-        alert('Documento generado y enviado a firma automáticamente — ya se puede firmar.');
+      if(result.sentForSignature && currentUser.role === role){
+        // Quien acaba de llenar el formulario es quien firma — se abre la
+        // firma de una vez, sin que tenga que ir a buscar "Firmar ahora".
+        try{
+          const { url } = await apiFetch(`/api/deals/${deal.id}/kyc/${role}/signing-url`, { method:'POST' });
+          openKycSigningModal(url, deal.id, role);
+        }catch(e){ /* si falla, se queda en la sección con el botón "Firmar ahora" como respaldo */ }
+      } else if(result.sentForSignature){
+        alert('Documento generado y enviado a firma automáticamente.');
       } else if(result.autoSendError){
         alert('El documento se generó, pero no se pudo enviar a firma automáticamente: ' + result.autoSendError + '\nPuedes reintentar con el botón "Enviar a firma".');
       }

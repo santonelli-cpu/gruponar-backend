@@ -370,6 +370,21 @@ router.get('/deals/:id/kyc/:role/status', requireAuth, async (req, res) => {
     const envelope = await envelopesApi.getEnvelope(process.env.DOCUSIGN_ACCOUNT_ID, submission.docusign_envelope_id);
     const newStatus = envelope.status === 'completed' ? 'signed' : submission.status;
 
+    // Recién completado — hay que traer el PDF YA FIRMADO y reemplazar el
+    // que se mandó a firmar, o "Ver documento" seguiría mostrando el
+    // borrador sin firma.
+    if (envelope.status === 'completed' && submission.status !== 'signed' && submission.generated_file_url) {
+      try {
+        const signedBytes = await docusignClient.downloadEnvelopeDocument(submission.docusign_envelope_id);
+        const { UPLOADS_ROOT } = require('../lib/storage');
+        const resolved = path.resolve(UPLOADS_ROOT, submission.generated_file_url);
+        if (resolved.startsWith(path.resolve(UPLOADS_ROOT) + path.sep)) fs.writeFileSync(resolved, signedBytes);
+      } catch (docErr) {
+        // No bloquea la sincronización de estado si esto falla — se puede
+        // reintentar en la próxima llamada a /status.
+      }
+    }
+
     db.prepare("UPDATE kyc_submissions SET docusign_status = ?, status = ?, updated_at = datetime('now') WHERE id = ?")
       .run(envelope.status, newStatus, submission.id);
 

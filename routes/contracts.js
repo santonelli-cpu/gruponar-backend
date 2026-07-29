@@ -305,6 +305,17 @@ router.get('/deals/:id/contract/status', requireAuth, async (req, res) => {
     const envelope = await envelopesApi.getEnvelope(process.env.DOCUSIGN_ACCOUNT_ID, deal.contract_docusign_envelope_id);
     const newStatus = envelope.status === 'completed' ? 'signed' : deal.contract_status;
 
+    if (envelope.status === 'completed' && deal.contract_status !== 'signed' && deal.contract_generated_file_url) {
+      try {
+        const signedBytes = await docusignClient.downloadEnvelopeDocument(deal.contract_docusign_envelope_id);
+        const resolved = path.resolve(UPLOADS_ROOT, deal.contract_generated_file_url);
+        if (resolved.startsWith(path.resolve(UPLOADS_ROOT) + path.sep)) fs.writeFileSync(resolved, signedBytes);
+      } catch (docErr) {
+        // No bloquea la sincronización de estado — se puede reintentar en
+        // la próxima llamada a /status.
+      }
+    }
+
     db.prepare('UPDATE deals SET contract_docusign_status = ?, contract_status = ? WHERE id = ?')
       .run(envelope.status, newStatus, id);
 
