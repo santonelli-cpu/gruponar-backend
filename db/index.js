@@ -33,12 +33,15 @@ ensureColumn('tasks', 'docusign_status', "docusign_status TEXT NOT NULL DEFAULT 
 ensureColumn('documents', 'mime_type', 'mime_type TEXT');
 ensureColumn('documents', 'size_bytes', 'size_bytes INTEGER');
 ensureColumn('documents', 'original_name', 'original_name TEXT');
-// Solo aplica a los 3 documentos societarios de LLC que llegan primero sin
-// notarizar/apostillar y después ya completos (ver checklist en
-// data/scenario-docs.json) — la app decide cuándo mostrar esta casilla
-// comparando el nombre del documento, no hace falta un flag separado de
-// "aplica o no".
+// Reemplazada por sub_checks_json (abajo) — cada documento de LLC que lo
+// requiere ahora tiene sus propias casillas independientes (notarizado,
+// apostillado, traducido), no un solo flag de "apostillado". Se deja la
+// columna sin usar en vez de recrear la tabla otra vez (no llegó a tener
+// datos reales todavía).
 ensureColumn('documents', 'apostille_done', 'apostille_done INTEGER NOT NULL DEFAULT 0');
+// { "Notarized": true, "Apostilled": false, "Translated": false } — solo
+// para los documentos listados en routes/deals.js SUB_CHECKS_BY_DOC.
+ensureColumn('documents', 'sub_checks_json', 'sub_checks_json TEXT');
 // SQLite exige que el DEFAULT de un ADD COLUMN sea una constante — ni
 // datetime('now') ni CURRENT_TIMESTAMP califican para una columna NOT NULL
 // agregada después. En vez de pelear con eso: columna sin default (nullable),

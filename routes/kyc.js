@@ -13,6 +13,10 @@ const { fillTlaIndividualEs, SIGNATURE_ANCHOR: TLA_IND_ES_ANCHOR } = require('..
 const { fillTlaEntityEn, SIGNATURE_ANCHOR: TLA_ENTITY_EN_ANCHOR } = require('../lib/kycFill/tlaEntityEn');
 const { fillArmourMoralEs, SIGNATURE_ANCHOR: ARMOUR_MORAL_ES_ANCHOR } = require('../lib/kycFill/armourMoralEs');
 const { fillArmourMoralEn, SIGNATURE_ANCHOR: ARMOUR_MORAL_EN_ANCHOR } = require('../lib/kycFill/armourMoralEn');
+const { fillLprIndividualEs, SIGNATURE_ANCHOR: LPR_IND_ES_ANCHOR } = require('../lib/kycFill/lprIndividualEs');
+const { fillLprIndividualEn, SIGNATURE_ANCHOR: LPR_IND_EN_ANCHOR } = require('../lib/kycFill/lprIndividualEn');
+const { fillLprMoralEs, SIGNATURE_ANCHOR: LPR_MORAL_ES_ANCHOR } = require('../lib/kycFill/lprMoralEs');
+const { fillLprMoralEn, SIGNATURE_ANCHOR: LPR_MORAL_EN_ANCHOR } = require('../lib/kycFill/lprMoralEn');
 const { convertDocxToPdf } = require('../lib/kycFill/docxFillEngine');
 
 const router = express.Router();
@@ -49,18 +53,58 @@ const TEMPLATES = {
     definition: require('../data/kyc-templates/armour-moral-en.json'),
     fill: fillArmourMoralEn,
     signatureAnchor: ARMOUR_MORAL_EN_ANCHOR
+  },
+  'lpr-individual-es': {
+    definition: require('../data/kyc-templates/lpr-individual-es.json'),
+    fill: fillLprIndividualEs,
+    signatureAnchor: LPR_IND_ES_ANCHOR
+  },
+  'lpr-individual-en': {
+    definition: require('../data/kyc-templates/lpr-individual-en.json'),
+    fill: fillLprIndividualEn,
+    signatureAnchor: LPR_IND_EN_ANCHOR
+  },
+  'lpr-moral-es': {
+    definition: require('../data/kyc-templates/lpr-moral-es.json'),
+    fill: fillLprMoralEs,
+    signatureAnchor: LPR_MORAL_ES_ANCHOR
+  },
+  'lpr-moral-en': {
+    definition: require('../data/kyc-templates/lpr-moral-en.json'),
+    fill: fillLprMoralEn,
+    signatureAnchor: LPR_MORAL_EN_ANCHOR
   }
 };
+
+// Si el agente ligado a esta operación es de agencia LPR Luxury, sus
+// clientes llenan el KYC de LPR en vez del de la escrow company — LPR pide
+// su propio expediente independientemente de con qué escrow se trabaje.
+// Puede haber como máximo 1 agente por operación (deal_parties no permite
+// más de un usuario con role_in_deal='agent' ligado al mismo tiempo en la
+// práctica, aunque el esquema no lo fuerce), así que un solo LIMIT 1 basta.
+function dealAgentIsLprAgency(dealId) {
+  const row = db.prepare(`
+    SELECT u.agency FROM deal_parties dp JOIN users u ON u.id = dp.user_id
+    WHERE dp.deal_id = ? AND dp.role_in_deal = 'agent' LIMIT 1
+  `).get(dealId);
+  return !!row && row.agency === 'LPR Luxury';
+}
 
 // Persona física de Armour en inglés todavía no está construida. TLA cubre
 // física (EN/ES) y moral solo en EN. `deal.escrow_company` decide entre
 // Armour/TLA; `party.party_type` decide individual vs entidad (antes venía
 // de deal.buyer_type/seller_type, ahora cada parte tiene el suyo propio);
-// `lang` lo elige quien abre el formulario.
-function resolveTemplateKey(deal, party, lang) {
-  const company = deal.escrow_company || 'armour';
+// `lang` lo elige quien abre el formulario. Si el agente es de LPR Luxury,
+// eso manda por encima de la escrow company (ver dealAgentIsLprAgency).
+function resolveTemplateKey(deal, party, lang, isLprAgency) {
   const isIndividual = party.party_type === 'individual';
 
+  if (isLprAgency) {
+    if (isIndividual) return lang === 'en' ? 'lpr-individual-en' : 'lpr-individual-es';
+    return lang === 'en' ? 'lpr-moral-en' : 'lpr-moral-es';
+  }
+
+  const company = deal.escrow_company || 'armour';
   if (company === 'tla') {
     if (isIndividual) return lang === 'en' ? 'tla-individual-en' : 'tla-individual-es';
     return lang === 'es' ? null : 'tla-entity-en'; // persona moral de TLA solo existe en inglés todavía
@@ -114,8 +158,9 @@ router.get('/deals/:id/kyc/:partyId', requireAuth, (req, res) => {
   // Si ya hay un borrador/expediente guardado, seguimos con ese idioma tal
   // cual (no lo cambia un ?lang= distinto a medio llenar); si no existe
   // todavía, ?lang= (o el idioma por defecto de la plantilla) decide cuál.
+  const isLprAgency = dealAgentIsLprAgency(id);
   const existing = getLatestSubmission(partyId);
-  const templateKey = existing ? existing.template_key : resolveTemplateKey(deal, party, req.query.lang);
+  const templateKey = existing ? existing.template_key : resolveTemplateKey(deal, party, req.query.lang, isLprAgency);
   if (!templateKey || !TEMPLATES[templateKey]) {
     return res.status(501).json({ error: 'Todavía no hay una plantilla KYC construida para esta combinación de compañía/tipo de persona/idioma.' });
   }
@@ -131,7 +176,7 @@ router.get('/deals/:id/kyc/:partyId', requireAuth, (req, res) => {
     docusignStatus: submission ? submission.docusign_status : 'not_sent',
     generatedFileUrl: submission && submission.generated_file_url ? true : false,
     availableTemplates: Object.keys(TEMPLATES)
-      .filter(k => resolveTemplateKey(deal, party, 'es') === k || resolveTemplateKey(deal, party, 'en') === k)
+      .filter(k => resolveTemplateKey(deal, party, 'es', isLprAgency) === k || resolveTemplateKey(deal, party, 'en', isLprAgency) === k)
   });
 });
 
@@ -168,7 +213,7 @@ router.post('/deals/:id/kyc/:partyId', requireAuth, (req, res) => {
   if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
 
   const priorSubmission = getLatestSubmission(partyId);
-  const templateKey = priorSubmission ? priorSubmission.template_key : resolveTemplateKey(deal, party, req.body?.lang);
+  const templateKey = priorSubmission ? priorSubmission.template_key : resolveTemplateKey(deal, party, req.body?.lang, dealAgentIsLprAgency(id));
   if (!templateKey || !TEMPLATES[templateKey]) return res.status(501).json({ error: 'Plantilla no disponible todavía.' });
 
   const { answers } = req.body || {};

@@ -27,14 +27,16 @@ const SCENARIO_TASKS = require('../data/scenario-tasks.json');
 const MAX_PARTIES_PER_SIDE = 4;
 const TRUST_DOCS = ['Trust Agreement', 'Certificate of Trust'];
 
-// Estos 3 documentos societarios de la LLC normalmente llegan dos veces:
-// primero una copia escaneada sin notarizar/apostillar, y después la versión
-// notarizada y apostillada — se marcan por separado del "recibido" normal.
-const APOSTILLE_DOC_NAMES = [
-  'Acta constitutiva de LLC (notariada y apostillada)',
-  'Acuerdo operativo (notariado y apostillado)',
-  'Certificado de vigencia / good standing (apostillado)'
-];
+// Estos 3 documentos societarios de la LLC normalmente llegan primero como
+// copia escaneada simple, y después en su versión final — cada requisito
+// (notarizado/apostillado/traducido) se marca por separado del "recibido"
+// normal, porque llegan en momentos distintos y no todos aplican a los tres
+// documentos (Good Standing no se notariza, por ejemplo).
+const SUB_CHECKS_BY_DOC = {
+  'Good Standing': ['Apostilled', 'Translated'],
+  'Operating Agreement': ['Notarized', 'Apostilled', 'Translated'],
+  'Articles of organization': ['Notarized', 'Apostilled', 'Translated']
+};
 
 // Arma el checklist de documentos de UNA parte (vendedor o comprador),
 // según su tipo y — si es entidad (corporation/llc) — su estructura de
@@ -431,21 +433,27 @@ router.post('/:id/parties/:partyId/remind', requireRole('admin', 'agent', 'lawye
 });
 
 // PATCH /api/deals/:id/documents/:docId — marcar documento recibido y/o
-// (solo para los 3 documentos de LLC que lo requieren) marcar que ya llegó
-// la versión notarizada y apostillada.
+// (solo para los documentos de LLC que lo requieren) marcar cuáles de sus
+// requisitos (notarizado/apostillado/traducido) ya llegaron.
 router.patch('/:id/documents/:docId', requireAuth, (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
-  const { status, apostilleDone } = req.body || {};
+  const { status, subChecks } = req.body || {};
   if (status !== undefined) {
     if (!['pending', 'done'].includes(status)) return res.status(400).json({ error: 'Status inválido.' });
     db.prepare('UPDATE documents SET status = ?, uploaded_by = ?, uploaded_at = datetime(\'now\') WHERE id = ? AND deal_id = ?')
       .run(status, req.session.userId, req.params.docId, req.params.id);
   }
-  if (apostilleDone !== undefined) {
-    const doc = db.prepare('SELECT name FROM documents WHERE id = ? AND deal_id = ?').get(req.params.docId, req.params.id);
+  if (subChecks !== undefined) {
+    const doc = db.prepare('SELECT name, sub_checks_json FROM documents WHERE id = ? AND deal_id = ?').get(req.params.docId, req.params.id);
     if (!doc) return res.status(404).json({ error: 'Documento no encontrado.' });
-    if (!APOSTILLE_DOC_NAMES.includes(doc.name)) return res.status(400).json({ error: 'Este documento no lleva casilla de apostilla.' });
-    db.prepare('UPDATE documents SET apostille_done = ? WHERE id = ? AND deal_id = ?').run(apostilleDone ? 1 : 0, req.params.docId, req.params.id);
+    const allowed = SUB_CHECKS_BY_DOC[doc.name];
+    if (!allowed) return res.status(400).json({ error: 'Este documento no lleva casillas de notarizado/apostillado/traducido.' });
+    if (Object.keys(subChecks).some(k => !allowed.includes(k))) {
+      return res.status(400).json({ error: `Este documento solo acepta: ${allowed.join(', ')}.` });
+    }
+    const current = doc.sub_checks_json ? JSON.parse(doc.sub_checks_json) : {};
+    const merged = { ...current, ...subChecks };
+    db.prepare('UPDATE documents SET sub_checks_json = ? WHERE id = ? AND deal_id = ?').run(JSON.stringify(merged), req.params.docId, req.params.id);
   }
   res.json({ ok: true });
 });

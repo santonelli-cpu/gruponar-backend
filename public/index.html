@@ -215,18 +215,19 @@ function adaptDoc(d){
   return {
     id: d.id, name: d.name, subLabel: d.sub_label, status: d.status,
     fileUrl: d.file_url, originalName: d.original_name, partyId: d.deal_party_entity_id,
-    apostilleDone: !!d.apostille_done
+    subChecks: d.sub_checks_json ? JSON.parse(d.sub_checks_json) : {}
   };
 }
-// Estos 3 documentos de LLC llegan normalmente dos veces (sin notarizar
-// primero, notarizado y apostillado después) — mismo nombre que
-// data/scenario-docs.json y routes/deals.js (APOSTILLE_DOC_NAMES).
 const AGENCIES = ['LPR Luxury', 'Applegate Realtors', 'JPM Real Estate', 'Interamerican'];
-const APOSTILLE_DOC_NAMES = [
-  'Acta constitutiva de LLC (notariada y apostillada)',
-  'Acuerdo operativo (notariado y apostillado)',
-  'Certificado de vigencia / good standing (apostillado)'
-];
+// Estos documentos de LLC llegan primero como copia escaneada simple y
+// después con estos requisitos ya cumplidos, cada uno por separado (Good
+// Standing no se notariza, por eso no lo tiene) — mismos nombres/listas que
+// routes/deals.js SUB_CHECKS_BY_DOC.
+const SUB_CHECKS_BY_DOC = {
+  'Good Standing': ['Apostilled', 'Translated'],
+  'Operating Agreement': ['Notarized', 'Apostilled', 'Translated'],
+  'Articles of organization': ['Notarized', 'Apostilled', 'Translated']
+};
 function adaptTask(t){
   return {
     id: t.id, en: t.label_en, es: t.label_es, status: t.status, sign: !!t.requires_signature,
@@ -1471,10 +1472,14 @@ function buildDocItemLi(deal, doc){
   // El sub_label ya se muestra como encabezado de grupo en
   // buildDocListForParty — aquí solo el nombre del documento.
   const label = escapeHtml(doc.name);
-  const needsApostille = APOSTILLE_DOC_NAMES.includes(doc.name);
+  const subCheckLabels = SUB_CHECKS_BY_DOC[doc.name] || [];
+  const subChecksHtml = subCheckLabels.map(sc => `
+    <label style="display:flex; align-items:center; gap:4px; font-size:11px; color:var(--ink-soft); cursor:pointer;">
+      <input type="checkbox" class="sub-check" data-label="${escapeHtml(sc)}" ${doc.subChecks[sc]?'checked':''}> ${escapeHtml(sc)}
+    </label>`).join('');
   li.innerHTML = `<span class="doc-check ${doc.status==='done'?'done':''}">${doc.status==='done'?'<i class=\"ti ti-check\" aria-hidden=\"true\"></i>':''}</span><span>${label}</span>
     <span style="margin-left:auto; display:flex; align-items:center; gap:8px;">
-      ${needsApostille ? `<label style="display:flex; align-items:center; gap:4px; font-size:11px; color:var(--ink-soft); cursor:pointer;" title="Marca cuando ya llegó la versión notarizada y apostillada (no la copia escaneada simple)"><input type="checkbox" class="apostille-check" ${doc.apostilleDone?'checked':''}> Notariado + apostillado</label>` : ''}
+      ${subChecksHtml}
       ${doc.fileUrl ? `<a href="/api/deals/${deal.id}/documents/${doc.id}/file" target="_blank" style="font-size:11px;">Ver archivo</a>` : ''}
       <input type="file" style="font-size:11px; max-width:130px;" accept=".pdf,.jpg,.jpeg,.png,.heic" title="Adjuntar documento">
     </span>`;
@@ -1485,16 +1490,16 @@ function buildDocItemLi(deal, doc){
       doc.status = next; render();
     }catch(e){ alert(e.message); }
   };
-  const apostilleCheck = li.querySelector('.apostille-check');
-  if(apostilleCheck){
-    apostilleCheck.onchange = async (e) => {
+  li.querySelectorAll('.sub-check').forEach(checkEl => {
+    checkEl.onchange = async (e) => {
+      const scLabel = checkEl.dataset.label;
       const next = e.target.checked;
       try{
-        await apiFetch(`/api/deals/${deal.id}/documents/${doc.id}`, { method:'PATCH', body: JSON.stringify({apostilleDone: next}) });
-        doc.apostilleDone = next;
+        await apiFetch(`/api/deals/${deal.id}/documents/${doc.id}`, { method:'PATCH', body: JSON.stringify({subChecks: {[scLabel]: next}}) });
+        doc.subChecks[scLabel] = next;
       }catch(err){ alert(err.message); e.target.checked = !next; }
     };
-  }
+  });
   li.querySelector('input[type=file]').onchange = async (e) => {
     const file = e.target.files[0];
     if(!file) return;

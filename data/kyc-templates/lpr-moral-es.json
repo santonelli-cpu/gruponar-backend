@@ -1,0 +1,101 @@
+{
+  "key": "lpr-moral-es",
+  "label": "LPR Luxury — Expediente de Identificación (Persona Moral, español)",
+  "docxFile": "lpr-moral-es.docx",
+  "company": "lpr",
+  "partyKind": "entity",
+  "language": "es",
+  "sections": [
+    {
+      "title": "Tipo de persona",
+      "fields": [
+        { "id": "tipoPersona", "label": "Tipo de persona", "type": "radio",
+          "options": [
+            { "value": "moral_extranjera", "label": "Persona moral extranjera" },
+            { "value": "moral_mexicana", "label": "Persona moral mexicana" },
+            { "value": "fideicomiso", "label": "Fideicomiso" }
+          ], "required": true },
+        { "id": "numeroExpediente", "label": "Número de expediente (lo asigna tu coordinador)", "type": "text" }
+      ]
+    },
+    {
+      "title": "Datos de la sociedad",
+      "fields": [
+        { "id": "denominacionSocial", "label": "Denominación o razón social", "type": "text", "required": true, "prefillFrom": "partyName" },
+        { "id": "fechaConstitucion", "label": "Fecha de constitución", "type": "date", "required": true },
+        { "id": "nacionalidadEmpresa", "label": "Nacionalidad", "type": "text", "required": true },
+        { "id": "actividadObjetoSocial", "label": "Actividad u objeto social", "type": "textarea", "required": true },
+        { "id": "giroMercantil", "label": "Giro mercantil", "type": "text", "required": true },
+        { "id": "rfcEmpresa", "label": "RFC de la sociedad (opcional — solo sociedades mexicanas, 13 caracteres)", "type": "text", "maxLength": 13 },
+        { "id": "domicilioAdministrativo", "label": "Domicilio donde se llevan a cabo las actividades administrativas de la sociedad", "type": "textarea", "required": true }
+      ]
+    },
+    {
+      "title": "Representante legal — identificación",
+      "fields": [
+        { "id": "repNombre", "label": "Nombre completo del representante (apellido paterno, materno y nombre(s) tal como aparece en identificación oficial)", "type": "text", "required": true, "prefillFrom": "partyName" },
+        { "id": "repFechaNacimiento", "label": "Fecha de nacimiento", "type": "date", "required": true },
+        { "id": "repLugarNacimiento", "label": "Lugar de nacimiento (ciudad y país)", "type": "text", "required": true },
+        { "id": "repNacionalidad", "label": "Nacionalidad", "type": "text", "required": true },
+        { "id": "repCondicionEstanciaMexico", "label": "Condición de legal estancia en México (opcional, solo si aplica)", "type": "text" },
+        { "id": "repLugarResidencia", "label": "Lugar de residencia", "type": "text", "required": true },
+        { "id": "repOcupacion", "label": "Ocupación", "type": "text", "required": true }
+      ]
+    },
+    {
+      "title": "Representante legal — contacto",
+      "fields": [
+        { "id": "repTelefonoCasa", "label": "Teléfono de casa (clave internacional)", "type": "text" },
+        { "id": "repTelefonoOficina", "label": "Teléfono de oficina (clave internacional)", "type": "text" },
+        { "id": "repTelefonoCelular", "label": "Teléfono celular (clave internacional)", "type": "text", "required": true },
+        { "id": "repCorreoElectronico", "label": "Correo electrónico", "type": "email", "required": true, "prefillFrom": "partyEmail" }
+      ]
+    },
+    {
+      "title": "Representante legal — documento de identificación",
+      "fields": [
+        { "id": "repTipoDocumento", "label": "Tipo de documento con el que se identifica", "type": "text", "required": true },
+        { "id": "repAutoridadEmisora", "label": "Autoridad que emite la identificación", "type": "text", "required": true },
+        { "id": "repNumeroIdentificacion", "label": "Número de identificación", "type": "text", "required": true },
+        { "id": "repFechaExpedicionId", "label": "Fecha de expedición de identificación", "type": "date", "required": true },
+        { "id": "repFechaVencimientoId", "label": "Fecha de vencimiento de identificación", "type": "date", "required": true }
+      ]
+    },
+    {
+      "title": "Domicilio del representante",
+      "fields": [
+        { "id": "domicilioMexico", "label": "Domicilio particular en México (opcional, solo si aplica)", "type": "textarea" },
+        { "id": "domicilioExtranjero", "label": "Domicilio particular en el extranjero (opcional, solo si aplica)", "type": "textarea" }
+      ]
+    },
+    {
+      "title": "Identificadores fiscales del representante",
+      "fields": [
+        { "id": "curp", "label": "CURP (opcional — solo mexicanos y residentes, 18 caracteres)", "type": "text", "maxLength": 18 },
+        { "id": "rfc", "label": "RFC (opcional — solo mexicanos y residentes, 13 caracteres)", "type": "text", "maxLength": 13 },
+        { "id": "numeroSeguridadSocial", "label": "Número de seguridad social o de acreditación de ciudadanía (opcional — solo extranjeros)", "type": "text" }
+      ]
+    },
+    {
+      "title": "Dueño beneficiario",
+      "fields": [
+        { "id": "tieneDuenoBeneficiario", "label": "¿Tiene conocimiento de la existencia de dueño beneficiario?", "type": "radio",
+          "options": [ { "value": "si", "label": "Sí" }, { "value": "no", "label": "No" } ], "required": true },
+        { "id": "tipoDuenoBeneficiario", "label": "Tipo de dueño beneficiario (solo si respondió sí arriba)", "type": "radio",
+          "options": [
+            { "value": "persona_fisica_mx", "label": "Persona física mexicana o extranjera residente" },
+            { "value": "persona_fisica_visitante", "label": "Persona física extranjera visitante" },
+            { "value": "persona_moral_mx", "label": "Persona moral mexicana" },
+            { "value": "persona_moral_extranjera", "label": "Persona moral extranjera" },
+            { "value": "fideicomiso", "label": "Fideicomiso" }
+          ] }
+      ]
+    },
+    {
+      "title": "Declaración",
+      "fields": [
+        { "id": "fechaFirma", "label": "Fecha", "type": "date", "required": true }
+      ]
+    }
+  ]
+}

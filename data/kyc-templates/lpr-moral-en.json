@@ -1,0 +1,101 @@
+{
+  "key": "lpr-moral-en",
+  "label": "LPR Luxury — Customer Identification Record (Legal Entity, English)",
+  "docxFile": "lpr-moral-en.docx",
+  "company": "lpr",
+  "partyKind": "entity",
+  "language": "en",
+  "sections": [
+    {
+      "title": "Type of person",
+      "fields": [
+        { "id": "tipoPersona", "label": "Type of person", "type": "radio",
+          "options": [
+            { "value": "moral_extranjera", "label": "Foreign legal entity" },
+            { "value": "moral_mexicana", "label": "Mexican legal entity" },
+            { "value": "fideicomiso", "label": "Trust" }
+          ], "required": true },
+        { "id": "numeroExpediente", "label": "File number (FME-___, assigned by your coordinator)", "type": "text" }
+      ]
+    },
+    {
+      "title": "Legal entity data",
+      "fields": [
+        { "id": "denominacionSocial", "label": "Name of legal entity", "type": "text", "required": true, "prefillFrom": "partyName" },
+        { "id": "fechaConstitucion", "label": "Date of incorporation", "type": "date", "required": true },
+        { "id": "nacionalidadEmpresa", "label": "Nationality", "type": "text", "required": true },
+        { "id": "actividadObjetoSocial", "label": "Activity or business object", "type": "textarea", "required": true },
+        { "id": "giroMercantil", "label": "Type of business", "type": "text", "required": true },
+        { "id": "rfcEmpresa", "label": "RFC (optional — Mexican legal entities only, 13 characters)", "type": "text", "maxLength": 13 },
+        { "id": "domicilioAdministrativo", "label": "Address where holding company administrative activities take place", "type": "textarea", "required": true }
+      ]
+    },
+    {
+      "title": "Legal representative — identification",
+      "fields": [
+        { "id": "repNombre", "label": "Full name of the representative (as shown on official identification)", "type": "text", "required": true, "prefillFrom": "partyName" },
+        { "id": "repFechaNacimiento", "label": "Date of birth", "type": "date", "required": true },
+        { "id": "repLugarNacimiento", "label": "Birthplace (city and country)", "type": "text", "required": true },
+        { "id": "repNacionalidad", "label": "Nationality", "type": "text", "required": true },
+        { "id": "repCondicionEstanciaMexico", "label": "Legal status of stay in Mexico (optional, if applicable)", "type": "text" },
+        { "id": "repLugarResidencia", "label": "Place of residency", "type": "text", "required": true },
+        { "id": "repOcupacion", "label": "Occupation", "type": "text", "required": true }
+      ]
+    },
+    {
+      "title": "Legal representative — contact",
+      "fields": [
+        { "id": "repTelefonoCasa", "label": "Home phone number (including international code)", "type": "text" },
+        { "id": "repTelefonoOficina", "label": "Office phone number (including international code)", "type": "text" },
+        { "id": "repTelefonoCelular", "label": "Cell phone number (including international code)", "type": "text", "required": true },
+        { "id": "repCorreoElectronico", "label": "E-mail", "type": "email", "required": true, "prefillFrom": "partyEmail" }
+      ]
+    },
+    {
+      "title": "Legal representative — identification document",
+      "fields": [
+        { "id": "repTipoDocumento", "label": "Document type you identify yourself with", "type": "text", "required": true },
+        { "id": "repAutoridadEmisora", "label": "Issuing authority", "type": "text", "required": true },
+        { "id": "repNumeroIdentificacion", "label": "Identification number", "type": "text", "required": true },
+        { "id": "repFechaExpedicionId", "label": "Date issued", "type": "date", "required": true },
+        { "id": "repFechaVencimientoId", "label": "Expiration date", "type": "date", "required": true }
+      ]
+    },
+    {
+      "title": "Representative's address",
+      "fields": [
+        { "id": "domicilioMexico", "label": "Home address in Mexico (optional, if applicable)", "type": "textarea" },
+        { "id": "domicilioExtranjero", "label": "Private home abroad address (optional, if applicable)", "type": "textarea" }
+      ]
+    },
+    {
+      "title": "Representative's tax identifiers",
+      "fields": [
+        { "id": "curp", "label": "CURP (optional — Mexicans and residents only, 18 characters)", "type": "text", "maxLength": 18 },
+        { "id": "rfc", "label": "RFC (optional — Mexicans and residents only, 13 characters)", "type": "text", "maxLength": 13 },
+        { "id": "numeroSeguridadSocial", "label": "Social Security number or government accreditation number of citizenship (optional — aliens only)", "type": "text" }
+      ]
+    },
+    {
+      "title": "Beneficiary owner",
+      "fields": [
+        { "id": "tieneDuenoBeneficiario", "label": "Do you have knowledge of the existence of a beneficiary owner?", "type": "radio",
+          "options": [ { "value": "si", "label": "Yes" }, { "value": "no", "label": "No" } ], "required": true },
+        { "id": "tipoDuenoBeneficiario", "label": "Type of beneficiary owner (only if you answered Yes above)", "type": "radio",
+          "options": [
+            { "value": "persona_fisica_mx", "label": "Natural person or Mexican foreign resident" },
+            { "value": "persona_fisica_visitante", "label": "Natural person foreign visitor" },
+            { "value": "persona_moral_mx", "label": "Mexican legal entity" },
+            { "value": "persona_moral_extranjera", "label": "Foreign legal entity" },
+            { "value": "fideicomiso", "label": "Trust" }
+          ] }
+      ]
+    },
+    {
+      "title": "Declaration",
+      "fields": [
+        { "id": "fechaFirma", "label": "Date", "type": "date", "required": true }
+      ]
+    }
+  ]
+}

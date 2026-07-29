@@ -33,26 +33,26 @@
       "Acta de matrimonio (rep. legal, si aplica)"
     ],
     "llc_entity": [
-      "Acta constitutiva de LLC (notariada y apostillada)",
-      "Acuerdo operativo (notariado y apostillado)",
-      "Certificado de vigencia / good standing (apostillado)",
-      "Constancia de facultades del gerente (notariada y apostillada)",
-      "Comprobante de domicilio de la LLC",
+      "Articles of organization",
+      "Operating Agreement",
+      "Good Standing",
+      "Proof of Address",
       "EIN Letter"
     ],
     "llc_members": [
-      "Copia de pasaporte (miembro)",
-      "Comprobante de domicilio (miembro)",
-      "Ocupación (miembro)",
-      "SSN (miembro)",
-      "Teléfono (miembro)"
+      "Passport and driver's license (scanned PDF only, DL must be front and back)",
+      "SSN card/Tax ID (scanned copy)",
+      "Proof of address, no older than 2 months (electricity, water, gas receipts)",
+      "Marriage certificate (if applicable)",
+      "Wire instructions"
     ],
     "llc_manager": [
-      "Copia de pasaporte (gerente/rep. legal)",
-      "Comprobante de domicilio (gerente)",
-      "Ocupación (gerente)",
-      "SSN (gerente)",
-      "Teléfono (gerente)"
+      "Passport and driver's license (scanned PDF only, DL must be front and back)",
+      "SSN card/Tax ID (scanned copy)",
+      "Proof of address, no older than 2 months (electricity, water, gas receipts)",
+      "Marriage certificate (if applicable)",
+      "Wire instructions",
+      "Proof of manager's authority (Constancia de facultades del gerente)"
     ]
   },
   "trust": {
@@ -91,26 +91,26 @@
       "Acta de matrimonio (rep. legal, si aplica)"
     ],
     "llc_entity": [
-      "Acta constitutiva de LLC (notariada y apostillada)",
-      "Acuerdo operativo (notariado y apostillado)",
-      "Certificado de vigencia / good standing (apostillado)",
-      "Constancia de facultades del gerente (notariada y apostillada)",
-      "Comprobante de domicilio de la LLC",
+      "Articles of organization",
+      "Operating Agreement",
+      "Good Standing",
+      "Proof of Address",
       "EIN Letter"
     ],
     "llc_members": [
-      "Copia de pasaporte (miembro)",
-      "Comprobante de domicilio (miembro)",
-      "Ocupación (miembro)",
-      "SSN (miembro)",
-      "Teléfono (miembro)"
+      "Passport and driver's license (scanned PDF only, DL must be front and back)",
+      "SSN card/Tax ID (scanned copy)",
+      "Proof of address, no older than 2 months (electricity, water, gas receipts)",
+      "Marriage certificate (if applicable)",
+      "Wire instructions"
     ],
     "llc_manager": [
-      "Copia de pasaporte (gerente/rep. legal)",
-      "Comprobante de domicilio (gerente)",
-      "Ocupación (gerente)",
-      "SSN (gerente)",
-      "Teléfono (gerente)"
+      "Passport and driver's license (scanned PDF only, DL must be front and back)",
+      "SSN card/Tax ID (scanned copy)",
+      "Proof of address, no older than 2 months (electricity, water, gas receipts)",
+      "Marriage certificate (if applicable)",
+      "Wire instructions",
+      "Proof of manager's authority (Constancia de facultades del gerente)"
     ]
   },
   "transfer": {
@@ -151,26 +151,26 @@
       "Acta de matrimonio (rep. legal, si aplica)"
     ],
     "llc_entity": [
-      "Acta constitutiva de LLC (notariada y apostillada)",
-      "Acuerdo operativo (notariado y apostillado)",
-      "Certificado de vigencia / good standing (apostillado)",
-      "Constancia de facultades del gerente (notariada y apostillada)",
-      "Comprobante de domicilio de la LLC",
+      "Articles of organization",
+      "Operating Agreement",
+      "Good Standing",
+      "Proof of Address",
       "EIN Letter"
     ],
     "llc_members": [
-      "Copia de pasaporte (miembro)",
-      "Comprobante de domicilio (miembro)",
-      "Ocupación (miembro)",
-      "SSN (miembro)",
-      "Teléfono (miembro)"
+      "Passport and driver's license (scanned PDF only, DL must be front and back)",
+      "SSN card/Tax ID (scanned copy)",
+      "Proof of address, no older than 2 months (electricity, water, gas receipts)",
+      "Marriage certificate (if applicable)",
+      "Wire instructions"
     ],
     "llc_manager": [
-      "Copia de pasaporte (gerente/rep. legal)",
-      "Comprobante de domicilio (gerente)",
-      "Ocupación (gerente)",
-      "SSN (gerente)",
-      "Teléfono (gerente)"
+      "Passport and driver's license (scanned PDF only, DL must be front and back)",
+      "SSN card/Tax ID (scanned copy)",
+      "Proof of address, no older than 2 months (electricity, water, gas receipts)",
+      "Marriage certificate (if applicable)",
+      "Wire instructions",
+      "Proof of manager's authority (Constancia de facultades del gerente)"
     ]
   },
   "trust_termination": {
@@ -209,26 +209,26 @@
       "Acta de matrimonio (rep. legal, si aplica)"
     ],
     "llc_entity": [
-      "Acta constitutiva de LLC (notariada y apostillada)",
-      "Acuerdo operativo (notariado y apostillado)",
-      "Certificado de vigencia / good standing (apostillado)",
-      "Constancia de facultades del gerente (notariada y apostillada)",
-      "Comprobante de domicilio de la LLC",
+      "Articles of organization",
+      "Operating Agreement",
+      "Good Standing",
+      "Proof of Address",
       "EIN Letter"
     ],
     "llc_members": [
-      "Copia de pasaporte (miembro)",
-      "Comprobante de domicilio (miembro)",
-      "Ocupación (miembro)",
-      "SSN (miembro)",
-      "Teléfono (miembro)"
+      "Passport and driver's license (scanned PDF only, DL must be front and back)",
+      "SSN card/Tax ID (scanned copy)",
+      "Proof of address, no older than 2 months (electricity, water, gas receipts)",
+      "Marriage certificate (if applicable)",
+      "Wire instructions"
     ],
     "llc_manager": [
-      "Copia de pasaporte (gerente/rep. legal)",
-      "Comprobante de domicilio (gerente)",
-      "Ocupación (gerente)",
-      "SSN (gerente)",
-      "Teléfono (gerente)"
+      "Passport and driver's license (scanned PDF only, DL must be front and back)",
+      "SSN card/Tax ID (scanned copy)",
+      "Proof of address, no older than 2 months (electricity, water, gas receipts)",
+      "Marriage certificate (if applicable)",
+      "Wire instructions",
+      "Proof of manager's authority (Constancia de facultades del gerente)"
     ]
   }
 }
