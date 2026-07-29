@@ -177,8 +177,57 @@ router.post('/deals/:id/kyc/:role', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-// POST /api/deals/:id/kyc/:role/generate — arma el PDF final desde la plantilla.
-router.post('/deals/:id/kyc/:role/generate', requireAuth, (req, res) => {
+// Arma y manda el sobre de DocuSign para un expediente ya generado —
+// compartido entre el auto-envío de /generate y el botón manual de
+// /send-for-signature (que sigue existiendo como respaldo si el auto-envío
+// falla, ej. DocuSign se configuró después, o el comprador/vendedor todavía
+// no tenía cuenta ligada en el momento de generar).
+async function sendKycEnvelope(deal, dealId, role, submission, template) {
+  const signer = db.prepare(`
+    SELECT u.id AS userId, u.name, u.email FROM deal_parties dp
+    JOIN users u ON u.id = dp.user_id
+    WHERE dp.deal_id = ? AND dp.role_in_deal = ?
+  `).get(dealId, role);
+  if (!signer) {
+    throw new Error(`No hay ${role === 'buyer' ? 'comprador' : 'vendedor'} con cuenta ligada a esta operación todavía.`);
+  }
+
+  const { UPLOADS_ROOT } = require('../lib/storage');
+  const absPath = path.resolve(UPLOADS_ROOT, submission.generated_file_url);
+  const documentBase64 = fs.readFileSync(absPath).toString('base64');
+
+  const envelopeDefinition = {
+    emailSubject: `Firma requerida: Expediente KYC — ${deal.property}`,
+    documents: [{ documentBase64, name: 'Expediente KYC.pdf', fileExtension: 'pdf', documentId: '1' }],
+    recipients: {
+      signers: [{
+        email: signer.email,
+        name: signer.name,
+        recipientId: '1',
+        clientUserId: String(signer.userId),
+        tabs: {
+          signHereTabs: [{ anchorString: template.signatureAnchor, anchorUnits: 'pixels', anchorXOffset: '0', anchorYOffset: '-20', optional: 'false' }]
+        }
+      }]
+    },
+    status: 'sent'
+  };
+
+  const apiClient = await docusignClient.getAuthorizedApiClient();
+  const envelopesApi = new docusign.EnvelopesApi(apiClient);
+  const result = await envelopesApi.createEnvelope(process.env.DOCUSIGN_ACCOUNT_ID, { envelopeDefinition });
+
+  db.prepare("UPDATE kyc_submissions SET status = 'sent', docusign_envelope_id = ?, docusign_status = 'sent', updated_at = datetime('now') WHERE id = ?")
+    .run(result.envelopeId, submission.id);
+
+  return result.envelopeId;
+}
+
+// POST /api/deals/:id/kyc/:role/generate — arma el PDF final desde la
+// plantilla y, si DocuSign ya está configurado y el firmante tiene cuenta
+// ligada, lo manda a firma automáticamente en el mismo paso — no hace falta
+// que el coordinador lo mande aparte.
+router.post('/deals/:id/kyc/:role/generate', requireAuth, async (req, res) => {
   const { id, role } = req.params;
   if (!['buyer', 'seller'].includes(role)) return res.status(400).json({ error: 'Rol inválido.' });
   if (!canWorkOnKyc(req, id, role)) return res.status(403).json({ error: 'No autorizado.' });
@@ -202,7 +251,19 @@ router.post('/deals/:id/kyc/:role/generate', requireAuth, (req, res) => {
     db.prepare("UPDATE kyc_submissions SET status = 'generated', generated_file_url = ?, updated_at = datetime('now') WHERE id = ?")
       .run(relPath, submission.id);
 
-    res.json({ ok: true });
+    let sentForSignature = false;
+    let autoSendError = null;
+    if (docusignClient.isConfigured()) {
+      try {
+        const freshSubmission = db.prepare('SELECT * FROM kyc_submissions WHERE id = ?').get(submission.id);
+        await sendKycEnvelope(deal, id, role, freshSubmission, template);
+        sentForSignature = true;
+      } catch (err) {
+        autoSendError = err.message || 'No se pudo enviar a firma automáticamente.';
+      }
+    }
+
+    res.json({ ok: true, sentForSignature, autoSendError });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Error al generar el documento.' });
   }
@@ -253,43 +314,9 @@ router.post('/deals/:id/kyc/:role/send-for-signature', requireAuth, async (req, 
   const template = TEMPLATES[submission.template_key];
   if (!template) return res.status(500).json({ error: 'Plantilla desconocida para este expediente.' });
 
-  const signer = db.prepare(`
-    SELECT u.id AS userId, u.name, u.email FROM deal_parties dp
-    JOIN users u ON u.id = dp.user_id
-    WHERE dp.deal_id = ? AND dp.role_in_deal = ?
-  `).get(id, role);
-  if (!signer) return res.status(400).json({ error: `No hay ${role === 'buyer' ? 'comprador' : 'vendedor'} con cuenta ligada a esta operación todavía.` });
-
   try {
-    const { UPLOADS_ROOT } = require('../lib/storage');
-    const absPath = path.resolve(UPLOADS_ROOT, submission.generated_file_url);
-    const documentBase64 = fs.readFileSync(absPath).toString('base64');
-
-    const envelopeDefinition = {
-      emailSubject: `Firma requerida: Expediente KYC — ${deal.property}`,
-      documents: [{ documentBase64, name: 'Expediente KYC.pdf', fileExtension: 'pdf', documentId: '1' }],
-      recipients: {
-        signers: [{
-          email: signer.email,
-          name: signer.name,
-          recipientId: '1',
-          clientUserId: String(signer.userId),
-          tabs: {
-            signHereTabs: [{ anchorString: template.signatureAnchor, anchorUnits: 'pixels', anchorXOffset: '0', anchorYOffset: '-20', optional: 'false' }]
-          }
-        }]
-      },
-      status: 'sent'
-    };
-
-    const apiClient = await docusignClient.getAuthorizedApiClient();
-    const envelopesApi = new docusign.EnvelopesApi(apiClient);
-    const result = await envelopesApi.createEnvelope(process.env.DOCUSIGN_ACCOUNT_ID, { envelopeDefinition });
-
-    db.prepare("UPDATE kyc_submissions SET status = 'sent', docusign_envelope_id = ?, docusign_status = 'sent', updated_at = datetime('now') WHERE id = ?")
-      .run(result.envelopeId, submission.id);
-
-    res.json({ ok: true, envelopeId: result.envelopeId });
+    const envelopeId = await sendKycEnvelope(deal, id, role, submission, template);
+    res.json({ ok: true, envelopeId });
   } catch (err) {
     res.status(502).json({ error: err.message || 'Error al enviar el expediente a firma.' });
   }

@@ -43,20 +43,24 @@ router.get('/', requireAuth, (req, res) => {
     SELECT COUNT(*) AS c FROM tasks WHERE deal_id IN (${dealsSql}) AND status = 'progress'
   `).get(...params).c;
 
-  const staleDocuments = db.prepare(`
-    SELECT d.id AS documentId, d.name, d.owner, d.created_at, deals.id AS dealId, deals.property
+  // Todos los pendientes (no solo los atrasados) — el dashboard los agrupa
+  // por operación para poder completarlos ahí mismo, sin abrir cada
+  // operación una por una. `stale` marca los que llevan más de STALE_DAYS
+  // para resaltarlos, pero ya no son la única razón para aparecer aquí.
+  const pendingDocuments = db.prepare(`
+    SELECT d.id AS documentId, d.name, d.owner, d.created_at, deals.id AS dealId, deals.property,
+      (julianday('now') - julianday(d.created_at) > ${STALE_DAYS}) AS stale
     FROM documents d JOIN deals ON deals.id = d.deal_id
     WHERE d.deal_id IN (${dealsSql}) AND d.status = 'pending'
-      AND julianday('now') - julianday(d.created_at) > ${STALE_DAYS}
-    ORDER BY d.created_at ASC
+    ORDER BY deals.property ASC, d.created_at ASC
   `).all(...params);
 
-  const staleTasks = db.prepare(`
-    SELECT t.id AS taskId, t.label_es, t.label_en, t.status, t.created_at, deals.id AS dealId, deals.property
+  const pendingTasks = db.prepare(`
+    SELECT t.id AS taskId, t.label_es, t.label_en, t.status, t.created_at, deals.id AS dealId, deals.property,
+      (julianday('now') - julianday(t.created_at) > ${STALE_DAYS}) AS stale
     FROM tasks t JOIN deals ON deals.id = t.deal_id
     WHERE t.deal_id IN (${dealsSql}) AND t.status != 'done'
-      AND julianday('now') - julianday(t.created_at) > ${STALE_DAYS}
-    ORDER BY t.created_at ASC
+    ORDER BY deals.property ASC, t.sort_order ASC
   `).all(...params);
 
   const signaturesAwaiting = db.prepare(`
@@ -72,8 +76,8 @@ router.get('/', requireAuth, (req, res) => {
     documentsPending,
     tasksPending,
     tasksInProgress,
-    staleDocuments,
-    staleTasks,
+    pendingDocuments,
+    pendingTasks,
     signaturesAwaiting,
     staleDays: STALE_DAYS
   });

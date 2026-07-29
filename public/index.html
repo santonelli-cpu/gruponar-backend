@@ -532,7 +532,6 @@ function renderAdmin(body){
   });
 }
 
-const SCENARIO_LABEL_SHORT = {purchase:'Compraventa', trust:'Fideicomiso', transfer:'Cesión'};
 
 function buildDashboard(){
   const wrap = document.createElement('div');
@@ -558,38 +557,92 @@ function buildDashboard(){
       <div><div style="font-size:26px; font-weight:600; color:var(--oxblood-deep);">${d.tasksPending + d.tasksInProgress}</div><div class="field-hint" style="margin:0;">Tareas sin terminar</div></div>
       <div><div style="font-size:26px; font-weight:600; color:var(--oxblood-deep);">${d.signaturesAwaiting.length}</div><div class="field-hint" style="margin:0;">Esperando firma</div></div>
     </div>
-    ${d.dealsByScenario.length ? `<div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap;">${d.dealsByScenario.map(s=>`<span class="badge">${SCENARIO_LABEL_SHORT[s.scenario]||s.scenario}: ${s.count}</span>`).join('')}</div>` : ''}
+    ${d.dealsByScenario.length ? `<div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap;">${d.dealsByScenario.map(s=>`<span class="badge">${(SCENARIOS[s.scenario]&&SCENARIOS[s.scenario].labelShort)||s.scenario}: ${s.count}</span>`).join('')}</div>` : ''}
   `;
   wrap.appendChild(totalsCard);
 
-  const attnTitle = document.createElement('div');
-  attnTitle.className = 'section-title'; attnTitle.textContent = 'Necesita atención';
-  wrap.appendChild(attnTitle);
-  const attnCard = document.createElement('div'); attnCard.className = 'card';
-
-  const items = [
-    ...d.staleDocuments.map(x => ({...x, kind:'doc'})),
-    ...d.staleTasks.map(x => ({...x, kind:'task'})),
-    ...d.signaturesAwaiting.map(x => ({...x, kind:'sign'}))
-  ];
-
-  if(!items.length){
-    attnCard.innerHTML = `<div class="field-hint" style="margin:0;">Nada pendiente hace más de ${d.staleDays} días, y nada esperando firma. Al día.</div>`;
-  } else {
-    items.forEach(item => {
+  if(d.signaturesAwaiting.length){
+    const signTitle = document.createElement('div');
+    signTitle.className = 'section-title'; signTitle.textContent = 'Esperando firma';
+    wrap.appendChild(signTitle);
+    const signCard = document.createElement('div'); signCard.className = 'card';
+    d.signaturesAwaiting.forEach(item => {
       const row = document.createElement('div');
       row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:0.5px solid var(--line); cursor:pointer; gap:10px;';
-      let label;
-      if(item.kind==='doc') label = `Documento "${escapeHtml(item.name)}" pendiente hace ${item.created_at ? Math.floor((Date.now()-new Date(item.created_at.replace(' ','T')+'Z')) / 86400000) : '?'} días · ${escapeHtml(item.property)}`;
-      else if(item.kind==='task') label = `Tarea "${escapeHtml(item.label_es)}" estancada · ${escapeHtml(item.property)}`;
-      else label = `Firma pendiente: "${escapeHtml(item.label_es)}" · ${escapeHtml(item.property)}`;
-      const tagLabel = item.kind==='sign' ? 'Firma' : 'Atrasado';
-      row.innerHTML = `<span style="font-size:13px;">${label}</span><span class="badge" style="background:var(--oxblood-soft); color:var(--oxblood); flex-shrink:0;">${tagLabel}</span>`;
+      row.innerHTML = `<span style="font-size:13px;">"${escapeHtml(item.label_es)}" · ${escapeHtml(item.property)}</span><span class="badge" style="background:var(--gold-soft); color:#6B4E1E; flex-shrink:0;">Firma</span>`;
       row.onclick = () => { adminView='list'; activeDealId=item.dealId; openDeal(item.dealId); };
-      attnCard.appendChild(row);
+      signCard.appendChild(row);
+    });
+    wrap.appendChild(signCard);
+  }
+
+  const pendingTitle = document.createElement('div');
+  pendingTitle.className = 'section-title'; pendingTitle.textContent = 'Pendientes por operación';
+  wrap.appendChild(pendingTitle);
+
+  const groups = {};
+  d.pendingDocuments.forEach(x => {
+    if(!groups[x.dealId]) groups[x.dealId] = { property: x.property, docs: [], tasks: [] };
+    groups[x.dealId].docs.push(x);
+  });
+  d.pendingTasks.forEach(x => {
+    if(!groups[x.dealId]) groups[x.dealId] = { property: x.property, docs: [], tasks: [] };
+    groups[x.dealId].tasks.push(x);
+  });
+
+  if(!Object.keys(groups).length){
+    const emptyCard = document.createElement('div'); emptyCard.className = 'card';
+    emptyCard.innerHTML = `<div class="field-hint" style="margin:0;">No hay documentos ni tareas pendientes. Al día.</div>`;
+    wrap.appendChild(emptyCard);
+  } else {
+    Object.entries(groups).forEach(([dealId, g]) => {
+      const card = document.createElement('div'); card.className = 'card';
+      const header = document.createElement('div');
+      header.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; cursor:pointer;';
+      header.innerHTML = `<span style="font-weight:600; font-size:13.5px;">${escapeHtml(g.property)}</span><span class="field-hint" style="margin:0;">Ver operación <i class="ti ti-arrow-right" aria-hidden="true"></i></span>`;
+      header.onclick = () => { adminView='list'; activeDealId=Number(dealId); openDeal(Number(dealId)); };
+      card.appendChild(header);
+
+      g.docs.forEach(doc => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; align-items:center; gap:10px; padding:6px 0; border-bottom:0.5px solid var(--line);';
+        row.innerHTML = `
+          <span class="doc-check" style="flex-shrink:0;"></span>
+          <span style="font-size:12.5px; flex:1;">Documento: ${escapeHtml(doc.name)} <span class="field-hint" style="margin:0;">(${escapeHtml(doc.owner==='seller'?'vendedor':'comprador')})</span></span>
+          ${doc.stale ? `<span class="badge" style="background:var(--oxblood-soft); color:var(--oxblood); flex-shrink:0;">Atrasado</span>` : ''}
+        `;
+        row.querySelector('.doc-check').onclick = async () => {
+          try{
+            await apiFetch(`/api/deals/${dealId}/documents/${doc.documentId}`, { method:'PATCH', body: JSON.stringify({status:'done'}) });
+            await loadDashboard();
+          }catch(e){ alert(e.message); }
+        };
+        card.appendChild(row);
+      });
+
+      g.tasks.forEach(task => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; align-items:center; gap:10px; padding:6px 0; border-bottom:0.5px solid var(--line);';
+        const cls = task.status==='progress' ? 'progress' : '';
+        row.innerHTML = `
+          <div class="task-stamp ${cls}" style="width:22px; height:22px; font-size:10px; flex-shrink:0;">${task.status==='progress'?'<i class=\"ti ti-clock\" aria-hidden=\"true\"></i>':''}</div>
+          <span style="font-size:12.5px; flex:1;">Tarea: ${escapeHtml(task.label_es)}</span>
+          ${task.stale ? `<span class="badge" style="background:var(--oxblood-soft); color:var(--oxblood); flex-shrink:0;">Atrasado</span>` : ''}
+        `;
+        row.querySelector('.task-stamp').onclick = async () => {
+          const order=['pending','progress','done'];
+          const next = order[(order.indexOf(task.status)+1)%order.length];
+          try{
+            await apiFetch(`/api/deals/${dealId}/tasks/${task.taskId}`, { method:'PATCH', body: JSON.stringify({status: next}) });
+            await loadDashboard();
+          }catch(e){ alert(e.message); }
+        };
+        card.appendChild(row);
+      });
+
+      wrap.appendChild(card);
     });
   }
-  wrap.appendChild(attnCard);
 
   return wrap;
 }
@@ -1038,13 +1091,18 @@ function buildKycForm(deal, role, data){
     }catch(e){ alert(e.message); }
   };
   const generateBtn = document.createElement('button');
-  generateBtn.className = 'btn primary'; generateBtn.textContent = 'Guardar y generar documento';
+  generateBtn.className = 'btn primary'; generateBtn.textContent = 'Guardar, generar y enviar a firma';
   generateBtn.onclick = async () => {
     try{
       await apiFetch(`/api/deals/${deal.id}/kyc/${role}`, { method:'POST', body: JSON.stringify({ answers: collectAnswers(), lang }) });
-      await apiFetch(`/api/deals/${deal.id}/kyc/${role}/generate`, { method:'POST' });
+      const result = await apiFetch(`/api/deals/${deal.id}/kyc/${role}/generate`, { method:'POST' });
       kycFormOpenFor = null;
       await loadKyc(deal.id, role);
+      if(result.sentForSignature){
+        alert('Documento generado y enviado a firma automáticamente — ya se puede firmar.');
+      } else if(result.autoSendError){
+        alert('El documento se generó, pero no se pudo enviar a firma automáticamente: ' + result.autoSendError + '\nPuedes reintentar con el botón "Enviar a firma".');
+      }
     }catch(e){ alert(e.message); }
   };
   const closeBtn = document.createElement('button');
