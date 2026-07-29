@@ -63,6 +63,8 @@
   .doc-check.done{background:var(--jade); border-color:var(--jade); color:#fff;}
   .doc-owner{font-size:10.5px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:0.4px; margin-right:6px;}
   .task-row{display:flex; gap:12px; padding:10px 0; border-bottom:0.5px solid var(--line); align-items:flex-start;}
+  .progress-track{height:8px; border-radius:5px; background:var(--stone); overflow:hidden; margin:4px 0 14px;}
+  .progress-fill{height:100%; border-radius:5px; background:var(--jade); transition:width 0.2s;}
   .task-row:last-child{border-bottom:none;}
   .task-stamp{flex-shrink:0; width:30px; height:30px; border-radius:50%; border:2px solid var(--line-strong); display:flex; align-items:center; justify-content:center; font-size:11px; cursor:pointer; background:var(--stone-card); color:var(--ink-faint);}
   .task-stamp.progress{border-color:var(--clay); color:var(--clay);}
@@ -445,7 +447,7 @@ function renderAdmin(body){
   banner.innerHTML = `<i class="ti ti-info-circle" aria-hidden="true"></i> Login, operaciones, documentos y tareas ya viven en tu backend real (base de datos, no el navegador). La firma electrónica (DocuSign) queda lista para funcionar en cuanto tengas credenciales de tu cuenta sandbox.`;
   body.appendChild(banner);
 
-  if(adminView === 'list' || adminView === 'dashboard' || adminView === null){
+  if(adminView === 'list' || adminView === 'dashboard' || adminView === 'team' || adminView === null){
     const secCard = document.createElement('div');
     secCard.className = 'card';
     secCard.innerHTML = `
@@ -457,20 +459,28 @@ function renderAdmin(body){
         </div>
         <button class="btn" id="do-logout"><i class="ti ti-logout" aria-hidden="true"></i> Cerrar sesión</button>
       </div>
-      <div class="field-hint" style="margin-top:10px;">Para dar de alta a un comprador o vendedor, entra a su operación y genera una invitación — ahí crean su propia contraseña. Para cuentas de equipo (agente/abogado) las crea un admin con <code>POST /api/users</code>.</div>
+      <div class="field-hint" style="margin-top:10px;">Para dar de alta a un comprador o vendedor, entra a su operación y genera una invitación — ahí crean su propia contraseña. Para agentes o abogados internos, usa la pestaña "Equipo" de aquí abajo.</div>
     `;
     body.appendChild(secCard);
     secCard.querySelector('#do-logout').onclick = logout;
 
     const nav = document.createElement('div');
-    nav.style.cssText = 'display:flex; gap:8px; margin-bottom:16px;';
+    nav.style.cssText = 'display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;';
     nav.innerHTML = `
       <button class="btn ${adminView==='dashboard'?'primary':''}" id="nav-dashboard">Dashboard</button>
       <button class="btn ${adminView==='list'?'primary':''}" id="nav-list">Operaciones</button>
+      ${currentUser.role==='admin' ? `<button class="btn ${adminView==='team'?'primary':''}" id="nav-team">Equipo${pendingUsers && pendingUsers.length ? ` (${pendingUsers.length})` : ''}</button>` : ''}
     `;
     body.appendChild(nav);
     nav.querySelector('#nav-dashboard').onclick = () => { adminView='dashboard'; activeDealId=null; loadDashboard(); };
     nav.querySelector('#nav-list').onclick = () => { adminView='list'; activeDealId=null; render(); };
+    const teamBtn = nav.querySelector('#nav-team');
+    if(teamBtn) teamBtn.onclick = () => { adminView='team'; activeDealId=null; render(); };
+  }
+
+  if(adminView === 'team'){
+    body.appendChild(buildTeamSection());
+    return;
   }
 
   const deal = deals.find(d=>d.id===activeDealId);
@@ -539,29 +549,6 @@ function buildDashboard(){
   }
   const d = dashboardData;
 
-  if(currentUser.role === 'admin' && pendingUsers && pendingUsers.length){
-    const pendingTitle = document.createElement('div');
-    pendingTitle.className = 'section-title'; pendingTitle.textContent = 'Cuentas pendientes de aprobación';
-    wrap.appendChild(pendingTitle);
-    const pendingCard = document.createElement('div'); pendingCard.className = 'card';
-    pendingUsers.forEach(u => {
-      const row = document.createElement('div');
-      row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:0.5px solid var(--line); gap:10px;';
-      row.innerHTML = `<span style="font-size:13px;">${escapeHtml(u.name)} <span class="field-hint" style="margin:0;">— ${escapeHtml(u.email)} · ${u.role}</span></span>`;
-      const approveBtn = document.createElement('button');
-      approveBtn.className = 'btn primary'; approveBtn.textContent = 'Aprobar';
-      approveBtn.onclick = async () => {
-        try{
-          await apiFetch(`/api/users/${u.id}/approve`, { method:'PATCH' });
-          await loadPendingUsers();
-        }catch(e){ alert(e.message); }
-      };
-      row.appendChild(approveBtn);
-      pendingCard.appendChild(row);
-    });
-    wrap.appendChild(pendingCard);
-  }
-
   const totalsCard = document.createElement('div');
   totalsCard.className = 'card';
   totalsCard.innerHTML = `
@@ -603,6 +590,88 @@ function buildDashboard(){
     });
   }
   wrap.appendChild(attnCard);
+
+  return wrap;
+}
+
+function buildTeamSection(){
+  const wrap = document.createElement('div');
+
+  const pendingTitle = document.createElement('div');
+  pendingTitle.className = 'section-title'; pendingTitle.textContent = 'Cuentas pendientes de aprobación';
+  wrap.appendChild(pendingTitle);
+  const pendingCard = document.createElement('div'); pendingCard.className = 'card';
+  if(pendingUsers === null){
+    pendingCard.innerHTML = `<div class="field-hint" style="margin:0;">Cargando...</div>`;
+    loadPendingUsers();
+  } else if(!pendingUsers.length){
+    pendingCard.innerHTML = `<div class="field-hint" style="margin:0;">No hay cuentas esperando aprobación. Las que se autoregistran desde "Crear cuenta" en el login aparecen aquí.</div>`;
+  } else {
+    pendingUsers.forEach(u => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:0.5px solid var(--line); gap:10px;';
+      row.innerHTML = `<span style="font-size:13px;">${escapeHtml(u.name)} <span class="field-hint" style="margin:0;">— ${escapeHtml(u.email)} · ${u.role}</span></span>`;
+      const approveBtn = document.createElement('button');
+      approveBtn.className = 'btn primary'; approveBtn.textContent = 'Aprobar';
+      approveBtn.onclick = async () => {
+        try{
+          await apiFetch(`/api/users/${u.id}/approve`, { method:'PATCH' });
+          await loadPendingUsers();
+        }catch(e){ alert(e.message); }
+      };
+      row.appendChild(approveBtn);
+      pendingCard.appendChild(row);
+    });
+  }
+  wrap.appendChild(pendingCard);
+
+  const inviteTitle = document.createElement('div');
+  inviteTitle.className = 'section-title'; inviteTitle.textContent = 'Invitar agente o abogado';
+  wrap.appendChild(inviteTitle);
+  const inviteCard = document.createElement('div'); inviteCard.className = 'card';
+  inviteCard.innerHTML = `
+    <div class="field-hint" style="margin-top:0;">Genera un link para que un agente de venta o abogado/empleado interno cree su propia cuenta — a diferencia de "Crear cuenta" en el login, esta queda activa de inmediato (ya la estás aprobando tú al invitar).</div>
+    <div class="form-row">
+      <label>Rol <select id="team-inv-role">
+        <option value="agent">Agente de venta</option>
+        <option value="lawyer">Abogado / empleado interno</option>
+      </select></label>
+      <label>Nombre <input type="text" id="team-inv-name" placeholder="Nombre completo"></label>
+      <label>Correo <input type="email" id="team-inv-email" placeholder="correo@ejemplo.com"></label>
+    </div>
+    <div class="form-actions" style="display:flex; justify-content:flex-end;">
+      <button class="btn primary" id="team-inv-generate">Generar invitación</button>
+    </div>
+    <div id="team-inv-result" style="display:none;">
+      <div class="form-row">
+        <label style="flex:1;">Link de invitación (cópialo y compártelo)
+          <input type="text" id="team-inv-link" readonly>
+        </label>
+        <button class="btn" id="team-inv-copy" style="align-self:flex-end;">Copiar</button>
+      </div>
+    </div>
+    <div class="gate-error" id="team-inv-error"></div>
+  `;
+  wrap.appendChild(inviteCard);
+  inviteCard.querySelector('#team-inv-generate').onclick = async () => {
+    const roleInDeal = inviteCard.querySelector('#team-inv-role').value;
+    const name = inviteCard.querySelector('#team-inv-name').value.trim();
+    const email = inviteCard.querySelector('#team-inv-email').value.trim();
+    const errEl = inviteCard.querySelector('#team-inv-error');
+    errEl.textContent = '';
+    if(!name || !email){ errEl.textContent = 'Falta nombre o correo.'; return; }
+    try{
+      const { url } = await apiFetch('/api/invites', { method:'POST', body: JSON.stringify({ roleInDeal, name, email }) });
+      const linkInput = inviteCard.querySelector('#team-inv-link');
+      linkInput.value = window.location.origin + url;
+      inviteCard.querySelector('#team-inv-result').style.display = 'block';
+    }catch(e){ errEl.textContent = e.message; }
+  };
+  inviteCard.querySelector('#team-inv-copy').onclick = () => {
+    const linkInput = inviteCard.querySelector('#team-inv-link');
+    linkInput.select();
+    navigator.clipboard.writeText(linkInput.value);
+  };
 
   return wrap;
 }
@@ -1057,6 +1126,15 @@ function buildDocList(deal, key, label){
 
 function buildTaskList(deal){
   const ul = document.createElement('div');
+  const pct = pctTasks(deal);
+  const pctRow = document.createElement('div');
+  pctRow.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:baseline; font-size:12px; color:var(--ink-soft);">
+      <span>Avance del cierre</span><span style="font-weight:600; color:var(--oxblood-deep);">${pct}%</span>
+    </div>
+    <div class="progress-track"><div class="progress-fill" style="width:${pct}%;"></div></div>
+  `;
+  ul.appendChild(pctRow);
   deal.tasks.forEach((t, idx) => {
     const row = document.createElement('div');
     row.className = 'task-row';
@@ -1206,6 +1284,7 @@ function buildContractSection(deal, isStaffView){
       </select>
     </label>
     <button class="btn" id="ct-upload-toggle" style="font-size:12px;">Subir machote nuevo</button>
+    ${data.selectedTemplateId ? `<button class="btn" id="ct-delete" style="font-size:12px;" title="Borra este machote de la lista (no afecta contratos ya generados con él)"><i class="ti ti-trash" aria-hidden="true"></i> Borrar machote actual</button>` : ''}
   `;
   box.appendChild(tplRow);
   tplRow.querySelector('#ct-template').onchange = async (e) => {
@@ -1216,6 +1295,16 @@ function buildContractSection(deal, isStaffView){
       await loadContract(deal.id);
     }catch(err){ alert(err.message); }
   };
+  const deleteBtn = tplRow.querySelector('#ct-delete');
+  if(deleteBtn){
+    deleteBtn.onclick = async () => {
+      if(!confirm('¿Borrar este machote de la lista? No afecta contratos que ya se hayan generado con él.')) return;
+      try{
+        await apiFetch(`/api/contract-templates/${data.selectedTemplateId}`, { method:'DELETE' });
+        await loadContract(deal.id);
+      }catch(err){ alert(err.message); }
+    };
+  }
 
   const uploadBox = document.createElement('div');
   uploadBox.style.cssText = 'display:none; margin-top:8px; padding:10px; background:var(--stone); border-radius:8px;';
@@ -1254,9 +1343,10 @@ function buildContractSection(deal, isStaffView){
 
   const fields = data.fields || [];
   const values = data.values || {};
+  const fieldsWrap = document.createElement('div');
+  fieldsWrap.style.cssText = 'margin-top:12px; padding:14px; background:var(--stone); border-radius:10px;';
+
   if(fields.length){
-    const fieldsWrap = document.createElement('div');
-    fieldsWrap.style.cssText = 'margin-top:12px; padding:14px; background:var(--stone); border-radius:10px;';
     fieldsWrap.innerHTML = `<div class="field-hint" style="margin-top:0;">Campos detectados en el machote — se llenan aquí y se insertan donde esté cada <code>{{CLAVE}}</code> en el documento final.</div>`;
     fields.forEach(key => {
       const row = document.createElement('div');
@@ -1266,20 +1356,29 @@ function buildContractSection(deal, isStaffView){
       </label>`;
       fieldsWrap.appendChild(row);
     });
-    box.appendChild(fieldsWrap);
+  } else {
+    fieldsWrap.innerHTML = `
+      <div class="field-hint" style="margin-top:0; color:var(--ink);">Este machote no tiene ningún campo <code>{{CLAVE}}</code> — la plataforma no encontró nada que llenar.</div>
+      <div class="field-hint" style="margin:6px 0 0;">Para que se detecten campos, abre el .docx y escribe el marcador directamente en el texto donde va cada dato, por ejemplo:</div>
+      <div style="font-size:12px; font-family:monospace; background:var(--stone-card); border:0.5px solid var(--line); border-radius:6px; padding:8px 10px; margin-top:6px;">Entre <b>{{VENDEDOR_NOMBRE}}</b> y <b>{{COMPRADOR_NOMBRE}}</b>, por un precio de <b>{{PRECIO_LETRA}}</b>...</div>
+      <div class="field-hint" style="margin:6px 0 0;">Guarda el Word y súbelo de nuevo como machote (puedes borrar este con el botón ⋯ de la lista si ya no lo necesitas). Mientras tanto, igual puedes generar el documento tal cual está, sin campos dinámicos.</div>
+    `;
+  }
+  box.appendChild(fieldsWrap);
 
-    function collectValues(){
-      const result = {};
-      fields.forEach(key => {
-        const el = fieldsWrap.querySelector(`[data-contract-field="${key}"]`);
-        result[key] = el ? el.value.trim() : '';
-      });
-      return result;
-    }
+  function collectValues(){
+    const result = {};
+    fields.forEach(key => {
+      const el = fieldsWrap.querySelector(`[data-contract-field="${key}"]`);
+      result[key] = el ? el.value.trim() : '';
+    });
+    return result;
+  }
 
-    const actions = document.createElement('div');
-    actions.style.cssText = 'display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;';
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;';
 
+  if(fields.length){
     const saveBtn = document.createElement('button');
     saveBtn.className = 'btn'; saveBtn.textContent = 'Guardar borrador';
     saveBtn.onclick = async () => {
@@ -1289,42 +1388,42 @@ function buildContractSection(deal, isStaffView){
       }catch(e){ alert(e.message); }
     };
     actions.appendChild(saveBtn);
+  }
 
-    const genDownloadBtn = document.createElement('button');
-    genDownloadBtn.className = 'btn primary'; genDownloadBtn.textContent = 'Generar y descargar .docx';
-    genDownloadBtn.onclick = async () => {
+  const genDownloadBtn = document.createElement('button');
+  genDownloadBtn.className = 'btn primary'; genDownloadBtn.textContent = 'Generar y descargar .docx';
+  genDownloadBtn.onclick = async () => {
+    try{
+      await apiFetch(`/api/deals/${deal.id}/contract`, { method:'POST', body: JSON.stringify({ values: collectValues() }) });
+      await apiFetch(`/api/deals/${deal.id}/contract/generate`, { method:'POST' });
+      window.open(`/api/deals/${deal.id}/contract/file?format=docx`, '_blank');
+      await loadContract(deal.id);
+    }catch(e){ alert(e.message); }
+  };
+  actions.appendChild(genDownloadBtn);
+
+  if(data.hasDocument){
+    const viewLink = document.createElement('a');
+    viewLink.href = `/api/deals/${deal.id}/contract/file?format=pdf`;
+    viewLink.target = '_blank';
+    viewLink.className = 'btn';
+    viewLink.textContent = 'Ver PDF';
+    actions.appendChild(viewLink);
+  }
+
+  if(data.status === 'generated'){
+    const sendBtn = document.createElement('button');
+    sendBtn.className = 'btn gold'; sendBtn.textContent = 'Enviar a firma';
+    sendBtn.onclick = async () => {
       try{
-        await apiFetch(`/api/deals/${deal.id}/contract`, { method:'POST', body: JSON.stringify({ values: collectValues() }) });
-        await apiFetch(`/api/deals/${deal.id}/contract/generate`, { method:'POST' });
-        window.open(`/api/deals/${deal.id}/contract/file?format=docx`, '_blank');
+        await apiFetch(`/api/deals/${deal.id}/contract/send-for-signature`, { method:'POST' });
         await loadContract(deal.id);
       }catch(e){ alert(e.message); }
     };
-    actions.appendChild(genDownloadBtn);
-
-    if(data.hasDocument){
-      const viewLink = document.createElement('a');
-      viewLink.href = `/api/deals/${deal.id}/contract/file?format=pdf`;
-      viewLink.target = '_blank';
-      viewLink.className = 'btn';
-      viewLink.textContent = 'Ver PDF';
-      actions.appendChild(viewLink);
-    }
-
-    if(data.status === 'generated'){
-      const sendBtn = document.createElement('button');
-      sendBtn.className = 'btn gold'; sendBtn.textContent = 'Enviar a firma';
-      sendBtn.onclick = async () => {
-        try{
-          await apiFetch(`/api/deals/${deal.id}/contract/send-for-signature`, { method:'POST' });
-          await loadContract(deal.id);
-        }catch(e){ alert(e.message); }
-      };
-      actions.appendChild(sendBtn);
-    }
-
-    box.appendChild(actions);
+    actions.appendChild(sendBtn);
   }
+
+  box.appendChild(actions);
 
   return box;
 }

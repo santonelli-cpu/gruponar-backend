@@ -14,15 +14,23 @@ const INVITE_TTL_DAYS = 7;
 // invitación (crea cuentas sin autenticación previa).
 const rateLimitAccept = createRateLimiter({ windowMs: 15 * 60 * 1000, maxAttempts: 10 });
 
-// POST /api/invites — admin/agente/abogado genera una invitación ligada a una operación.
+// POST /api/invites — admin/agente/abogado genera una invitación. Ligada a
+// una operación para comprador/vendedor (dealId obligatorio); para
+// agente/abogado dealId es opcional — sin él, es una invitación de equipo
+// (se une a la firma en general, no a un cierre específico).
 router.post('/', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
   const { dealId, roleInDeal, name, email } = req.body || {};
-  if (!dealId || !['buyer', 'seller', 'agent'].includes(roleInDeal) || !name || !email) {
+  if (!['buyer', 'seller', 'agent', 'lawyer'].includes(roleInDeal) || !name || !email) {
     return res.status(400).json({ error: 'Datos inválidos.' });
   }
-  const deal = db.prepare('SELECT id FROM deals WHERE id = ?').get(dealId);
-  if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
-  if (!canAccessDeal(req, dealId)) return res.status(403).json({ error: 'No autorizado.' });
+  if (['buyer', 'seller'].includes(roleInDeal) && !dealId) {
+    return res.status(400).json({ error: 'Comprador/vendedor necesitan una operación ligada.' });
+  }
+  if (dealId) {
+    const deal = db.prepare('SELECT id FROM deals WHERE id = ?').get(dealId);
+    if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
+    if (!canAccessDeal(req, dealId)) return res.status(403).json({ error: 'No autorizado.' });
+  }
 
   const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 86400000).toISOString();
@@ -30,7 +38,7 @@ router.post('/', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
   db.prepare(`
     INSERT INTO invites (token, deal_id, role_in_deal, email, name, created_by, expires_at)
     VALUES (?,?,?,?,?,?,?)
-  `).run(token, dealId, roleInDeal, email.toLowerCase().trim(), name, req.session.userId, expiresAt);
+  `).run(token, dealId || null, roleInDeal, email.toLowerCase().trim(), name, req.session.userId, expiresAt);
 
   res.status(201).json({ token, url: `/invite.html?token=${token}` });
 });
@@ -39,7 +47,7 @@ router.post('/', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
 router.get('/:token', (req, res) => {
   const invite = db.prepare(`
     SELECT i.*, d.property AS deal_property FROM invites i
-    JOIN deals d ON d.id = i.deal_id
+    LEFT JOIN deals d ON d.id = i.deal_id
     WHERE i.token = ?
   `).get(req.params.token);
 
@@ -48,7 +56,7 @@ router.get('/:token', (req, res) => {
   if (new Date(invite.expires_at) < new Date()) return res.status(410).json({ error: 'Esta invitación expiró.' });
 
   res.json({
-    dealProperty: invite.deal_property,
+    dealProperty: invite.deal_property || null,
     roleInDeal: invite.role_in_deal,
     name: invite.name,
     email: invite.email
@@ -87,8 +95,10 @@ router.post('/:token/accept', rateLimitAccept, (req, res) => {
         .run(invite.name, invite.email, hash, invite.role_in_deal);
       user = { id: info.lastInsertRowid, name: invite.name, email: invite.email, role: invite.role_in_deal };
     }
-    db.prepare('INSERT OR IGNORE INTO deal_parties (deal_id, user_id, role_in_deal) VALUES (?,?,?)')
-      .run(invite.deal_id, user.id, invite.role_in_deal);
+    if (invite.deal_id) {
+      db.prepare('INSERT OR IGNORE INTO deal_parties (deal_id, user_id, role_in_deal) VALUES (?,?,?)')
+        .run(invite.deal_id, user.id, invite.role_in_deal);
+    }
     db.prepare('UPDATE invites SET used_at = datetime(\'now\'), used_by_user_id = ? WHERE id = ?')
       .run(user.id, invite.id);
     return user;

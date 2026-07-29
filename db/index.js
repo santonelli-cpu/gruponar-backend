@@ -180,4 +180,42 @@ function ensureContractTemplatesScenarioAllowsTrustTermination() {
 }
 ensureContractTemplatesScenarioAllowsTrustTermination();
 
+// invites.deal_id ahora acepta NULL (invitaciones de equipo, no ligadas a
+// una operación) y role_in_deal acepta 'lawyer' — mismo procedimiento de
+// recrear la tabla que los CHECK de arriba.
+function ensureInvitesAllowTeamInvites() {
+  const row = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='invites'`).get();
+  if (row && row.sql.includes("'lawyer'")) return;
+
+  db.pragma('foreign_keys = OFF');
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE invites_migration_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        token TEXT UNIQUE NOT NULL,
+        deal_id INTEGER REFERENCES deals(id) ON DELETE CASCADE,
+        role_in_deal TEXT NOT NULL CHECK(role_in_deal IN ('buyer','seller','agent','lawyer')),
+        email TEXT,
+        name TEXT,
+        created_by INTEGER REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        used_by_user_id INTEGER REFERENCES users(id)
+      );
+      INSERT INTO invites_migration_new (id, token, deal_id, role_in_deal, email, name, created_by, created_at, expires_at, used_at, used_by_user_id)
+        SELECT id, token, deal_id, role_in_deal, email, name, created_by, created_at, expires_at, used_at, used_by_user_id FROM invites;
+      DROP TABLE invites;
+      ALTER TABLE invites_migration_new RENAME TO invites;
+    `);
+    const violations = db.prepare('PRAGMA foreign_key_check').all();
+    if (violations.length) {
+      throw new Error('Migración de invites dejaría foreign keys rotas: ' + JSON.stringify(violations));
+    }
+  })();
+  db.pragma('foreign_keys = ON');
+  console.log('[migration] invites ahora acepta deal_id NULL y role_in_deal \'lawyer\'');
+}
+ensureInvitesAllowTeamInvites();
+
 module.exports = db;

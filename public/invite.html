@@ -30,7 +30,7 @@
   const subEl = document.getElementById('sub');
   const errorEl = document.getElementById('error');
   const formEl = document.getElementById('form');
-  const ROLE_LABEL = { buyer: 'comprador(a)', seller: 'vendedor(a)', agent: 'agente' };
+  const ROLE_LABEL = { buyer: 'comprador(a)', seller: 'vendedor(a)', agent: 'agente', lawyer: 'abogado(a) / empleado(a) interno' };
 
   async function apiFetch(path, options={}){
     const res = await fetch(path, { credentials:'include', headers:{'Content-Type':'application/json'}, ...options });
@@ -48,7 +48,10 @@
     }
     try {
       const invite = await apiFetch('/api/invites/' + token);
-      subEl.textContent = `${invite.name}, te invitaron como ${ROLE_LABEL[invite.roleInDeal] || invite.roleInDeal} a la operación "${invite.dealProperty}". Pon una contraseña para tu cuenta (${invite.email}).`;
+      const roleLabel = ROLE_LABEL[invite.roleInDeal] || invite.roleInDeal;
+      subEl.textContent = invite.dealProperty
+        ? `${invite.name}, te invitaron como ${roleLabel} a la operación "${invite.dealProperty}". Pon una contraseña para tu cuenta (${invite.email}).`
+        : `${invite.name}, te invitaron como ${roleLabel} al equipo de Grupo Nar. Pon una contraseña para tu cuenta (${invite.email}).`;
       formEl.style.display = 'block';
     } catch(e) {
       subEl.textContent = '';

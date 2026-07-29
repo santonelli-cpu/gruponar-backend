@@ -72,12 +72,14 @@ CREATE TABLE IF NOT EXISTS access_log (
 
 -- Invitaciones para que un comprador/vendedor/agente cree su propia cuenta
 -- y quede ligado a una operación específica, sin que el admin tenga que
--- inventarle una contraseña temporal.
+-- inventarle una contraseña temporal. deal_id es NULL para invitaciones de
+-- equipo (agente/abogado interno) que no están ligadas a ninguna operación
+-- en particular — se unen a la firma en general, no a un cierre específico.
 CREATE TABLE IF NOT EXISTS invites (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   token TEXT UNIQUE NOT NULL,
-  deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
-  role_in_deal TEXT NOT NULL CHECK(role_in_deal IN ('buyer','seller','agent')),
+  deal_id INTEGER REFERENCES deals(id) ON DELETE CASCADE,
+  role_in_deal TEXT NOT NULL CHECK(role_in_deal IN ('buyer','seller','agent','lawyer')),
   email TEXT,
   name TEXT,
   created_by INTEGER REFERENCES users(id),

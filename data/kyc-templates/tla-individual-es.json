@@ -29,7 +29,7 @@
     {
       "title": "Residencia fiscal",
       "fields": [
-        { "id": "socialSecurityNo", "label": "No. de Seguro Social", "type": "text" },
+        { "id": "socialSecurityNo", "label": "RFC (si eres mexicano) o No. de Seguro Social (si eres extranjero)", "type": "text" },
         { "id": "countryOfTaxResidency", "label": "País de residencia fiscal", "type": "text", "required": true }
       ]
     },

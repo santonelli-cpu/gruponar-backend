@@ -118,7 +118,8 @@
       "Acta de matrimonio (si aplica)",
       "Licencia de conducir",
       "Estatus migratorio",
-      "Escritura y recibo de predial",
+      "Escritura pública",
+      "Recibo de predial",
       "Último pago anual de fideicomiso"
     ],
     "buyer_individual": [
@@ -175,18 +176,17 @@
       "Acta de matrimonio (si aplica)",
       "Licencia de conducir",
       "Estatus migratorio",
-      "Escritura y recibo de predial",
+      "Escritura pública",
+      "Recibo de predial",
       "Último pago anual de fideicomiso"
     ],
     "buyer_individual": [
-      "Pasaporte",
+      "CURP",
+      "Constancia de Situación Fiscal",
       "Comprobante de domicilio",
-      "Tax ID / Seguro Social",
+      "Identificación oficial",
       "Acta de nacimiento",
-      "Acta de matrimonio (si aplica)",
-      "Licencia de conducir",
-      "Estatus migratorio",
-      "Pasaporte y licencia de beneficiarios sustitutos"
+      "Acta de matrimonio (si aplica)"
     ],
     "corporation_extra": [
       "Acta constitutiva",
