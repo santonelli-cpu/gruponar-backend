@@ -86,6 +86,7 @@
   .gate-error{color:var(--clay); font-size:12px; margin-bottom:8px; min-height:14px;}
   @media (max-width:600px){ .grid2{grid-template-columns:1fr;} }
 </style>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/3.44.0/tabler-icons.min.css">
 </head>
 <body>
 <h2 class="sr-only">Plataforma de coordinación de cierres inmobiliarios de Grupo Nar: administración de operaciones, checklist de KYC por parte, seguimiento de cierre y generación de contrato de promesa, con inicio de sesión por correo y contraseña.</h2>
@@ -108,7 +109,6 @@
   <div class="body-wrap" id="body"></div>
 </div>
 
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/3.44.0/tabler-icons.min.css">
 <script>
 const SCENARIOS_I18N = {
   purchase: {
@@ -2241,20 +2241,88 @@ function buildContractSection(deal, isStaffView){
     return box;
   }
 
-  const fields = data.fields || [];
-  const values = data.values || {};
+  const schema = data.schema;
+  const smartValues = data.smartValues || {};
   const fieldsWrap = document.createElement('div');
   fieldsWrap.style.cssText = 'margin-top:12px; padding:14px; background:var(--stone); border-radius:10px;';
 
-  if(fields.length){
-    fieldsWrap.innerHTML = `<div class="field-hint" style="margin-top:0;">${t('detectedFields')}</div>`;
-    fields.forEach(key => {
-      const row = document.createElement('div');
-      row.style.marginBottom = '8px';
-      row.innerHTML = `<label style="display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--ink-soft);">${escapeHtml(key)}
-        <textarea data-contract-field="${escapeHtml(key)}" rows="1" style="resize:vertical;">${escapeHtml(values[key]||'')}</textarea>
-      </label>`;
-      fieldsWrap.appendChild(row);
+  if(schema){
+    fieldsWrap.innerHTML = `<div class="field-hint" style="margin-top:0;">Fechas, escrow, nombres de las partes y nombre de la propiedad salen solos de la operación — abajo solo lo que de verdad cambia por contrato.</div>`;
+
+    function fieldInputHtml(field, value){
+      const v = value === undefined || value === null ? '' : value;
+      if(field.type === 'select'){
+        return `<select data-field="${field.id}">${field.options.map(o=>`<option value="${o.value}" ${String(v)===String(o.value)?'selected':''}>${escapeHtml(o.label)}</option>`).join('')}</select>`;
+      }
+      if(field.type === 'textarea'){
+        return `<textarea data-field="${field.id}" rows="2" style="resize:vertical;">${escapeHtml(v)}</textarea>`;
+      }
+      if(field.type === 'date'){
+        return `<input type="date" data-field="${field.id}" value="${escapeHtml(v)}">`;
+      }
+      if(field.type === 'money'){
+        return `<input type="number" step="0.01" min="0" data-field="${field.id}" value="${escapeHtml(v)}" placeholder="0.00">`;
+      }
+      return `<input type="text" data-field="${field.id}" value="${escapeHtml(v)}">`;
+    }
+
+    schema.sections.forEach(section => {
+      const sec = document.createElement('div');
+      sec.style.cssText = 'margin-bottom:16px;';
+      sec.innerHTML = `<div style="font-weight:500; font-size:12.5px; margin-bottom:6px;">${escapeHtml(section.title)}</div>${section.hint ? `<div class="field-hint" style="margin:0 0 8px;">${escapeHtml(section.hint)}</div>` : ''}`;
+
+      if(section.repeatable){
+        const rowsWrap = document.createElement('div');
+        rowsWrap.dataset.section = section.key;
+        sec.appendChild(rowsWrap);
+
+        function addRow(rowValues){
+          const row = document.createElement('div');
+          row.className = 'contract-repeat-row';
+          row.style.cssText = 'display:flex; gap:8px; align-items:center; margin-bottom:6px;';
+          row.innerHTML = section.fields.map(f => `<label style="flex:${f.type==='select'?'0 0 90px':'1'}; display:flex; flex-direction:column; gap:2px; font-size:11px; color:var(--ink-soft);">${escapeHtml(f.label)}${fieldInputHtml(f, rowValues ? rowValues[f.id] : '')}</label>`).join('');
+          const rmBtn = document.createElement('button');
+          rmBtn.type = 'button'; rmBtn.className = 'btn'; rmBtn.style.cssText = 'font-size:11px; padding:4px 8px; align-self:flex-end;';
+          rmBtn.innerHTML = `<i class="ti ti-trash" aria-hidden="true"></i>`;
+          rmBtn.onclick = () => row.remove();
+          row.appendChild(rmBtn);
+          rowsWrap.appendChild(row);
+        }
+
+        const existingRows = Array.isArray(smartValues[section.key]) ? smartValues[section.key] : [];
+        if(existingRows.length) existingRows.forEach(addRow); else addRow(null);
+
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button'; addBtn.className = 'btn'; addBtn.style.fontSize = '11px';
+        addBtn.textContent = '+ agregar agencia';
+        addBtn.onclick = () => addRow(null);
+        sec.appendChild(addBtn);
+
+        sec._collect = () => Array.from(rowsWrap.children).map(row => {
+          const rowVal = {};
+          section.fields.forEach(f => { rowVal[f.id] = row.querySelector(`[data-field="${f.id}"]`).value.trim(); });
+          return rowVal;
+        }).filter(r => r.name && r.pct);
+      } else {
+        const grid = document.createElement('div');
+        grid.style.cssText = 'display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:8px;';
+        section.fields.forEach(f => {
+          const label = document.createElement('label');
+          label.style.cssText = 'display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--ink-soft);';
+          label.innerHTML = `${escapeHtml(f.label)}${fieldInputHtml(f, smartValues[f.id])}`;
+          grid.appendChild(label);
+        });
+        sec.appendChild(grid);
+        sec._collect = () => {
+          const rowVal = {};
+          section.fields.forEach(f => { rowVal[f.id] = grid.querySelector(`[data-field="${f.id}"]`).value.trim(); });
+          return rowVal;
+        };
+      }
+
+      fieldsWrap._sections = fieldsWrap._sections || [];
+      fieldsWrap._sections.push(sec);
+      fieldsWrap.appendChild(sec);
     });
   } else {
     fieldsWrap.innerHTML = `
@@ -2267,10 +2335,12 @@ function buildContractSection(deal, isStaffView){
   box.appendChild(fieldsWrap);
 
   function collectValues(){
+    if(!schema) return {};
     const result = {};
-    fields.forEach(key => {
-      const el = fieldsWrap.querySelector(`[data-contract-field="${key}"]`);
-      result[key] = el ? el.value.trim() : '';
+    schema.sections.forEach((section, i) => {
+      const sec = fieldsWrap._sections[i];
+      if(section.repeatable) result[section.key] = sec._collect();
+      else Object.assign(result, sec._collect());
     });
     return result;
   }
@@ -2278,12 +2348,12 @@ function buildContractSection(deal, isStaffView){
   const actions = document.createElement('div');
   actions.style.cssText = 'display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;';
 
-  if(fields.length){
+  if(schema){
     const saveBtn = document.createElement('button');
     saveBtn.className = 'btn'; saveBtn.textContent = t('saveDraft');
     saveBtn.onclick = async () => {
       try{
-        await apiFetch(`/api/deals/${deal.id}/contract`, { method:'POST', body: JSON.stringify({ values: collectValues() }) });
+        await apiFetch(`/api/deals/${deal.id}/contract`, { method:'POST', body: JSON.stringify({ smartValues: collectValues() }) });
         await loadContract(deal.id);
       }catch(e){ alert(e.message); }
     };
@@ -2294,7 +2364,7 @@ function buildContractSection(deal, isStaffView){
   genDownloadBtn.className = 'btn primary'; genDownloadBtn.textContent = t('generateDownloadDocx');
   genDownloadBtn.onclick = async () => {
     try{
-      await apiFetch(`/api/deals/${deal.id}/contract`, { method:'POST', body: JSON.stringify({ values: collectValues() }) });
+      await apiFetch(`/api/deals/${deal.id}/contract`, { method:'POST', body: JSON.stringify({ smartValues: collectValues() }) });
       await apiFetch(`/api/deals/${deal.id}/contract/generate`, { method:'POST' });
       window.open(`/api/deals/${deal.id}/contract/file?format=docx`, '_blank');
       await loadContract(deal.id);

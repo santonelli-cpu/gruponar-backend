@@ -10,6 +10,7 @@ const { UPLOADS_ROOT, genFilename } = require('../lib/storage');
 const docusignClient = require('../lib/docusignClient');
 const { extractPlaceholders, fillContractTemplate, countPdfPages } = require('../lib/contractFill/mergeEngine');
 const { convertDocxToPdf } = require('../lib/kycFill/docxFillEngine');
+const { getSmartSchema, expandSmartFields } = require('../lib/contractFill/smartContractFields');
 
 const router = express.Router();
 
@@ -129,34 +130,39 @@ router.get('/deals/:id/contract', requireAuth, (req, res) => {
 
   const templates = db.prepare('SELECT id, scenario, label, created_at FROM contract_templates WHERE scenario = ? ORDER BY created_at DESC').all(deal.scenario);
   const template = deal.contract_template_id ? db.prepare('SELECT * FROM contract_templates WHERE id = ?').get(deal.contract_template_id) : null;
-  const fields = template ? extractPlaceholders(path.join(TEMPLATES_DIR, template.docx_file)) : [];
+  // `rawFieldCount` es solo informativo (para el aviso de "detectamos N
+  // campos, X ya salen solos") — el formulario que llena el admin es el
+  // esquema compacto de smartContractFields, no la lista cruda de {{CLAVE}}.
+  const rawFieldCount = template ? extractPlaceholders(path.join(TEMPLATES_DIR, template.docx_file)).length : 0;
 
   res.json({
     templates,
     selectedTemplateId: deal.contract_template_id,
-    fields,
-    values: JSON.parse(deal.contract_json || '{}'),
+    schema: template ? getSmartSchema() : null,
+    rawFieldCount,
+    smartValues: JSON.parse(deal.contract_json || '{}'),
     status: deal.contract_status,
     docusignStatus: deal.contract_docusign_status,
     hasDocument: !!deal.contract_generated_file_url
   });
 });
 
-// POST /api/deals/:id/contract — elige machote y/o guarda valores de campos.
+// POST /api/deals/:id/contract — elige machote y/o guarda las respuestas del
+// formulario inteligente (ver lib/contractFill/smartContractFields).
 router.post('/deals/:id/contract', requireRole('admin', 'lawyer'), (req, res) => {
   const { id } = req.params;
   if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
   const deal = loadDeal(id);
   if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
 
-  const { templateId, values } = req.body || {};
+  const { templateId, smartValues } = req.body || {};
   if (templateId !== undefined) {
     const tpl = db.prepare('SELECT * FROM contract_templates WHERE id = ? AND scenario = ?').get(templateId, deal.scenario);
     if (!tpl) return res.status(400).json({ error: 'Machote inválido para el tipo de operación de esta venta.' });
   }
 
   db.prepare('UPDATE deals SET contract_template_id = COALESCE(?, contract_template_id), contract_json = ? WHERE id = ?')
-    .run(templateId ?? null, JSON.stringify(values || JSON.parse(deal.contract_json || '{}')), id);
+    .run(templateId ?? null, JSON.stringify(smartValues || JSON.parse(deal.contract_json || '{}')), id);
 
   res.json({ ok: true });
 });
@@ -176,7 +182,8 @@ router.post('/deals/:id/contract/generate', requireRole('admin', 'lawyer'), (req
   if (!tpl) return res.status(500).json({ error: 'El machote elegido ya no existe.' });
 
   try {
-    const values = JSON.parse(deal.contract_json || '{}');
+    const smartValues = JSON.parse(deal.contract_json || '{}');
+    const values = expandSmartFields(deal, smartValues);
     const extraSigners = withSideIndex(loadSigners(id))
       .filter(s => s.sideIndex > 0)
       .map(s => ({ side: s.roleInDeal, name: s.name, anchor: anchorForSigner(s.roleInDeal, s.sideIndex) }));
