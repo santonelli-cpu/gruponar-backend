@@ -5,7 +5,7 @@ const multer = require('multer');
 const db = require('../db');
 const { requireAuth, requireRole } = require('./auth');
 const { UPLOADS_ROOT, dealDir, genFilename } = require('../lib/storage');
-const { canAccessDeal, myRoleInDeal, UNRESTRICTED_ROLES } = require('../lib/access');
+const { canAccessDeal, myRoleInDeal, myDealPartyEntityId, UNRESTRICTED_ROLES } = require('../lib/access');
 
 const router = express.Router();
 
@@ -20,21 +20,97 @@ const upload = multer({
 });
 
 // Plantillas de checklist de documentos y tareas por escenario.
-// (Mismo contenido que ya definiste en el frontend — vive aquí también
-// para que el servidor pueda generar el checklist al crear una operación,
-// sin depender de que el navegador lo mande completo.)
 const SCENARIO_DOCS = require('../data/scenario-docs.json');
 const SCENARIO_TASKS = require('../data/scenario-tasks.json');
 
-function buildDocsForDeal(scenario, sellerType, buyerType) {
+const MAX_PARTIES_PER_SIDE = 4;
+const TRUST_DOCS = ['Trust Agreement', 'Certificate of Trust'];
+
+// Arma el checklist de documentos de UNA parte (vendedor o comprador),
+// según su tipo y — si es entidad (corporation/llc) — su estructura de
+// propiedad. Los documentos de socios/trust no crean partes nuevas, se
+// cuelgan de la entidad con un sub_label para poder agruparlos en la UI.
+function buildDocsForParty(scenario, party) {
   const s = SCENARIO_DOCS[scenario];
-  let sellerDocs = [...s.seller_individual];
-  if (sellerType === 'corporation') sellerDocs = sellerDocs.concat(s.corporation_extra, s.legal_rep);
-  if (sellerType === 'llc') sellerDocs = sellerDocs.concat(s.llc_entity, s.llc_members, s.llc_manager);
-  let buyerDocs = [...s.buyer_individual];
-  if (buyerType === 'corporation') buyerDocs = buyerDocs.concat(s.corporation_extra, s.legal_rep);
-  if (buyerType === 'llc') buyerDocs = buyerDocs.concat(s.llc_entity, s.llc_members, s.llc_manager);
-  return { seller: sellerDocs, buyer: buyerDocs };
+  const side = party.side;
+  const docs = [];
+  const add = (names, subLabel = null) => names.forEach(name => docs.push({ name, subLabel }));
+
+  add(s[side + '_individual']);
+  if (party.partyType === 'individual') return docs;
+
+  if (party.partyType === 'llc') {
+    add(s.llc_entity);
+    add(s.llc_manager);
+  } else {
+    add(s.corporation_extra);
+    add(s.legal_rep);
+  }
+
+  if (party.ownershipMode === 'direct_owners') {
+    (party.owners || []).forEach(owner => add(s.llc_members, `Socio: ${owner.name}`));
+  } else if (party.ownershipMode === 'parent_entity') {
+    const parentDocs = party.parentEntityType === 'llc' ? s.llc_entity : s.corporation_extra;
+    add(parentDocs, `Entidad padre: ${party.parentEntityName}`);
+    if (party.parentHasTrustAbove) {
+      add(TRUST_DOCS, `Trust arriba de ${party.parentEntityName}`);
+    }
+  } else if (party.ownershipMode === 'direct_trust') {
+    add(TRUST_DOCS, `Trust: ${party.directTrustName}`);
+  }
+  // ownershipMode null/no especificado todavía: solo los documentos propios
+  // de la entidad, sin nada de estructura — la UI debe marcarlo como
+  // incompleto y ofrecer completarlo (dispara rebuild-checklist).
+
+  return docs;
+}
+
+function validateParty(p) {
+  if (!p || !p.name || !['individual', 'corporation', 'llc'].includes(p.partyType)) {
+    return 'Cada parte necesita nombre y tipo válido.';
+  }
+  if (p.partyType === 'individual') return null;
+  if (!['direct_owners', 'parent_entity', 'direct_trust'].includes(p.ownershipMode)) {
+    return `Falta la estructura de propiedad de "${p.name}".`;
+  }
+  if (p.ownershipMode === 'direct_owners') {
+    if (!Array.isArray(p.owners) || !p.owners.length || p.owners.length > 2 || p.owners.some(o => !o?.name)) {
+      return `"${p.name}" necesita 1 o 2 socios con nombre.`;
+    }
+  } else if (p.ownershipMode === 'parent_entity') {
+    if (!p.parentEntityName || !['corporation', 'llc'].includes(p.parentEntityType)) {
+      return `"${p.name}" necesita el nombre y tipo de la entidad padre.`;
+    }
+    if (p.parentHasTrustAbove && !p.parentTrustName) {
+      return `Falta el nombre del trust arriba de la entidad padre de "${p.name}".`;
+    }
+  } else if (p.ownershipMode === 'direct_trust') {
+    if (!p.directTrustName) return `"${p.name}" necesita el nombre del trust.`;
+  }
+  return null;
+}
+
+function insertPartyWithDocs(dealId, scenario, side, sortOrder, p) {
+  const info = db.prepare(`
+    INSERT INTO deal_party_entities (deal_id, side, sort_order, party_type, name, ownership_mode, parent_entity_name, parent_entity_type, parent_has_trust_above, parent_trust_name, direct_trust_name)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)
+  `).run(
+    dealId, side, sortOrder, p.partyType, p.name,
+    p.partyType === 'individual' ? null : p.ownershipMode || null,
+    p.ownershipMode === 'parent_entity' ? p.parentEntityName : null,
+    p.ownershipMode === 'parent_entity' ? p.parentEntityType : null,
+    p.ownershipMode === 'parent_entity' && p.parentHasTrustAbove ? 1 : 0,
+    p.ownershipMode === 'parent_entity' && p.parentHasTrustAbove ? p.parentTrustName : null,
+    p.ownershipMode === 'direct_trust' ? p.directTrustName : null
+  );
+  const partyId = info.lastInsertRowid;
+  if (p.ownershipMode === 'direct_owners') {
+    const insertOwner = db.prepare('INSERT INTO deal_party_owners (deal_party_entity_id, sort_order, name) VALUES (?,?,?)');
+    p.owners.forEach((o, oi) => insertOwner.run(partyId, oi, o.name));
+  }
+  const insertDoc = db.prepare("INSERT INTO documents (deal_id, deal_party_entity_id, sub_label, name, created_at) VALUES (?,?,?,?,datetime('now'))");
+  buildDocsForParty(scenario, { ...p, side }).forEach(d => insertDoc.run(dealId, partyId, d.subLabel, d.name));
+  return partyId;
 }
 
 // Subqueries de conteo para poder mostrar % de avance en la lista sin tener
@@ -45,6 +121,20 @@ const COUNTS_SQL = `,
   (SELECT COUNT(*) FROM tasks WHERE deal_id = d.id) AS tasks_total,
   (SELECT COUNT(*) FROM tasks WHERE deal_id = d.id AND status = 'done') AS tasks_done
 `;
+
+function attachParties(rows) {
+  if (!rows.length) return rows;
+  const ids = rows.map(r => r.id);
+  const placeholders = ids.map(() => '?').join(',');
+  const parties = db.prepare(`
+    SELECT id, deal_id, side, sort_order, party_type, name, ownership_mode
+    FROM deal_party_entities WHERE deal_id IN (${placeholders}) ORDER BY deal_id, side, sort_order
+  `).all(...ids);
+  const byDeal = {};
+  parties.forEach(p => { (byDeal[p.deal_id] ||= []).push(p); });
+  rows.forEach(r => { r.parties = byDeal[r.id] || []; });
+  return rows;
+}
 
 // GET /api/deals — lista operaciones. Admin/abogado ven todas; agente/buyer/seller solo las suyas.
 router.get('/', requireAuth, (req, res) => {
@@ -59,48 +149,64 @@ router.get('/', requireAuth, (req, res) => {
       ORDER BY d.created_at DESC
     `).all(req.session.userId);
   }
-  res.json(rows);
+  res.json(attachParties(rows));
 });
 
 // POST /api/deals — admin/agente/abogado crean operaciones.
 router.post('/', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
-  const { scenario, development, property, price, furniturePrice, currency, startDate, seller, buyer, escrowCompany } = req.body || {};
-  if (!scenario || !property || !seller?.name || !buyer?.name) {
+  const { scenario, development, property, price, furniturePrice, currency, startDate, parties, escrowCompany } = req.body || {};
+  if (!scenario || !property || !Array.isArray(parties)) {
     return res.status(400).json({ error: 'Faltan campos requeridos.' });
   }
   if (escrowCompany && !['armour', 'tla'].includes(escrowCompany)) {
     return res.status(400).json({ error: 'Escrow company inválida.' });
   }
-
-  const info = db.prepare(`
-    INSERT INTO deals (scenario, development, property, price, furniture_price, currency, start_date, seller_name, seller_type, buyer_name, buyer_type, escrow_company, created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-  `).run(scenario, development || 'punta_mita', property, price || 0, furniturePrice || 0,
-         currency || 'USD', startDate, seller.name, seller.type, buyer.name, buyer.type, escrowCompany || null, req.session.userId);
-
-  const dealId = info.lastInsertRowid;
-
-  const docs = buildDocsForDeal(scenario, seller.type, buyer.type);
-  const insertDoc = db.prepare("INSERT INTO documents (deal_id, owner, name, created_at) VALUES (?,?,?,datetime('now'))");
-  docs.seller.forEach(name => insertDoc.run(dealId, 'seller', name));
-  docs.buyer.forEach(name => insertDoc.run(dealId, 'buyer', name));
-
-  const tasks = SCENARIO_TASKS[scenario];
-  const insertTask = db.prepare("INSERT INTO tasks (deal_id, label_en, label_es, requires_signature, sort_order, created_at) VALUES (?,?,?,?,?,datetime('now'))");
-  tasks.forEach((t, i) => insertTask.run(dealId, t.en, t.es, t.sign ? 1 : 0, i));
-
-  // Un agente ya no ve todas las operaciones (solo admin/lawyer) — se liga
-  // automáticamente a la que acaba de crear, si no perdería de vista su
-  // propio trabajo.
-  if (req.session.role === 'agent') {
-    db.prepare('INSERT OR IGNORE INTO deal_parties (deal_id, user_id, role_in_deal) VALUES (?,?,?)')
-      .run(dealId, req.session.userId, 'agent');
+  const sellers = parties.filter(p => p.side === 'seller');
+  const buyers = parties.filter(p => p.side === 'buyer');
+  if (!sellers.length || !buyers.length) {
+    return res.status(400).json({ error: 'Se necesita al menos 1 vendedor y 1 comprador.' });
+  }
+  if (sellers.length > MAX_PARTIES_PER_SIDE || buyers.length > MAX_PARTIES_PER_SIDE) {
+    return res.status(400).json({ error: `Máximo ${MAX_PARTIES_PER_SIDE} personas por lado.` });
+  }
+  for (const p of parties) {
+    const err = validateParty(p);
+    if (err) return res.status(400).json({ error: err });
   }
 
-  res.status(201).json({ id: dealId });
+  try {
+    const dealId = db.transaction(() => {
+      const dealInfo = db.prepare(`
+        INSERT INTO deals (scenario, development, property, price, furniture_price, currency, start_date, escrow_company, created_by)
+        VALUES (?,?,?,?,?,?,?,?,?)
+      `).run(scenario, development || 'punta_mita', property, price || 0, furniturePrice || 0,
+             currency || 'USD', startDate, escrowCompany || null, req.session.userId);
+      const id = dealInfo.lastInsertRowid;
+
+      ['seller', 'buyer'].forEach(side => {
+        parties.filter(p => p.side === side).forEach((p, idx) => insertPartyWithDocs(id, scenario, side, idx, p));
+      });
+
+      const tasks = SCENARIO_TASKS[scenario];
+      const insertTask = db.prepare("INSERT INTO tasks (deal_id, label_en, label_es, requires_signature, sort_order, created_at) VALUES (?,?,?,?,?,datetime('now'))");
+      tasks.forEach((t, i) => insertTask.run(id, t.en, t.es, t.sign ? 1 : 0, i));
+
+      // Un agente ya no ve todas las operaciones (solo admin/lawyer) — se
+      // liga automáticamente a la que acaba de crear.
+      if (req.session.role === 'agent') {
+        db.prepare('INSERT OR IGNORE INTO deal_parties (deal_id, user_id, role_in_deal) VALUES (?,?,?)')
+          .run(id, req.session.userId, 'agent');
+      }
+      return id;
+    })();
+
+    res.status(201).json({ id: dealId });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Error al crear la operación.' });
+  }
 });
 
-// GET /api/deals/:id — detalle completo con docs y tareas.
+// GET /api/deals/:id — detalle completo con partes, docs y tareas.
 router.get('/:id', requireAuth, (req, res) => {
   const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id);
   if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
@@ -109,17 +215,34 @@ router.get('/:id', requireAuth, (req, res) => {
     return res.status(403).json({ error: 'No autorizado para ver esta operación.' });
   }
 
+  const parties = db.prepare('SELECT * FROM deal_party_entities WHERE deal_id = ? ORDER BY side, sort_order').all(deal.id);
+
+  const ownerRows = db.prepare(`
+    SELECT o.* FROM deal_party_owners o JOIN deal_party_entities e ON e.id = o.deal_party_entity_id
+    WHERE e.deal_id = ? ORDER BY o.deal_party_entity_id, o.sort_order
+  `).all(deal.id);
+  const ownersByParty = {};
+  ownerRows.forEach(o => { (ownersByParty[o.deal_party_entity_id] ||= []).push(o); });
+
+  const linkedRows = db.prepare(`
+    SELECT dp.deal_party_entity_id AS partyId, u.id AS userId, u.name, u.email
+    FROM deal_parties dp JOIN users u ON u.id = dp.user_id
+    WHERE dp.deal_id = ? AND dp.deal_party_entity_id IS NOT NULL
+  `).all(deal.id);
+  const linkedByParty = {};
+  linkedRows.forEach(r => { linkedByParty[r.partyId] = { userId: r.userId, name: r.name, email: r.email }; });
+
+  parties.forEach(p => {
+    p.owners = ownersByParty[p.id] || [];
+    p.linkedUser = linkedByParty[p.id] || null;
+  });
+
   const documents = db.prepare('SELECT * FROM documents WHERE deal_id = ?').all(deal.id);
   const tasks = db.prepare('SELECT * FROM tasks WHERE deal_id = ? ORDER BY sort_order').all(deal.id);
-  res.json({ ...deal, documents, tasks });
+  res.json({ ...deal, parties, documents, tasks });
 });
 
-// PATCH /api/deals/:id — cambia la escrow company de una operación ya
-// creada (ej. se eligió TLA por error para una compraventa mexicano-mexicano
-// y hace falta el formato de Armour, que sí tiene CURP/RFC/domicilio en
-// México). Solo staff; si ya hay expedientes KYC guardados con la plantilla
-// vieja, hay que reiniciarlos aparte (ver DELETE .../kyc/:role abajo) — este
-// endpoint no los toca solo, para no borrar trabajo ya hecho sin avisar.
+// PATCH /api/deals/:id — cambia la escrow company de una operación ya creada.
 router.patch('/:id', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const { escrowCompany } = req.body || {};
@@ -128,6 +251,115 @@ router.patch('/:id', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
   }
   const info = db.prepare('UPDATE deals SET escrow_company = ? WHERE id = ?').run(escrowCompany, req.params.id);
   if (!info.changes) return res.status(404).json({ error: 'Operación no encontrada.' });
+  res.json({ ok: true });
+});
+
+// POST /api/deals/:id/parties — agrega una parte nueva (vendedor/comprador
+// adicional) a una operación ya creada, con su propio checklist.
+router.post('/:id/parties', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id);
+  if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
+
+  const p = req.body || {};
+  if (!['seller', 'buyer'].includes(p.side)) return res.status(400).json({ error: 'Falta el lado (seller/buyer).' });
+  const err = validateParty(p);
+  if (err) return res.status(400).json({ error: err });
+
+  const count = db.prepare('SELECT COUNT(*) c FROM deal_party_entities WHERE deal_id = ? AND side = ?').get(req.params.id, p.side).c;
+  if (count >= MAX_PARTIES_PER_SIDE) return res.status(400).json({ error: `Máximo ${MAX_PARTIES_PER_SIDE} personas por lado.` });
+
+  const partyId = insertPartyWithDocs(req.params.id, deal.scenario, p.side, count, p);
+  res.status(201).json({ id: partyId });
+});
+
+// PATCH /api/deals/:id/parties/:partyId — editar nombre/estructura de una
+// parte existente (ej. completar la estructura de propiedad de una
+// operación migrada, o corregir un dato).
+router.patch('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
+  if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
+  const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id);
+
+  const p = { ...req.body, side: party.side, partyType: req.body?.partyType || party.party_type, name: req.body?.name || party.name };
+  const err = validateParty(p);
+  if (err) return res.status(400).json({ error: err });
+
+  db.transaction(() => {
+    db.prepare(`
+      UPDATE deal_party_entities SET name=?, party_type=?, ownership_mode=?, parent_entity_name=?, parent_entity_type=?, parent_has_trust_above=?, parent_trust_name=?, direct_trust_name=?
+      WHERE id = ?
+    `).run(
+      p.name, p.partyType,
+      p.partyType === 'individual' ? null : p.ownershipMode || null,
+      p.ownershipMode === 'parent_entity' ? p.parentEntityName : null,
+      p.ownershipMode === 'parent_entity' ? p.parentEntityType : null,
+      p.ownershipMode === 'parent_entity' && p.parentHasTrustAbove ? 1 : 0,
+      p.ownershipMode === 'parent_entity' && p.parentHasTrustAbove ? p.parentTrustName : null,
+      p.ownershipMode === 'direct_trust' ? p.directTrustName : null,
+      party.id
+    );
+    db.prepare('DELETE FROM deal_party_owners WHERE deal_party_entity_id = ?').run(party.id);
+    if (p.ownershipMode === 'direct_owners') {
+      const insertOwner = db.prepare('INSERT INTO deal_party_owners (deal_party_entity_id, sort_order, name) VALUES (?,?,?)');
+      p.owners.forEach((o, oi) => insertOwner.run(party.id, oi, o.name));
+    }
+    rebuildChecklistForParty(deal, party.id, p);
+  })();
+
+  res.json({ ok: true });
+});
+
+// Inserta solo los documentos que falten según la estructura ACTUAL de la
+// parte, sin duplicar ni borrar lo que ya existe (ni lo ya subido/marcado).
+function rebuildChecklistForParty(deal, partyId, p) {
+  const existing = db.prepare('SELECT name, sub_label FROM documents WHERE deal_party_entity_id = ?').all(partyId);
+  const existingKeys = new Set(existing.map(d => `${d.name} ${d.sub_label || ''}`));
+  const wanted = buildDocsForParty(deal.scenario, p);
+  const insertDoc = db.prepare("INSERT INTO documents (deal_id, deal_party_entity_id, sub_label, name, created_at) VALUES (?,?,?,?,datetime('now'))");
+  wanted.forEach(d => {
+    const key = `${d.name} ${d.subLabel || ''}`;
+    if (!existingKeys.has(key)) insertDoc.run(deal.id, partyId, d.subLabel, d.name);
+  });
+}
+
+// POST /api/deals/:id/parties/:partyId/rebuild-checklist — recalcula el
+// checklist de una parte con su estructura de propiedad actual (ya guardada
+// en la base), agregando lo que falte.
+router.post('/:id/parties/:partyId/rebuild-checklist', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
+  if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
+  const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id);
+  const owners = db.prepare('SELECT name FROM deal_party_owners WHERE deal_party_entity_id = ? ORDER BY sort_order').all(party.id);
+
+  rebuildChecklistForParty(deal, party.id, {
+    side: party.side, partyType: party.party_type, ownershipMode: party.ownership_mode,
+    owners, parentEntityName: party.parent_entity_name, parentEntityType: party.parent_entity_type,
+    parentHasTrustAbove: !!party.parent_has_trust_above, parentTrustName: party.parent_trust_name,
+    directTrustName: party.direct_trust_name
+  });
+  res.json({ ok: true });
+});
+
+// DELETE /api/deals/:id/parties/:partyId — quitar una parte agregada de más
+// (bloqueado si ya tiene trabajo real hecho, para no perderlo).
+router.delete('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
+  if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
+
+  const sideCount = db.prepare('SELECT COUNT(*) c FROM deal_party_entities WHERE deal_id = ? AND side = ?').get(req.params.id, party.side).c;
+  if (sideCount <= 1) return res.status(400).json({ error: 'No puedes quitar la única parte de este lado.' });
+
+  const doneDocs = db.prepare("SELECT COUNT(*) c FROM documents WHERE deal_party_entity_id = ? AND status = 'done'").get(party.id).c;
+  const activeKyc = db.prepare("SELECT COUNT(*) c FROM kyc_submissions WHERE deal_party_entity_id = ? AND status != 'draft'").get(party.id).c;
+  if (doneDocs > 0 || activeKyc > 0) {
+    return res.status(400).json({ error: 'Esta parte ya tiene documentos marcados o un expediente KYC en proceso — no se puede quitar.' });
+  }
+
+  db.prepare('DELETE FROM deal_party_entities WHERE id = ?').run(party.id);
   res.json({ ok: true });
 });
 
@@ -146,11 +378,13 @@ router.post('/:id/documents/:docId/file', requireAuth, (req, res, next) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deal_id = ?').get(req.params.docId, req.params.id);
   if (!doc) return res.status(404).json({ error: 'Documento no encontrado.' });
-  // Comprador/vendedor solo puede subir documentos de su propio lado del
-  // checklist (no el de la contraparte); admin/agente sin restricción.
+  // Comprador/vendedor solo puede subir documentos de su propia parte (no
+  // la de otro comprador/vendedor del mismo lado); admin/agente/abogado sin
+  // restricción.
   const role = myRoleInDeal(req, req.params.id);
-  if (!['admin', 'agent', 'lawyer'].includes(role) && role !== doc.owner) {
-    return res.status(403).json({ error: 'No puedes subir documentos de la otra parte.' });
+  const myPartyId = myDealPartyEntityId(req, req.params.id);
+  if (!['admin', 'agent', 'lawyer'].includes(role) && myPartyId !== doc.deal_party_entity_id) {
+    return res.status(403).json({ error: 'No puedes subir documentos de otra parte.' });
   }
   upload.single('file')(req, res, (err) => {
     if (err) return res.status(400).json({ error: err.message || 'Archivo inválido.' });
@@ -171,8 +405,9 @@ router.get('/:id/documents/:docId/file', requireAuth, (req, res) => {
   if (!doc || !doc.file_url) return res.status(404).json({ error: 'Archivo no encontrado.' });
 
   const role = myRoleInDeal(req, req.params.id);
-  if (!['admin', 'agent', 'lawyer'].includes(role) && role !== doc.owner) {
-    return res.status(403).json({ error: 'No puedes ver documentos de la otra parte.' });
+  const myPartyId = myDealPartyEntityId(req, req.params.id);
+  if (!['admin', 'agent', 'lawyer'].includes(role) && myPartyId !== doc.deal_party_entity_id) {
+    return res.status(403).json({ error: 'No puedes ver documentos de otra parte.' });
   }
 
   const resolved = path.resolve(UPLOADS_ROOT, doc.file_url);
@@ -197,26 +432,11 @@ router.patch('/:id/tasks/:taskId', requireAuth, (req, res) => {
 });
 
 // DELETE /api/deals/:id — admin/abogado cualquiera; agente solo las suyas.
-// Los documentos/tareas/deal_parties se borran en cascada
-// (foreign_keys=ON en db/index.js); los archivos subidos no viven en la
-// base de datos, hay que borrarlos aparte.
 router.delete('/:id', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const info = db.prepare('DELETE FROM deals WHERE id = ?').run(req.params.id);
   if (!info.changes) return res.status(404).json({ error: 'Operación no encontrada.' });
   fs.rm(path.join(UPLOADS_ROOT, String(req.params.id)), { recursive: true, force: true }, () => {});
-  res.json({ ok: true });
-});
-
-// POST /api/deals/:id/parties — ligar un usuario (comprador/vendedor/agente) a la operación.
-router.post('/:id/parties', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
-  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
-  const { userId, roleInDeal } = req.body || {};
-  if (!userId || !['buyer', 'seller', 'agent'].includes(roleInDeal)) {
-    return res.status(400).json({ error: 'Datos inválidos.' });
-  }
-  db.prepare('INSERT OR IGNORE INTO deal_parties (deal_id, user_id, role_in_deal) VALUES (?,?,?)')
-    .run(req.params.id, userId, roleInDeal);
   res.json({ ok: true });
 });
 

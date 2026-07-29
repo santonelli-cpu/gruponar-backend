@@ -14,19 +14,28 @@ const INVITE_TTL_DAYS = 7;
 // invitación (crea cuentas sin autenticación previa).
 const rateLimitAccept = createRateLimiter({ windowMs: 15 * 60 * 1000, maxAttempts: 10 });
 
-// POST /api/invites — admin/agente/abogado genera una invitación. Ligada a
-// una operación para comprador/vendedor (dealId obligatorio); para
-// agente/abogado dealId es opcional — sin él, es una invitación de equipo
-// (se une a la firma en general, no a un cierre específico).
+// POST /api/invites — admin/agente/abogado genera una invitación. Para
+// comprador/vendedor hace falta decir A QUÉ PARTE específica de la
+// operación representa (dealPartyEntityId) — puede haber varios
+// compradores/vendedores, cada uno necesita su propia invitación ligada a
+// su propia parte. Para agente/abogado, sin dealId/partyEntityId es una
+// invitación de equipo (se une a la firma en general).
 router.post('/', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
-  const { dealId, roleInDeal, name, email } = req.body || {};
+  const { dealId, dealPartyEntityId, roleInDeal, name, email } = req.body || {};
   if (!['buyer', 'seller', 'agent', 'lawyer'].includes(roleInDeal) || !name || !email) {
     return res.status(400).json({ error: 'Datos inválidos.' });
   }
-  if (['buyer', 'seller'].includes(roleInDeal) && !dealId) {
-    return res.status(400).json({ error: 'Comprador/vendedor necesitan una operación ligada.' });
-  }
-  if (dealId) {
+  if (['buyer', 'seller'].includes(roleInDeal)) {
+    if (!dealId || !dealPartyEntityId) {
+      return res.status(400).json({ error: 'Falta la operación y la persona específica a invitar.' });
+    }
+    const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(dealPartyEntityId, dealId);
+    if (!party) return res.status(404).json({ error: 'Esa parte no existe en esta operación.' });
+    if (party.side !== roleInDeal) return res.status(400).json({ error: 'El rol no coincide con el lado de esa parte.' });
+    if (!canAccessDeal(req, dealId)) return res.status(403).json({ error: 'No autorizado.' });
+    const alreadyLinked = db.prepare('SELECT 1 FROM deal_parties WHERE deal_party_entity_id = ?').get(dealPartyEntityId);
+    if (alreadyLinked) return res.status(409).json({ error: 'Esa parte ya tiene una cuenta ligada.' });
+  } else if (dealId) {
     const deal = db.prepare('SELECT id FROM deals WHERE id = ?').get(dealId);
     if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
     if (!canAccessDeal(req, dealId)) return res.status(403).json({ error: 'No autorizado.' });
@@ -36,9 +45,10 @@ router.post('/', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
   const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 86400000).toISOString();
 
   db.prepare(`
-    INSERT INTO invites (token, deal_id, role_in_deal, email, name, created_by, expires_at)
-    VALUES (?,?,?,?,?,?,?)
-  `).run(token, dealId || null, roleInDeal, email.toLowerCase().trim(), name, req.session.userId, expiresAt);
+    INSERT INTO invites (token, deal_id, deal_party_entity_id, role_in_deal, email, name, created_by, expires_at)
+    VALUES (?,?,?,?,?,?,?,?)
+  `).run(token, dealId || null, ['buyer', 'seller'].includes(roleInDeal) ? dealPartyEntityId : null,
+         roleInDeal, email.toLowerCase().trim(), name, req.session.userId, expiresAt);
 
   res.status(201).json({ token, url: `/invite.html?token=${token}` });
 });
@@ -63,7 +73,7 @@ router.get('/:token', (req, res) => {
   });
 });
 
-// POST /api/invites/:token/accept — público, crea la cuenta (o la reutiliza) y la liga a la operación.
+// POST /api/invites/:token/accept — público, crea la cuenta (o la reutiliza) y la liga a la parte correspondiente.
 router.post('/:token/accept', rateLimitAccept, (req, res) => {
   const { password } = req.body || {};
   if (!password || password.length < 8) {
@@ -74,6 +84,19 @@ router.post('/:token/accept', rateLimitAccept, (req, res) => {
   if (!invite) return res.status(404).json({ error: 'Invitación no encontrada.' });
   if (invite.used_at) return res.status(410).json({ error: 'Esta invitación ya fue usada.' });
   if (new Date(invite.expires_at) < new Date()) return res.status(410).json({ error: 'Esta invitación expiró.' });
+
+  // Invitaciones viejas (de antes de que existiera deal_party_entity_id en
+  // este flujo) pueden llegar aquí sin ese dato — se resuelve solo si hay
+  // exactamente una parte de ese lado en la operación (con el modelo viejo
+  // siempre era así). Si ya hay varias, no se puede adivinar cuál.
+  let partyEntityId = invite.deal_party_entity_id;
+  if (!partyEntityId && invite.deal_id && ['buyer', 'seller'].includes(invite.role_in_deal)) {
+    const candidates = db.prepare('SELECT id FROM deal_party_entities WHERE deal_id = ? AND side = ?').all(invite.deal_id, invite.role_in_deal);
+    if (candidates.length === 1) partyEntityId = candidates[0].id;
+    else if (candidates.length > 1) {
+      return res.status(409).json({ error: 'Esta invitación es de un formato viejo y esta operación ya tiene varias partes de ese lado — pide que generen una invitación nueva.' });
+    }
+  }
 
   const existing = db.prepare('SELECT * FROM users WHERE email = ?').get(invite.email);
   if (existing) {
@@ -96,8 +119,8 @@ router.post('/:token/accept', rateLimitAccept, (req, res) => {
       user = { id: info.lastInsertRowid, name: invite.name, email: invite.email, role: invite.role_in_deal };
     }
     if (invite.deal_id) {
-      db.prepare('INSERT OR IGNORE INTO deal_parties (deal_id, user_id, role_in_deal) VALUES (?,?,?)')
-        .run(invite.deal_id, user.id, invite.role_in_deal);
+      db.prepare('INSERT OR IGNORE INTO deal_parties (deal_id, user_id, role_in_deal, deal_party_entity_id) VALUES (?,?,?,?)')
+        .run(invite.deal_id, user.id, invite.role_in_deal, partyEntityId || null);
     }
     db.prepare('UPDATE invites SET used_at = datetime(\'now\'), used_by_user_id = ? WHERE id = ?')
       .run(user.id, invite.id);

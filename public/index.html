@@ -157,7 +157,8 @@ let kycFormOpenFor = null;
 let contractCache = {};
 let escrowFormOpenFor = null;
 let activeDealId = null;
-let portalRole = 'buyer';
+let portalRole = 'agent'; // solo se usa en isPreview para elegir "Agente" vs una parte específica
+let portalPartyId = null; // qué deal_party_entities.id está previsualizando el staff
 let portalDealId = null;
 let newDealDraft = null;
 let authenticated = false;
@@ -211,7 +212,10 @@ async function checkSession(){
 // documents, tasks); el resto del código de esta página ya espera la forma
 // anidada/camelCase de abajo — un solo lugar traduce entre ambas.
 function adaptDoc(d){
-  return { id: d.id, name: d.name, status: d.status, fileUrl: d.file_url, originalName: d.original_name };
+  return {
+    id: d.id, name: d.name, subLabel: d.sub_label, status: d.status,
+    fileUrl: d.file_url, originalName: d.original_name, partyId: d.deal_party_entity_id
+  };
 }
 function adaptTask(t){
   return {
@@ -219,14 +223,30 @@ function adaptTask(t){
     docusignStatus: t.docusign_status, documentOriginalName: t.document_original_name
   };
 }
+// Un vendedor/comprador individual, o una entidad (LLC/persona moral) con su
+// estructura de propiedad — reemplaza el viejo .seller/.buyer singular.
+function adaptParty(p){
+  return {
+    id: p.id, side: p.side, sortOrder: p.sort_order, name: p.name, partyType: p.party_type,
+    ownershipMode: p.ownership_mode,
+    parentEntityName: p.parent_entity_name, parentEntityType: p.parent_entity_type,
+    parentHasTrustAbove: !!p.parent_has_trust_above, parentTrustName: p.parent_trust_name,
+    directTrustName: p.direct_trust_name,
+    owners: (p.owners || []).map(o => ({ id: o.id, name: o.name })),
+    linkedUser: p.linkedUser || null
+  };
+}
+function sellerParties(deal){ return deal.parties.filter(p => p.side === 'seller'); }
+function buyerParties(deal){ return deal.parties.filter(p => p.side === 'buyer'); }
+function dealPartyNames(deal, side){ return deal.parties.filter(p => p.side === side).map(p => p.name).join(' y '); }
+
 function adaptDealSummary(row){
   return {
     id: row.id, scenario: row.scenario, development: row.development, property: row.property,
     price: row.price, furniturePrice: row.furniture_price, currency: row.currency, startDate: row.start_date,
     escrowCompany: row.escrow_company || 'armour',
-    seller: { name: row.seller_name, type: row.seller_type },
-    buyer: { name: row.buyer_name, type: row.buyer_type },
-    docs: { seller: [], buyer: [] }, tasks: [], _loaded: false,
+    parties: (row.parties || []).map(adaptParty),
+    documents: [], tasks: [], _loaded: false,
     _counts: {
       documentsTotal: row.documents_total || 0, documentsDone: row.documents_done || 0,
       tasksTotal: row.tasks_total || 0, tasksDone: row.tasks_done || 0
@@ -235,8 +255,7 @@ function adaptDealSummary(row){
 }
 function adaptDealDetail(row){
   const base = adaptDealSummary(row);
-  base.docs.seller = row.documents.filter(d=>d.owner==='seller').map(adaptDoc);
-  base.docs.buyer = row.documents.filter(d=>d.owner==='buyer').map(adaptDoc);
+  base.documents = row.documents.map(adaptDoc);
   base.tasks = row.tasks.map(adaptTask);
   base._loaded = true;
   return base;
@@ -278,11 +297,11 @@ async function openDeal(dealId){
   render();
 }
 
-async function loadKyc(dealId, role, lang){
-  const key = dealId + '-' + role;
+async function loadKyc(dealId, partyId, lang){
+  const key = dealId + '-' + partyId;
   try{
     const qs = lang ? `?lang=${lang}` : '';
-    kycCache[key] = await apiFetch(`/api/deals/${dealId}/kyc/${role}${qs}`);
+    kycCache[key] = await apiFetch(`/api/deals/${dealId}/kyc/${partyId}${qs}`);
   }catch(e){
     kycCache[key] = { error: e.message };
   }
@@ -305,9 +324,8 @@ function escapeHtml(str){
 
 function pctDocs(deal){
   if(!deal._loaded) return deal._counts.documentsTotal ? Math.round(deal._counts.documentsDone/deal._counts.documentsTotal*100) : 0;
-  const all = deal.docs.seller.concat(deal.docs.buyer);
-  const done = all.filter(d=>d.status==='done').length;
-  return all.length ? Math.round(done/all.length*100) : 0;
+  const done = deal.documents.filter(d=>d.status==='done').length;
+  return deal.documents.length ? Math.round(done/deal.documents.length*100) : 0;
 }
 function pctTasks(deal){
   if(!deal._loaded) return deal._counts.tasksTotal ? Math.round(deal._counts.tasksDone/deal._counts.tasksTotal*100) : 0;
@@ -522,7 +540,7 @@ function renderAdmin(body){
     card.className = 'deal-card';
     card.innerHTML = `
       <div class="deal-title">${escapeHtml(d.property)}</div>
-      <div class="deal-sub">${escapeHtml(d.seller.name)} → ${escapeHtml(d.buyer.name)} · ${d.currency||'USD'} ${Number(d.price||0).toLocaleString()}${d.furniturePrice ? ' + '+Number(d.furniturePrice).toLocaleString()+' muebles' : ''}</div>
+      <div class="deal-sub">${escapeHtml(dealPartyNames(d,'seller'))} → ${escapeHtml(dealPartyNames(d,'buyer'))} · ${d.currency||'USD'} ${Number(d.price||0).toLocaleString()}${d.furniturePrice ? ' + '+Number(d.furniturePrice).toLocaleString()+' muebles' : ''}</div>
       <span class="badge ${s.badgeClass}">${s.labelShort}</span>
       <span class="badge" style="background:var(--stone); border:0.5px solid var(--line); color:var(--ink-soft); margin-left:4px;">${DEVELOPMENT_LABEL[d.development||'punta_mita'].split(' (')[0]}</span>
       <div class="deal-sub" style="margin-top:6px;">Docs: ${pctDocs(d)}% · Tracker: ${pctTasks(d)}%</div>
@@ -729,6 +747,110 @@ function buildTeamSection(){
   return wrap;
 }
 
+const MAX_PARTIES_PER_SIDE = 4;
+
+// Widget reutilizable de una parte (vendedor o comprador): nombre, tipo, y
+// si es entidad (corporation/llc) su estructura de propiedad — hasta 2
+// niveles (socios directos / entidad padre con o sin trust arriba / trust
+// directo). Se usa tanto al crear una operación (buildNewDealForm) como al
+// agregar/editar una parte de una ya existente (buildPartiesSection).
+function buildPartyFieldsBlock(allowedTypes, existing){
+  const box = document.createElement('div');
+  box.style.cssText = 'border:0.5px solid var(--line); border-radius:10px; padding:12px; margin-bottom:10px; background:var(--stone-card);';
+  const typeOptions = allowedTypes.map(t => `<option value="${t}">${TYPE_LABEL[t]}</option>`).join('');
+  box.innerHTML = `
+    <div class="form-row">
+      <label>Nombre <input type="text" class="pf-name" placeholder="Nombre completo o razón social"></label>
+      <label>Tipo <select class="pf-type">${typeOptions}</select></label>
+    </div>
+    <div class="pf-ownership" style="display:none;">
+      <label>Estructura de propiedad <select class="pf-mode">
+        <option value="direct_owners">1-2 socios/accionistas directos</option>
+        <option value="parent_entity">Otra entidad es dueña</option>
+        <option value="direct_trust">Un revocable trust es dueño directo</option>
+      </select></label>
+      <div class="pf-mode-owners">
+        <div class="field-hint" style="margin:6px 0 4px;">Socios/accionistas directos (1-2)</div>
+        <input type="text" class="pf-owner1" placeholder="Nombre del socio 1">
+        <input type="text" class="pf-owner2" placeholder="Nombre del socio 2 (opcional)" style="margin-top:6px;">
+      </div>
+      <div class="pf-mode-parent" style="display:none;">
+        <div class="form-row" style="margin-top:6px;">
+          <label>Nombre de la entidad padre <input type="text" class="pf-parent-name"></label>
+          <label>Tipo <select class="pf-parent-type">
+            <option value="corporation">Persona moral (MX)</option>
+            <option value="llc">LLC / entidad extranjera</option>
+          </select></label>
+        </div>
+        <label style="display:flex; align-items:center; gap:6px; font-size:12.5px; margin-top:6px;">
+          <input type="checkbox" class="pf-parent-trust"> Esa entidad padre tiene un revocable trust arriba
+        </label>
+        <input type="text" class="pf-parent-trust-name" placeholder="Nombre del trust" style="display:none; margin-top:6px;">
+      </div>
+      <div class="pf-mode-trust" style="display:none; margin-top:6px;">
+        <input type="text" class="pf-trust-name" placeholder="Nombre del revocable trust">
+      </div>
+    </div>
+  `;
+  const typeSel = box.querySelector('.pf-type');
+  const ownershipBlock = box.querySelector('.pf-ownership');
+  const modeSel = box.querySelector('.pf-mode');
+  const ownersBlock = box.querySelector('.pf-mode-owners');
+  const parentBlock = box.querySelector('.pf-mode-parent');
+  const trustBlock = box.querySelector('.pf-mode-trust');
+  const parentTrustCheck = box.querySelector('.pf-parent-trust');
+  const parentTrustName = box.querySelector('.pf-parent-trust-name');
+
+  function updateVisibility(){
+    ownershipBlock.style.display = typeSel.value === 'individual' ? 'none' : 'block';
+    ownersBlock.style.display = modeSel.value === 'direct_owners' ? 'block' : 'none';
+    parentBlock.style.display = modeSel.value === 'parent_entity' ? 'block' : 'none';
+    trustBlock.style.display = modeSel.value === 'direct_trust' ? 'block' : 'none';
+    parentTrustName.style.display = parentTrustCheck.checked ? 'block' : 'none';
+  }
+  typeSel.onchange = updateVisibility;
+  modeSel.onchange = updateVisibility;
+  parentTrustCheck.onchange = updateVisibility;
+
+  if(existing){
+    box.querySelector('.pf-name').value = existing.name || '';
+    if(allowedTypes.includes(existing.partyType)) typeSel.value = existing.partyType;
+    if(existing.ownershipMode) modeSel.value = existing.ownershipMode;
+    if(existing.owners && existing.owners[0]) box.querySelector('.pf-owner1').value = existing.owners[0].name;
+    if(existing.owners && existing.owners[1]) box.querySelector('.pf-owner2').value = existing.owners[1].name;
+    if(existing.parentEntityName) box.querySelector('.pf-parent-name').value = existing.parentEntityName;
+    if(existing.parentEntityType) box.querySelector('.pf-parent-type').value = existing.parentEntityType;
+    if(existing.parentHasTrustAbove) parentTrustCheck.checked = true;
+    if(existing.parentTrustName) parentTrustName.value = existing.parentTrustName;
+    if(existing.directTrustName) box.querySelector('.pf-trust-name').value = existing.directTrustName;
+  }
+  updateVisibility();
+
+  box.collectParty = function(side){
+    const partyType = typeSel.value;
+    const name = box.querySelector('.pf-name').value.trim();
+    const p = { side, partyType, name };
+    if(partyType !== 'individual'){
+      p.ownershipMode = modeSel.value;
+      if(modeSel.value === 'direct_owners'){
+        const o1 = box.querySelector('.pf-owner1').value.trim();
+        const o2 = box.querySelector('.pf-owner2').value.trim();
+        p.owners = [o1, o2].filter(Boolean).map(name => ({ name }));
+      } else if(modeSel.value === 'parent_entity'){
+        p.parentEntityName = box.querySelector('.pf-parent-name').value.trim();
+        p.parentEntityType = box.querySelector('.pf-parent-type').value;
+        p.parentHasTrustAbove = parentTrustCheck.checked;
+        if(parentTrustCheck.checked) p.parentTrustName = parentTrustName.value.trim();
+      } else if(modeSel.value === 'direct_trust'){
+        p.directTrustName = box.querySelector('.pf-trust-name').value.trim();
+      }
+    }
+    return p;
+  };
+
+  return box;
+}
+
 function buildNewDealForm(){
   const wrap = document.createElement('div');
   wrap.innerHTML = `<div class="section-title">Nueva operación</div>`;
@@ -760,18 +882,18 @@ function buildNewDealForm(){
     </div>
     <div class="grid2">
       <div>
-        <div class="field-hint" style="margin-top:0;">Vendedor</div>
-        <div class="form-row">
-          <label>Nombre <input type="text" id="nd-seller-name" placeholder="Juan Carlos Mendoza Ibarra"></label>
-          <label>Tipo <select id="nd-seller-type"><option value="individual">Individuo</option><option value="corporation">Persona moral (MX)</option><option value="llc">LLC / entidad extranjera</option></select></label>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div class="field-hint" style="margin:0;">Vendedores</div>
+          <button class="btn" id="nd-add-seller" style="font-size:11px;" type="button">+ Agregar vendedor</button>
         </div>
+        <div id="nd-sellers"></div>
       </div>
       <div>
-        <div class="field-hint" style="margin-top:0;">Comprador</div>
-        <div class="form-row">
-          <label>Nombre <input type="text" id="nd-buyer-name" placeholder="Sarah Jane Thompson"></label>
-          <label>Tipo <select id="nd-buyer-type"></select></label>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div class="field-hint" style="margin:0;">Compradores</div>
+          <button class="btn" id="nd-add-buyer" style="font-size:11px;" type="button">+ Agregar comprador</button>
         </div>
+        <div id="nd-buyers"></div>
       </div>
     </div>
     <div class="form-row">
@@ -781,6 +903,7 @@ function buildNewDealForm(){
         <option value="tla">TLA Financial Services</option>
       </select></label>
     </div>
+    <div class="gate-error" id="nd-error"></div>
     <div class="form-actions" style="display:flex; gap:8px; justify-content:flex-end;">
       <button class="btn" id="nd-cancel">Cancelar</button>
       <button class="btn primary" id="nd-create">Crear operación</button>
@@ -788,33 +911,53 @@ function buildNewDealForm(){
   `;
   wrap.appendChild(card);
 
-  function refreshBuyerTypes(){
-    const scen = wrap.querySelector('#nd-scenario').value;
-    const sel = wrap.querySelector('#nd-buyer-type');
-    sel.innerHTML = SCENARIOS[scen].buyerTypes.map(t=>`<option value="${t}">${TYPE_LABEL[t]}</option>`).join('');
+  const sellersWrap = card.querySelector('#nd-sellers');
+  const buyersWrap = card.querySelector('#nd-buyers');
+
+  function addPartyBlock(container, side){
+    if(container.children.length >= MAX_PARTIES_PER_SIDE) return;
+    const scen = card.querySelector('#nd-scenario').value;
+    const allowed = side === 'seller' ? SCENARIOS[scen].sellerTypes : SCENARIOS[scen].buyerTypes;
+    const block = buildPartyFieldsBlock(allowed);
+    if(container.children.length > 0){
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'btn'; removeBtn.style.cssText = 'font-size:11px; margin-top:-6px; margin-bottom:8px;'; removeBtn.type = 'button';
+      removeBtn.textContent = 'Quitar';
+      removeBtn.onclick = () => block.remove();
+      block.appendChild(removeBtn);
+    }
+    container.appendChild(block);
   }
-  wrap.querySelector('#nd-scenario').onchange = refreshBuyerTypes;
-  refreshBuyerTypes();
+  card.querySelector('#nd-add-seller').onclick = () => addPartyBlock(sellersWrap, 'seller');
+  card.querySelector('#nd-add-buyer').onclick = () => addPartyBlock(buyersWrap, 'buyer');
+  addPartyBlock(sellersWrap, 'seller');
+  addPartyBlock(buyersWrap, 'buyer');
+
+  card.querySelector('#nd-scenario').onchange = () => {
+    sellersWrap.innerHTML = ''; buyersWrap.innerHTML = '';
+    addPartyBlock(sellersWrap, 'seller');
+    addPartyBlock(buyersWrap, 'buyer');
+  };
 
   wrap.querySelector('#nd-cancel').onclick = () => { adminView='list'; render(); };
   wrap.querySelector('#nd-create').onclick = async () => {
-    const scenario = wrap.querySelector('#nd-scenario').value;
-    const property = wrap.querySelector('#nd-property').value.trim();
-    const sellerName = wrap.querySelector('#nd-seller-name').value.trim();
-    const buyerName = wrap.querySelector('#nd-buyer-name').value.trim();
-    if(!property || !sellerName || !buyerName) return;
-    const sellerType = wrap.querySelector('#nd-seller-type').value;
-    const buyerType = wrap.querySelector('#nd-buyer-type').value;
-    const development = wrap.querySelector('#nd-development').value;
+    const errEl = card.querySelector('#nd-error');
+    errEl.textContent = '';
+    const scenario = card.querySelector('#nd-scenario').value;
+    const property = card.querySelector('#nd-property').value.trim();
+    if(!property){ errEl.textContent = 'Falta el nombre de la propiedad.'; return; }
+    const sellers = Array.from(sellersWrap.children).map(b => b.collectParty('seller'));
+    const buyers = Array.from(buyersWrap.children).map(b => b.collectParty('buyer'));
+    if(sellers.some(p=>!p.name) || buyers.some(p=>!p.name)){ errEl.textContent = 'Falta el nombre de alguna parte.'; return; }
+    const development = card.querySelector('#nd-development').value;
     const body = {
       scenario, development, property,
-      price: Number(wrap.querySelector('#nd-price').value) || 0,
-      furniturePrice: Number(wrap.querySelector('#nd-furniture').value) || 0,
-      currency: wrap.querySelector('#nd-currency').value,
-      seller: {name: sellerName, type: sellerType},
-      buyer: {name: buyerName, type: buyerType},
-      startDate: wrap.querySelector('#nd-start').value || new Date().toISOString().slice(0,10),
-      escrowCompany: wrap.querySelector('#nd-escrow-company').value
+      price: Number(card.querySelector('#nd-price').value) || 0,
+      furniturePrice: Number(card.querySelector('#nd-furniture').value) || 0,
+      currency: card.querySelector('#nd-currency').value,
+      parties: [...sellers, ...buyers],
+      startDate: card.querySelector('#nd-start').value || new Date().toISOString().slice(0,10),
+      escrowCompany: card.querySelector('#nd-escrow-company').value
     };
     try{
       const { id } = await apiFetch('/api/deals', { method:'POST', body: JSON.stringify(body) });
@@ -822,8 +965,109 @@ function buildNewDealForm(){
       activeDealId = id;
       await loadData();
       await openDeal(id);
-    }catch(e){ alert(e.message); }
+    }catch(e){ errEl.textContent = e.message; }
   };
+  return wrap;
+}
+
+// Resumen corto de la estructura de propiedad de una entidad, para mostrar
+// junto a su nombre sin tener que abrir el editor.
+function partyOwnershipSummary(p){
+  if(p.partyType === 'individual') return '';
+  if(p.ownershipMode === 'direct_owners') return `Socios: ${p.owners.map(o=>o.name).join(', ') || '(sin nombre)'}`;
+  if(p.ownershipMode === 'parent_entity'){
+    let s = `Entidad padre: ${p.parentEntityName} (${TYPE_LABEL[p.parentEntityType]||p.parentEntityType})`;
+    if(p.parentHasTrustAbove) s += ` · Trust arriba: ${p.parentTrustName}`;
+    return s;
+  }
+  if(p.ownershipMode === 'direct_trust') return `Trust directo: ${p.directTrustName}`;
+  return 'Falta completar la estructura de propiedad';
+}
+
+function buildPartiesSection(deal){
+  const wrap = document.createElement('div');
+  const addFormFor = { seller: null, buyer: null }; // toggles, no estado global
+
+  function renderSide(side, label){
+    const card = document.createElement('div'); card.className = 'card';
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;';
+    const parties = deal.parties.filter(p => p.side === side);
+    header.innerHTML = `<span style="font-weight:600; font-size:13px;">${label} (${parties.length})</span>`;
+    const addBtn = document.createElement('button');
+    addBtn.className = 'btn'; addBtn.style.fontSize = '11px'; addBtn.textContent = '+ Agregar';
+    addBtn.disabled = parties.length >= MAX_PARTIES_PER_SIDE;
+    header.appendChild(addBtn);
+    card.appendChild(header);
+
+    parties.forEach(p => {
+      const row = document.createElement('div');
+      row.style.cssText = 'padding:8px 0; border-bottom:0.5px solid var(--line);';
+      row.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+          <span style="font-size:13px;">${escapeHtml(p.name)} <span class="field-hint" style="margin:0;">(${TYPE_LABEL[p.partyType]})</span>${p.linkedUser ? ` <span class="badge" style="background:var(--jade-soft); color:var(--jade);">cuenta ligada</span>` : ''}</span>
+          <span style="display:flex; gap:6px;">
+            <button class="btn pty-edit" style="font-size:11px;">Editar</button>
+            ${parties.length > 1 ? `<button class="btn pty-remove" style="font-size:11px;">Quitar</button>` : ''}
+          </span>
+        </div>
+        ${p.partyType !== 'individual' ? `<div class="field-hint" style="margin:4px 0 0;">${escapeHtml(partyOwnershipSummary(p))}</div>` : ''}
+      `;
+      const editSlot = document.createElement('div');
+      row.appendChild(editSlot);
+
+      row.querySelector('.pty-edit').onclick = () => {
+        if(editSlot.childElementCount){ editSlot.innerHTML = ''; return; }
+        const scen = deal.scenario;
+        const allowed = side === 'seller' ? SCENARIOS[scen].sellerTypes : SCENARIOS[scen].buyerTypes;
+        const block = buildPartyFieldsBlock(allowed, p);
+        block.style.marginTop = '8px';
+        const saveBtn = document.createElement('button');
+        saveBtn.className = 'btn primary'; saveBtn.style.fontSize = '11px'; saveBtn.textContent = 'Guardar';
+        saveBtn.onclick = async () => {
+          try{
+            await apiFetch(`/api/deals/${deal.id}/parties/${p.id}`, { method:'PATCH', body: JSON.stringify(block.collectParty(side)) });
+            await openDeal(deal.id);
+          }catch(e){ alert(e.message); }
+        };
+        block.appendChild(saveBtn);
+        editSlot.appendChild(block);
+      };
+      const removeBtn = row.querySelector('.pty-remove');
+      if(removeBtn) removeBtn.onclick = async () => {
+        if(!confirm(`¿Quitar a "${p.name}" de esta operación?`)) return;
+        try{
+          await apiFetch(`/api/deals/${deal.id}/parties/${p.id}`, { method:'DELETE' });
+          await openDeal(deal.id);
+        }catch(e){ alert(e.message); }
+      };
+      card.appendChild(row);
+    });
+
+    const addSlot = document.createElement('div');
+    card.appendChild(addSlot);
+    addBtn.onclick = () => {
+      if(addSlot.childElementCount){ addSlot.innerHTML = ''; return; }
+      const allowed = side === 'seller' ? SCENARIOS[deal.scenario].sellerTypes : SCENARIOS[deal.scenario].buyerTypes;
+      const block = buildPartyFieldsBlock(allowed);
+      block.style.marginTop = '8px';
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'btn primary'; saveBtn.style.fontSize = '11px'; saveBtn.textContent = 'Agregar';
+      saveBtn.onclick = async () => {
+        try{
+          await apiFetch(`/api/deals/${deal.id}/parties`, { method:'POST', body: JSON.stringify(block.collectParty(side)) });
+          await openDeal(deal.id);
+        }catch(e){ alert(e.message); }
+      };
+      block.appendChild(saveBtn);
+      addSlot.appendChild(block);
+    };
+
+    return card;
+  }
+
+  wrap.appendChild(renderSide('seller', 'Vendedores'));
+  wrap.appendChild(renderSide('buyer', 'Compradores'));
   return wrap;
 }
 
@@ -841,7 +1085,7 @@ function buildAdminDealDetail(deal){
   header.innerHTML = `
     <div class="deal-title" style="font-size:18px;">${escapeHtml(deal.property)}</div>
     <span class="badge ${s.badgeClass}">${s.labelShort}</span>
-    <div class="deal-sub" style="margin-top:8px;">${escapeHtml(deal.seller.name)} (${TYPE_LABEL[deal.seller.type]}) → ${escapeHtml(deal.buyer.name)} (${TYPE_LABEL[deal.buyer.type]})</div>
+    <div class="deal-sub" style="margin-top:8px;">${sellerParties(deal).map(p=>`${escapeHtml(p.name)} (${TYPE_LABEL[p.partyType]})`).join(', ')} → ${buyerParties(deal).map(p=>`${escapeHtml(p.name)} (${TYPE_LABEL[p.partyType]})`).join(', ')}</div>
     <div class="deal-sub">${DEVELOPMENT_LABEL[deal.development||'punta_mita']}</div>
     <div class="deal-sub">Inmueble: ${deal.currency||'USD'} ${Number(deal.price||0).toLocaleString()}${deal.furniturePrice ? ' · Muebles: '+Number(deal.furniturePrice).toLocaleString() : ''} · Inicio ${deal.startDate}</div>
     <div class="deal-sub">Documentos: ${pctDocs(deal)}% completo · Tracker: ${pctTasks(deal)}% completo</div>
@@ -874,21 +1118,24 @@ function buildAdminDealDetail(deal){
     }catch(e){ alert(e.message); }
   };
 
+  const partiesTitle = document.createElement('div');
+  partiesTitle.className = 'section-title'; partiesTitle.textContent = 'Vendedores y compradores';
+  wrap.appendChild(partiesTitle);
+  wrap.appendChild(buildPartiesSection(deal));
+
   const docsTitle = document.createElement('div');
   docsTitle.className = 'section-title'; docsTitle.textContent = 'Checklist de documentos (KYC)';
   wrap.appendChild(docsTitle);
   const docsCard = document.createElement('div');
   docsCard.className = 'card';
-  docsCard.appendChild(buildDocList(deal, 'seller', 'Vendedor'));
-  docsCard.appendChild(buildDocList(deal, 'buyer', 'Comprador'));
+  deal.parties.forEach(p => docsCard.appendChild(buildDocListForParty(deal, p)));
   wrap.appendChild(docsCard);
 
   const kycTitle = document.createElement('div');
   kycTitle.className = 'section-title'; kycTitle.textContent = 'Expediente KYC (firma electrónica)';
   wrap.appendChild(kycTitle);
   const kycCard = document.createElement('div'); kycCard.className = 'card';
-  kycCard.appendChild(buildKycSection(deal, 'seller', 'Vendedor', true));
-  kycCard.appendChild(buildKycSection(deal, 'buyer', 'Comprador', true));
+  deal.parties.forEach(p => kycCard.appendChild(buildKycSection(deal, p, true)));
   wrap.appendChild(kycCard);
 
   const tasksTitle = document.createElement('div');
@@ -916,24 +1163,26 @@ function buildAdminDealDetail(deal){
 
 const KYC_STATUS_LABEL = { draft:'Sin generar', generated:'Generado, sin enviar', sent:'Enviado a firma', signed:'Firmado' };
 
-function buildKycSection(deal, role, roleLabel, isStaffView){
+function buildKycSection(deal, party, isStaffView){
+  const role = party.id;
   const key = deal.id + '-' + role;
+  const roleLabel = `${party.name} (${party.side === 'seller' ? 'Vendedor' : 'Comprador'} · ${TYPE_LABEL[party.partyType]})`;
   const box = document.createElement('div');
   box.style.cssText = 'padding:10px 0; border-bottom:0.5px solid var(--line);';
 
   const data = kycCache[key];
   if(data === undefined){
-    box.innerHTML = `<div class="field-hint" style="margin:0;">${roleLabel}: cargando...</div>`;
+    box.innerHTML = `<div class="field-hint" style="margin:0;">${escapeHtml(roleLabel)}: cargando...</div>`;
     loadKyc(deal.id, role);
     return box;
   }
   if(data.error){
-    box.innerHTML = `<div class="field-hint" style="margin:0;">${roleLabel}: ${escapeHtml(data.error)}</div>`;
+    box.innerHTML = `<div class="field-hint" style="margin:0;">${escapeHtml(roleLabel)}: ${escapeHtml(data.error)}</div>`;
     return box;
   }
 
   const statusLabel = KYC_STATUS_LABEL[data.status] || data.status;
-  box.innerHTML = `<div style="font-weight:500; font-size:13px;">${roleLabel} <span class="badge" style="margin-left:6px; background:var(--stone); border:0.5px solid var(--line); color:var(--ink-soft);">${escapeHtml(statusLabel)}</span> <span class="field-hint" style="margin:0;">(${escapeHtml(data.templateKey||'')})</span></div>`;
+  box.innerHTML = `<div style="font-weight:500; font-size:13px;">${escapeHtml(roleLabel)} <span class="badge" style="margin-left:6px; background:var(--stone); border:0.5px solid var(--line); color:var(--ink-soft);">${escapeHtml(statusLabel)}</span> <span class="field-hint" style="margin:0;">(${escapeHtml(data.templateKey||'')})</span></div>`;
 
   // Selector de idioma — solo tiene sentido antes de empezar a llenar (una
   // vez que hay respuestas guardadas, cambiar de idioma significa arrancar
@@ -1014,7 +1263,7 @@ function buildKycSection(deal, role, roleLabel, isStaffView){
   box.appendChild(actions);
 
   if(kycFormOpenFor === key){
-    box.appendChild(buildKycForm(deal, role, data));
+    box.appendChild(buildKycForm(deal, role, data, isStaffView));
   }
 
   return box;
@@ -1030,7 +1279,7 @@ function fieldLabelHtml(f){
   return `${escapeHtml(f.label)} <span class="field-hint" style="margin:0; display:inline;">(opcional)</span>`;
 }
 
-function buildKycForm(deal, role, data){
+function buildKycForm(deal, role, data, isStaffView){
   const wrap = document.createElement('div');
   wrap.style.cssText = 'margin-top:12px; padding:14px; background:var(--stone); border-radius:10px;';
   wrap.innerHTML = `<div class="field-hint" style="margin-top:0;">${escapeHtml(data.label)}</div>`;
@@ -1098,7 +1347,7 @@ function buildKycForm(deal, role, data){
       const result = await apiFetch(`/api/deals/${deal.id}/kyc/${role}/generate`, { method:'POST' });
       kycFormOpenFor = null;
       await loadKyc(deal.id, role);
-      if(result.sentForSignature && currentUser.role === role){
+      if(result.sentForSignature && !isStaffView){
         // Quien acaba de llenar el formulario es quien firma — se abre la
         // firma de una vez, sin que tenga que ir a buscar "Firmar ahora".
         try{
@@ -1149,19 +1398,30 @@ function openKycSigningModal(url, dealId, role){
   window.addEventListener('message', onMessage);
 }
 
-function buildDocList(deal, key, label){
+function buildDocListForParty(deal, party){
   const box = document.createElement('div');
   box.style.marginBottom = '14px';
+  const sideLabel = party.side === 'seller' ? 'Vendedor' : 'Comprador';
   const h = document.createElement('div');
   h.style.cssText = 'font-weight:500; font-size:13px; color:var(--ink-soft); margin-bottom:6px;';
-  h.textContent = label;
+  h.textContent = `${party.name} (${sideLabel} · ${TYPE_LABEL[party.partyType]})`;
   box.appendChild(h);
+
+  if(party.partyType !== 'individual' && !party.ownershipMode){
+    const warn = document.createElement('div');
+    warn.className = 'field-hint'; warn.style.cssText = 'margin:0 0 8px; color:var(--oxblood);';
+    warn.textContent = 'Falta completar la estructura de propiedad de esta entidad — hazlo en "Vendedores y compradores" arriba para que el checklist incluya los documentos de sus dueños.';
+    box.appendChild(warn);
+  }
+
+  const docs = deal.documents.filter(d => d.partyId === party.id);
   const ul = document.createElement('ul');
   ul.className = 'doc-list';
-  deal.docs[key].forEach(doc => {
+  docs.forEach(doc => {
     const li = document.createElement('li');
     li.className = 'doc-item';
-    li.innerHTML = `<span class="doc-check ${doc.status==='done'?'done':''}">${doc.status==='done'?'<i class=\"ti ti-check\" aria-hidden=\"true\"></i>':''}</span><span>${escapeHtml(doc.name)}</span>
+    const label = doc.subLabel ? `${escapeHtml(doc.name)} <span class="field-hint" style="margin:0;">(${escapeHtml(doc.subLabel)})</span>` : escapeHtml(doc.name);
+    li.innerHTML = `<span class="doc-check ${doc.status==='done'?'done':''}">${doc.status==='done'?'<i class=\"ti ti-check\" aria-hidden=\"true\"></i>':''}</span><span>${label}</span>
       <span style="margin-left:auto; display:flex; align-items:center; gap:8px;">
         ${doc.fileUrl ? `<a href="/api/deals/${deal.id}/documents/${doc.id}/file" target="_blank" style="font-size:11px;">Ver archivo</a>` : ''}
         <input type="file" style="font-size:11px; max-width:130px;" accept=".pdf,.jpg,.jpeg,.png,.heic" title="Adjuntar documento">
@@ -1229,13 +1489,16 @@ const DEVELOPMENT_LABEL = {punta_mita: 'Punta Mita (machote Palmas)', mandarina:
 function buildInviteForm(deal){
   const card = document.createElement('div');
   card.className = 'card';
+  const unlinked = deal.parties.filter(p => !p.linkedUser);
+  const partyOptions = unlinked.map(p =>
+    `<option value="party:${p.id}">${escapeHtml(p.name)} (${p.side==='seller'?'Vendedor':'Comprador'} · ${TYPE_LABEL[p.partyType]})</option>`
+  ).join('');
   card.innerHTML = `
-    <div class="field-hint" style="margin-top:0;">Genera un link para que el comprador, vendedor o agente cree su propia cuenta y quede ligado a esta operación.</div>
+    <div class="field-hint" style="margin-top:0;">Genera un link para que una persona específica de esta operación (o un agente) cree su propia cuenta.</div>
     <div class="form-row">
-      <label>Rol <select id="inv-role">
-        <option value="buyer">Comprador</option>
-        <option value="seller">Vendedor</option>
-        <option value="agent">Agente</option>
+      <label>Persona a invitar <select id="inv-target">
+        ${partyOptions}
+        <option value="agent">Agente (esta operación)</option>
       </select></label>
       <label>Nombre <input type="text" id="inv-name" placeholder="Nombre completo"></label>
       <label>Correo <input type="email" id="inv-email" placeholder="correo@ejemplo.com"></label>
@@ -1253,18 +1516,35 @@ function buildInviteForm(deal){
     </div>
     <div class="gate-error" id="inv-error"></div>
   `;
+  if(!unlinked.length){
+    card.querySelector('#inv-target').innerHTML = `<option value="agent">Agente (esta operación)</option>`;
+  }
+  const targetSel = card.querySelector('#inv-target');
+  const nameInput = card.querySelector('#inv-name');
+  const prefillName = () => {
+    if(targetSel.value.startsWith('party:')){
+      const party = unlinked.find(p => 'party:'+p.id === targetSel.value);
+      if(party && !nameInput.value) nameInput.value = party.name;
+    }
+  };
+  targetSel.onchange = prefillName;
+  prefillName();
+
   card.querySelector('#inv-generate').onclick = async () => {
-    const roleInDeal = card.querySelector('#inv-role').value;
-    const name = card.querySelector('#inv-name').value.trim();
+    const target = targetSel.value;
+    const name = nameInput.value.trim();
     const email = card.querySelector('#inv-email').value.trim();
     const errEl = card.querySelector('#inv-error');
     errEl.textContent = '';
     if (!name || !email) { errEl.textContent = 'Falta nombre o correo.'; return; }
+    const body = target === 'agent'
+      ? { dealId: deal.id, roleInDeal: 'agent', name, email }
+      : (() => {
+          const party = unlinked.find(p => 'party:'+p.id === target);
+          return { dealId: deal.id, dealPartyEntityId: party.id, roleInDeal: party.side, name, email };
+        })();
     try {
-      const { url } = await apiFetch('/api/invites', {
-        method: 'POST',
-        body: JSON.stringify({ dealId: deal.id, roleInDeal, name, email })
-      });
+      const { url } = await apiFetch('/api/invites', { method: 'POST', body: JSON.stringify(body) });
       const linkInput = card.querySelector('#inv-link');
       linkInput.value = window.location.origin + url;
       card.querySelector('#inv-result').style.display = 'block';
@@ -1523,10 +1803,10 @@ function openContractSigningModal(url, dealId){
 
 // ---------- PORTAL ----------
 function renderPortal(body){
-  // Solo admin/agente pueden "ver como" cualquier rol — es una vista previa
-  // interna. Un comprador/vendedor real siempre ve su propio rol_in_deal,
-  // nunca elige (antes cualquier sesión de cliente podía elegir "Vendedor"
-  // y ver el checklist de la otra parte en su misma operación).
+  // Solo admin/agente/abogado pueden "ver como" cualquier persona — es una
+  // vista previa interna. Un comprador/vendedor real siempre ve solo su
+  // propia parte (nunca elige, ni ve el checklist de otra persona del mismo
+  // lado si hay varias).
   const isPreview = ['admin','agent','lawyer'].includes(currentUser.role);
 
   if(isPreview){
@@ -1540,22 +1820,14 @@ function renderPortal(body){
   controls.className = 'card';
   controls.innerHTML = `
     <div class="form-row" style="margin-bottom:0;">
-      ${isPreview ? `<label>Ver como <select id="p-role" class="role-select">
-        <option value="buyer">Comprador</option>
-        <option value="seller">Vendedor</option>
-        <option value="agent">Agente / broker</option>
-      </select></label>` : ''}
       <label>Operación <select id="p-deal"><option value="">Selecciona...</option>${deals.map(d=>`<option value="${d.id}">${escapeHtml(d.property)}</option>`).join('')}</select></label>
     </div>
   `;
   body.appendChild(controls);
-  if(isPreview){
-    controls.querySelector('#p-role').value = portalRole;
-    controls.querySelector('#p-role').onchange = e => { portalRole = e.target.value; render(); };
-  }
   controls.querySelector('#p-deal').value = portalDealId || '';
   controls.querySelector('#p-deal').onchange = e => {
     portalDealId = Number(e.target.value) || null;
+    portalRole = 'agent'; portalPartyId = null;
     openDeal(portalDealId);
   };
 
@@ -1568,17 +1840,6 @@ function renderPortal(body){
     return;
   }
   const s = SCENARIOS[deal.scenario];
-  const effectiveRole = isPreview ? portalRole : currentUser.role;
-  const docsKey = effectiveRole === 'seller' ? 'seller' : (effectiveRole === 'buyer' ? 'buyer' : null);
-
-  const header = document.createElement('div');
-  header.className = 'card';
-  header.innerHTML = `
-    <div class="deal-title" style="font-size:17px;">${escapeHtml(deal.property)}</div>
-    <span class="badge ${s.badgeClass}">${s.labelShort}</span>
-    <div class="deal-sub" style="margin-top:6px;">${escapeHtml(deal.seller.name)} → ${escapeHtml(deal.buyer.name)}</div>
-  `;
-  body.appendChild(header);
 
   if(!deal._loaded){
     const loading = document.createElement('div');
@@ -1588,24 +1849,56 @@ function renderPortal(body){
     return;
   }
 
-  if(docsKey){
+  // Vista previa de staff: elige entre "Agente" (ve todo, como el admin) o
+  // una persona específica de esta operación (ve exactamente lo que esa
+  // persona vería). Comprador/vendedor real: se resuelve solo, a la parte
+  // que tiene ligada su cuenta.
+  let myParty = null;
+  if(isPreview){
+    const roleRow = document.createElement('div');
+    roleRow.className = 'card';
+    roleRow.innerHTML = `<label>Ver como <select id="p-party">
+      <option value="agent">Agente (ve todo)</option>
+      ${deal.parties.map(p=>`<option value="${p.id}">${escapeHtml(p.name)} (${p.side==='seller'?'Vendedor':'Comprador'})</option>`).join('')}
+    </select></label>`;
+    body.appendChild(roleRow);
+    roleRow.querySelector('#p-party').value = portalRole==='agent' ? 'agent' : String(portalPartyId||'');
+    roleRow.querySelector('#p-party').onchange = e => {
+      if(e.target.value === 'agent'){ portalRole='agent'; portalPartyId=null; }
+      else { portalRole='party'; portalPartyId = Number(e.target.value); }
+      render();
+    };
+    if(portalRole === 'party' && portalPartyId) myParty = deal.parties.find(p=>p.id===portalPartyId) || null;
+  } else {
+    myParty = deal.parties.find(p => p.linkedUser && p.linkedUser.userId === currentUser.id) || null;
+  }
+
+  const header = document.createElement('div');
+  header.className = 'card';
+  header.innerHTML = `
+    <div class="deal-title" style="font-size:17px;">${escapeHtml(deal.property)}</div>
+    <span class="badge ${s.badgeClass}">${s.labelShort}</span>
+    <div class="deal-sub" style="margin-top:6px;">${escapeHtml(dealPartyNames(deal,'seller'))} → ${escapeHtml(dealPartyNames(deal,'buyer'))}</div>
+  `;
+  body.appendChild(header);
+
+  if(myParty){
     const t = document.createElement('div'); t.className='section-title'; t.textContent='Tu checklist de documentos (KYC)';
     body.appendChild(t);
     const card = document.createElement('div'); card.className='card';
-    card.appendChild(buildDocList(deal, docsKey, docsKey==='seller'?'Vendedor':'Comprador'));
+    card.appendChild(buildDocListForParty(deal, myParty));
     body.appendChild(card);
 
     const kt = document.createElement('div'); kt.className='section-title'; kt.textContent='Tu expediente KYC';
     body.appendChild(kt);
     const kcard = document.createElement('div'); kcard.className='card';
-    kcard.appendChild(buildKycSection(deal, docsKey, docsKey==='seller'?'Vendedor':'Comprador', false));
+    kcard.appendChild(buildKycSection(deal, myParty, false));
     body.appendChild(kcard);
   } else {
-    const t = document.createElement('div'); t.className='section-title'; t.textContent='Checklist de ambas partes';
+    const t = document.createElement('div'); t.className='section-title'; t.textContent='Checklist de todas las partes';
     body.appendChild(t);
     const card = document.createElement('div'); card.className='card';
-    card.appendChild(buildDocList(deal,'seller','Vendedor'));
-    card.appendChild(buildDocList(deal,'buyer','Comprador'));
+    deal.parties.forEach(p => card.appendChild(buildDocListForParty(deal, p)));
     body.appendChild(card);
   }
 

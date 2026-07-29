@@ -218,4 +218,181 @@ function ensureInvitesAllowTeamInvites() {
 }
 ensureInvitesAllowTeamInvites();
 
+// Reemplaza el supuesto de "un vendedor + un comprador" por N partes por
+// lado, cada una individual o entidad con estructura de propiedad — ver
+// db/schema.sql (deal_party_entities, deal_party_owners) para el porqué.
+// Es la migración más grande de todas: recrea deals, documents,
+// kyc_submissions, deal_parties e invites en una sola transacción,
+// backfillando deal_party_entities desde las columnas viejas de deals antes
+// de dejarlas ir. Va al final porque depende de que ya existan
+// deals.contract_* y invites.deal_party_entity_id-compatible (todas las
+// migraciones de arriba).
+function ensureDealPartyEntitiesModel() {
+  // OJO: no basta con revisar si deal_party_entities existe — schema.sql
+  // arriba ya la crea vacía con CREATE TABLE IF NOT EXISTS en cualquier
+  // arranque (para instalaciones nuevas), así que en una base de datos
+  // vieja la tabla EXISTE pero está sin backfillear cuando este código
+  // corre por primera vez. El guard real es: ¿deals TODAVÍA tiene las
+  // columnas viejas? Si ya no las tiene, esta migración ya corrió.
+  const dealsCols = db.prepare(`PRAGMA table_info(deals)`).all().map(c => c.name);
+  if (!dealsCols.includes('seller_name')) return;
+
+  const docCols = db.prepare(`PRAGMA table_info(documents)`).all().map(c => c.name);
+  const hasDocExtras = docCols.includes('mime_type');
+
+  db.pragma('foreign_keys = OFF');
+  db.transaction(() => {
+    // deal_party_entities y deal_party_owners ya existen (vacías) — las creó
+    // schema.sql con CREATE TABLE IF NOT EXISTS al arrancar, antes de que
+    // este código corriera. No hace falta (ni se puede) volver a crearlas.
+
+    // 2. Backfill: cada deal vieja tenía exactamente 1 vendedor y 1
+    // comprador — se vuelven la fila sort_order=0 de cada lado.
+    // ownership_mode queda NULL (nunca se capturó estructura de propiedad
+    // antes de este cambio); la UI debe poder completarla después.
+    db.exec(`
+      INSERT INTO deal_party_entities (deal_id, side, sort_order, party_type, name)
+        SELECT id, 'seller', 0, seller_type, seller_name FROM deals;
+      INSERT INTO deal_party_entities (deal_id, side, sort_order, party_type, name)
+        SELECT id, 'buyer', 0, buyer_type, buyer_name FROM deals;
+    `);
+
+    // 3. documents: owner ('seller'/'buyer') → deal_party_entity_id.
+    db.exec(`
+      CREATE TABLE documents_migration_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+        deal_party_entity_id INTEGER NOT NULL REFERENCES deal_party_entities(id) ON DELETE CASCADE,
+        sub_label TEXT,
+        name TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','done')),
+        file_url TEXT,
+        uploaded_by INTEGER REFERENCES users(id),
+        uploaded_at TEXT,
+        mime_type TEXT,
+        size_bytes INTEGER,
+        original_name TEXT,
+        created_at TEXT
+      );
+      INSERT INTO documents_migration_new (id, deal_id, deal_party_entity_id, name, status, file_url, uploaded_by, uploaded_at, mime_type, size_bytes, original_name, created_at)
+        SELECT d.id, d.deal_id,
+          (SELECT dpe.id FROM deal_party_entities dpe WHERE dpe.deal_id = d.deal_id AND dpe.side = d.owner AND dpe.sort_order = 0),
+          d.name, d.status, d.file_url, d.uploaded_by, d.uploaded_at,
+          ${hasDocExtras ? 'd.mime_type, d.size_bytes, d.original_name' : 'NULL, NULL, NULL'}, d.created_at
+        FROM documents d;
+      DROP TABLE documents;
+      ALTER TABLE documents_migration_new RENAME TO documents;
+    `);
+
+    // 4. kyc_submissions: role_in_deal → deal_party_entity_id.
+    db.exec(`
+      CREATE TABLE kyc_submissions_migration_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+        deal_party_entity_id INTEGER NOT NULL REFERENCES deal_party_entities(id) ON DELETE CASCADE,
+        template_key TEXT NOT NULL,
+        answers_json TEXT NOT NULL DEFAULT '{}',
+        status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','generated','sent','signed')),
+        generated_file_url TEXT,
+        docusign_envelope_id TEXT,
+        docusign_status TEXT NOT NULL DEFAULT 'not_sent',
+        created_by INTEGER REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT,
+        UNIQUE(deal_party_entity_id, template_key)
+      );
+      INSERT INTO kyc_submissions_migration_new (id, deal_id, deal_party_entity_id, template_key, answers_json, status, generated_file_url, docusign_envelope_id, docusign_status, created_by, created_at, updated_at)
+        SELECT k.id, k.deal_id,
+          (SELECT dpe.id FROM deal_party_entities dpe WHERE dpe.deal_id = k.deal_id AND dpe.side = k.role_in_deal AND dpe.sort_order = 0),
+          k.template_key, k.answers_json, k.status, k.generated_file_url, k.docusign_envelope_id, k.docusign_status, k.created_by, k.created_at, k.updated_at
+        FROM kyc_submissions k;
+      DROP TABLE kyc_submissions;
+      ALTER TABLE kyc_submissions_migration_new RENAME TO kyc_submissions;
+    `);
+
+    // 5. deal_parties: agrega deal_party_entity_id (NULL para agentes).
+    db.exec(`
+      CREATE TABLE deal_parties_migration_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        role_in_deal TEXT NOT NULL CHECK(role_in_deal IN ('buyer','seller','agent')),
+        deal_party_entity_id INTEGER REFERENCES deal_party_entities(id) ON DELETE CASCADE,
+        UNIQUE(deal_id, user_id),
+        UNIQUE(deal_party_entity_id)
+      );
+      INSERT INTO deal_parties_migration_new (id, deal_id, user_id, role_in_deal, deal_party_entity_id)
+        SELECT dp.id, dp.deal_id, dp.user_id, dp.role_in_deal,
+          (SELECT dpe.id FROM deal_party_entities dpe WHERE dpe.deal_id = dp.deal_id AND dpe.side = dp.role_in_deal AND dpe.sort_order = 0)
+        FROM deal_parties dp;
+      DROP TABLE deal_parties;
+      ALTER TABLE deal_parties_migration_new RENAME TO deal_parties;
+    `);
+
+    // 6. invites: agrega deal_party_entity_id (NULL para team invites o
+    // invitaciones pendientes viejas — se resuelven solas al aceptar).
+    db.exec(`
+      CREATE TABLE invites_migration_new2 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        token TEXT UNIQUE NOT NULL,
+        deal_id INTEGER REFERENCES deals(id) ON DELETE CASCADE,
+        deal_party_entity_id INTEGER REFERENCES deal_party_entities(id) ON DELETE CASCADE,
+        role_in_deal TEXT NOT NULL CHECK(role_in_deal IN ('buyer','seller','agent','lawyer')),
+        email TEXT,
+        name TEXT,
+        created_by INTEGER REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        used_by_user_id INTEGER REFERENCES users(id)
+      );
+      INSERT INTO invites_migration_new2 (id, token, deal_id, deal_party_entity_id, role_in_deal, email, name, created_by, created_at, expires_at, used_at, used_by_user_id)
+        SELECT i.id, i.token, i.deal_id,
+          CASE WHEN i.deal_id IS NOT NULL AND i.role_in_deal IN ('buyer','seller')
+            THEN (SELECT dpe.id FROM deal_party_entities dpe WHERE dpe.deal_id = i.deal_id AND dpe.side = i.role_in_deal AND dpe.sort_order = 0)
+            ELSE NULL END,
+          i.role_in_deal, i.email, i.name, i.created_by, i.created_at, i.expires_at, i.used_at, i.used_by_user_id
+        FROM invites i;
+      DROP TABLE invites;
+      ALTER TABLE invites_migration_new2 RENAME TO invites;
+    `);
+
+    // 7. deals: al final — ya no hacen falta seller_name/type, buyer_name/type.
+    db.exec(`
+      CREATE TABLE deals_migration_new2 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        scenario TEXT NOT NULL CHECK(scenario IN ('purchase','trust','transfer','trust_termination')),
+        development TEXT NOT NULL DEFAULT 'punta_mita',
+        property TEXT NOT NULL,
+        price REAL NOT NULL DEFAULT 0,
+        furniture_price REAL NOT NULL DEFAULT 0,
+        currency TEXT NOT NULL DEFAULT 'USD',
+        start_date TEXT NOT NULL,
+        escrow_company TEXT,
+        contract_json TEXT NOT NULL DEFAULT '{}',
+        created_by INTEGER REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        contract_template_id INTEGER,
+        contract_status TEXT NOT NULL DEFAULT 'draft',
+        contract_generated_file_url TEXT,
+        contract_docusign_envelope_id TEXT,
+        contract_docusign_status TEXT NOT NULL DEFAULT 'not_sent'
+      );
+      INSERT INTO deals_migration_new2 (id, scenario, development, property, price, furniture_price, currency, start_date, escrow_company, contract_json, created_by, created_at, contract_template_id, contract_status, contract_generated_file_url, contract_docusign_envelope_id, contract_docusign_status)
+        SELECT id, scenario, development, property, price, furniture_price, currency, start_date, escrow_company, contract_json, created_by, created_at, contract_template_id, contract_status, contract_generated_file_url, contract_docusign_envelope_id, contract_docusign_status
+        FROM deals;
+      DROP TABLE deals;
+      ALTER TABLE deals_migration_new2 RENAME TO deals;
+    `);
+
+    const violations = db.prepare('PRAGMA foreign_key_check').all();
+    if (violations.length) {
+      throw new Error('Migración de deal_party_entities dejaría foreign keys rotas: ' + JSON.stringify(violations));
+    }
+  })();
+  db.pragma('foreign_keys = ON');
+  console.log('[migration] modelo deal_party_entities aplicado (vendedores/compradores múltiples + estructura de propiedad)');
+}
+ensureDealPartyEntitiesModel();
+
 module.exports = db;
