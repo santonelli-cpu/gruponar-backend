@@ -7,8 +7,23 @@ const { requireAuth, requireRole } = require('./auth');
 const { UPLOADS_ROOT, dealDir, genFilename } = require('../lib/storage');
 const { canAccessDeal, myRoleInDeal, myDealPartyEntityId, UNRESTRICTED_ROLES } = require('../lib/access');
 const mailer = require('../lib/email');
+const driveClient = require('../lib/googleDriveClient');
 
 const router = express.Router();
+
+// Crea la estructura de carpetas de Drive para una operación, best-effort
+// (no bloquea ni revienta la creación/consulta de la operación si Drive no
+// está conectado o la llamada falla — se puede reintentar a mano con
+// POST /:id/drive-folder). No se guarda ningún token acá, solo el resultado.
+async function tryCreateDriveFolder(req, dealId, property) {
+  if (!driveClient.isConfigured() || !driveClient.isConnected()) return;
+  try {
+    const { folderId, folderUrl } = await driveClient.createDealFolderStructure(req, property);
+    db.prepare('UPDATE deals SET drive_folder_id = ?, drive_folder_url = ? WHERE id = ?').run(folderId, folderUrl, dealId);
+  } catch (err) {
+    console.error('[google-drive] no se pudo crear la carpeta de la operación', dealId, err.message);
+  }
+}
 
 const ALLOWED_MIME = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/heic']);
 const upload = multer({
@@ -223,6 +238,7 @@ router.post('/', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
     })();
 
     res.status(201).json({ id: dealId });
+    tryCreateDriveFolder(req, dealId, property);
   } catch (err) {
     res.status(500).json({ error: err.message || 'Error al crear la operación.' });
   }
@@ -479,6 +495,24 @@ router.delete('/:id/agents/:userId', requireRole('admin', 'agent', 'lawyer'), (r
   const info = db.prepare("DELETE FROM deal_parties WHERE deal_id = ? AND user_id = ? AND role_in_deal = 'agent'").run(req.params.id, req.params.userId);
   if (!info.changes) return res.status(404).json({ error: 'Ese agente no está en esta operación.' });
   res.json({ ok: true });
+});
+
+// POST /api/deals/:id/drive-folder — crea (o reintenta crear) la estructura
+// de carpetas en Drive para una operación que no la tiene todavía (ej. se
+// creó antes de conectar Drive, o la primera vez falló).
+router.post('/:id/drive-folder', requireRole('admin', 'agent', 'lawyer'), async (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  if (!driveClient.isConfigured()) return res.status(501).json({ error: 'Google Drive no está configurado todavía.' });
+  if (!driveClient.isConnected()) return res.status(501).json({ error: 'Google Drive no está conectado — ve a Equipo → Integraciones.' });
+  const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id);
+  if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
+  try {
+    const { folderId, folderUrl } = await driveClient.createDealFolderStructure(req, deal.property);
+    db.prepare('UPDATE deals SET drive_folder_id = ?, drive_folder_url = ? WHERE id = ?').run(folderId, folderUrl, deal.id);
+    res.json({ ok: true, folderUrl });
+  } catch (err) {
+    res.status(502).json({ error: err.message || 'Error al crear la carpeta en Drive.' });
+  }
 });
 
 // PATCH /api/deals/:id/documents/:docId — marcar documento recibido y/o

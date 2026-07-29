@@ -116,6 +116,8 @@ ensureColumn('deals', 'contract_status', "contract_status TEXT NOT NULL DEFAULT 
 ensureColumn('deals', 'contract_generated_file_url', 'contract_generated_file_url TEXT');
 ensureColumn('deals', 'contract_docusign_envelope_id', 'contract_docusign_envelope_id TEXT');
 ensureColumn('deals', 'contract_docusign_status', "contract_docusign_status TEXT NOT NULL DEFAULT 'not_sent'");
+ensureColumn('deals', 'drive_folder_id', 'drive_folder_id TEXT');
+ensureColumn('deals', 'drive_folder_url', 'drive_folder_url TEXT');
 
 // El CHECK de deals.scenario y contract_templates.scenario tampoco se puede
 // alterar con ADD COLUMN — mismo procedimiento que ensureUserRoleAllowsLawyer.

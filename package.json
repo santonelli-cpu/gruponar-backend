@@ -8,6 +8,7 @@
     "seed": "node db/seed.js"
   },
   "dependencies": {
+    "@google-cloud/storage": "^7.21.0",
     "bcrypt": "^5.1.1",
     "better-sqlite3": "^11.3.0",
     "connect-sqlite3": "^0.9.15",
@@ -16,6 +17,7 @@
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-session": "^1.18.0",
+    "googleapis": "^173.0.0",
     "multer": "^2.2.0",
     "resend": "^6.18.1",
     "sqlite3": "^5.1.7"

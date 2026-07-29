@@ -177,3 +177,12 @@ CREATE TABLE IF NOT EXISTS document_reminders_log (
   deal_party_entity_id INTEGER PRIMARY KEY REFERENCES deal_party_entities(id) ON DELETE CASCADE,
   last_sent_at TEXT NOT NULL
 );
+
+-- Configuración de un solo valor por llave, para cosas que no tiene sentido
+-- meter en variables de entorno porque se obtienen en vivo desde la app (el
+-- refresh token de Drive sale del consentimiento OAuth que el admin da
+-- haciendo clic en "Conectar Google Drive", no algo que él escriba a mano).
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);

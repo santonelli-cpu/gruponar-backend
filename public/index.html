@@ -222,6 +222,9 @@ const STRINGS = {
     pendingApprovalTitle: 'Cuentas pendientes de aprobación', loading: 'Cargando...',
     noPendingAccounts: 'No hay cuentas esperando aprobación. Las que se autoregistran desde "Crear cuenta" en el login aparecen aquí.',
     activeTeamTitle: 'Agentes y abogados con acceso', noActiveTeam: 'Todavía no hay agentes ni abogados activos en el equipo.',
+    integrationsTitle: 'Integraciones', driveHint: 'Crea la carpeta de cada operación en tu Google Drive (dentro de "Closings {year}"), con Propiedad/Vendedor/Comprador/Escrow/Notaría adentro.',
+    driveNotConfigured: 'No configurado', driveConnected: 'Conectado', connectDrive: 'Conectar Google Drive', disconnect: 'Desconectar',
+    openInDrive: 'Abrir carpeta en Drive', createDriveFolder: 'Crear carpetas en Drive', driveFolderCreating: 'Creando…',
     removeFromDeal: 'Quitar de esta operación', addAgentTitle: 'Agregar agente a esta operación', addAgentHint: 'Elige un agente que ya tiene cuenta — no hace falta invitarlo de nuevo.',
     noAvailableAgents: 'No hay agentes activos disponibles para agregar (o ya están todos en esta operación).', add: 'Agregar', agentsInDeal: 'Agentes en esta operación', noAgentsInDeal: 'Todavía no hay ningún agente agregado a esta operación.',
     approve: 'Aprobar', inviteAgentLawyer: 'Invitar agente o abogado',
@@ -359,6 +362,9 @@ const STRINGS = {
     pendingApprovalTitle: 'Accounts pending approval', loading: 'Loading...',
     noPendingAccounts: 'No accounts awaiting approval. Ones that self-register from "Create account" on the login screen show up here.',
     activeTeamTitle: 'Agents and lawyers with access', noActiveTeam: 'No active agents or lawyers on the team yet.',
+    integrationsTitle: 'Integrations', driveHint: 'Creates each deal\'s folder in your Google Drive (inside "Closings {year}"), with Property/Seller/Buyer/Escrow/Notary inside.',
+    driveNotConfigured: 'Not configured', driveConnected: 'Connected', connectDrive: 'Connect Google Drive', disconnect: 'Disconnect',
+    openInDrive: 'Open folder in Drive', createDriveFolder: 'Create Drive folders', driveFolderCreating: 'Creating…',
     removeFromDeal: 'Remove from this deal', addAgentTitle: 'Add an agent to this deal', addAgentHint: 'Pick an agent who already has an account — no need to invite them again.',
     noAvailableAgents: 'No active agents available to add (or they are all already on this deal).', add: 'Add', agentsInDeal: 'Agents on this deal', noAgentsInDeal: 'No agent has been added to this deal yet.',
     approve: 'Approve', inviteAgentLawyer: 'Invite agent or lawyer',
@@ -477,6 +483,7 @@ let kycCache = {};
 let kycFormOpenFor = null;
 let contractCache = {};
 let availableAgentsCache = {};
+let driveStatus = null;
 let escrowFormOpenFor = null;
 let activeDealId = null;
 let portalRole = 'agent'; // solo se usa en isPreview para elegir "Agente" vs una parte específica
@@ -581,7 +588,9 @@ function adaptDealSummary(row){
     price: row.price, furniturePrice: row.furniture_price, currency: row.currency, startDate: row.start_date,
     escrowCompany: row.escrow_company || 'armour',
     closingDate: row.closing_date || '', dueDiligenceEndDate: row.due_diligence_end_date || '',
+    driveFolderId: row.drive_folder_id || null, driveFolderUrl: row.drive_folder_url || null,
     parties: (row.parties || []).map(adaptParty),
+    agents: row.agents || [],
     documents: [], tasks: [], _loaded: false,
     _counts: {
       documentsTotal: row.documents_total || 0, documentsDone: row.documents_done || 0,
@@ -1217,7 +1226,56 @@ function buildTeamSection(){
     navigator.clipboard.writeText(linkInput.value);
   };
 
+  const integrationsTitle = document.createElement('div');
+  integrationsTitle.className = 'section-title'; integrationsTitle.textContent = t('integrationsTitle');
+  wrap.appendChild(integrationsTitle);
+  wrap.appendChild(buildIntegrationsSection());
+
   return wrap;
+}
+
+function buildIntegrationsSection(){
+  const card = document.createElement('div'); card.className = 'card';
+  if(driveStatus === null){
+    card.innerHTML = `<div class="field-hint" style="margin:0;">${t('loading')}</div>`;
+    loadDriveStatus();
+    return card;
+  }
+  if(driveStatus.error){
+    card.innerHTML = `<div class="field-hint" style="margin:0;">${escapeHtml(driveStatus.error)}</div>`;
+    return card;
+  }
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:10px;';
+  const label = document.createElement('div');
+  label.innerHTML = `<div style="font-weight:500; font-size:13px;">Google Drive</div><div class="field-hint" style="margin:2px 0 0;">${t('driveHint', { year: new Date().getFullYear() })}</div>`;
+  row.appendChild(label);
+  if(!driveStatus.configured){
+    const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = t('driveNotConfigured');
+    row.appendChild(badge);
+  } else if(driveStatus.connected){
+    const actions = document.createElement('div'); actions.style.cssText = 'display:flex; align-items:center; gap:8px;';
+    actions.innerHTML = `<span class="badge" style="background:var(--jade-soft); color:var(--jade);">${t('driveConnected')}</span>`;
+    const disconnectBtn = document.createElement('button');
+    disconnectBtn.className = 'btn'; disconnectBtn.style.fontSize = '11px'; disconnectBtn.textContent = t('disconnect');
+    disconnectBtn.onclick = async () => {
+      try{ await apiFetch('/api/google-drive/disconnect', { method:'POST' }); driveStatus = null; render(); }catch(e){ alert(e.message); }
+    };
+    actions.appendChild(disconnectBtn);
+    row.appendChild(actions);
+  } else {
+    const connectBtn = document.createElement('a');
+    connectBtn.className = 'btn primary'; connectBtn.href = '/api/google-drive/connect'; connectBtn.textContent = t('connectDrive');
+    row.appendChild(connectBtn);
+  }
+  card.appendChild(row);
+  return card;
+}
+
+async function loadDriveStatus(){
+  try{ driveStatus = await apiFetch('/api/google-drive/status'); }
+  catch(e){ driveStatus = { error: e.message }; }
+  render();
 }
 
 const MAX_PARTIES_PER_SIDE = 4;
@@ -1580,9 +1638,24 @@ function buildAdminDealDetail(deal){
       <span style="display:flex; align-items:center; gap:6px;">${t('closingDateLabel')} <input type="date" id="closing-date-input" value="${deal.closingDate}" style="font-size:11.5px; padding:2px 6px;"></span>
       <span style="display:flex; align-items:center; gap:6px;">${t('ddEndLabel')} <input type="date" id="dd-end-date-input" value="${deal.dueDiligenceEndDate}" style="font-size:11.5px; padding:2px 6px;"></span>
     </div>
-    <button class="btn" id="delDeal" style="margin-top:10px;"><i class="ti ti-trash" aria-hidden="true"></i> ${t('deleteDeal')}</button>
+    <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+      ${deal.driveFolderUrl
+        ? `<a class="btn" href="${deal.driveFolderUrl}" target="_blank"><i class="ti ti-folder" aria-hidden="true"></i> ${t('openInDrive')}</a>`
+        : `<button class="btn" id="create-drive-folder-btn"><i class="ti ti-folder-plus" aria-hidden="true"></i> ${t('createDriveFolder')}</button>`}
+      <button class="btn" id="delDeal"><i class="ti ti-trash" aria-hidden="true"></i> ${t('deleteDeal')}</button>
+    </div>
   `;
   wrap.appendChild(header);
+  const driveFolderBtn = header.querySelector('#create-drive-folder-btn');
+  if(driveFolderBtn){
+    driveFolderBtn.onclick = async () => {
+      driveFolderBtn.disabled = true; driveFolderBtn.textContent = t('driveFolderCreating');
+      try{
+        await apiFetch(`/api/deals/${deal.id}/drive-folder`, { method:'POST' });
+        await openDeal(deal.id);
+      }catch(e){ alert(e.message); driveFolderBtn.disabled = false; driveFolderBtn.innerHTML = `<i class="ti ti-folder-plus" aria-hidden="true"></i> ${t('createDriveFolder')}`; }
+    };
+  }
   header.querySelector('#escrow-company-select').onchange = async (e) => {
     const next = e.target.value;
     if(!confirm(t('confirmChangeEscrow', { company: next==='armour'?'Armour Secure':'TLA Financial Services' }))){
