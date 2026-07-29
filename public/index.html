@@ -108,7 +108,7 @@
   <div class="body-wrap" id="body"></div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.44.0/iconfont/tabler-icons.min.css"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/3.44.0/tabler-icons.min.css">
 <script>
 const SCENARIOS_I18N = {
   purchase: {
@@ -310,7 +310,10 @@ const STRINGS = {
     depositAmount: 'Monto del depósito', depositAmountPh: 'USD $310,000.00',
     fees: 'Comisiones', feesPh: 'USD $1,500.00 a cargo del comprador',
     noticeAddress: 'Domicilio para notificaciones', generateDocument: 'Generar documento',
-    signatureModalTitle: 'Firma electrónica'
+    signatureModalTitle: 'Firma electrónica',
+    replaceFile: 'Reemplazar', uploading: 'Subiendo...',
+    upcomingClosings: 'Cierres próximos', daysToCloseSingular: '{days} día para cierre', daysToClosePlural: '{days} días para cierre',
+    closingToday: 'Cierra hoy', closingOverdue: 'Cierre atrasado'
   },
   en: {
     tabAdmin: 'Admin', tabPortal: 'Client / agent portal',
@@ -436,7 +439,10 @@ const STRINGS = {
     depositAmount: 'Deposit amount', depositAmountPh: 'USD $310,000.00',
     fees: 'Fees', feesPh: "USD $1,500.00, buyer's expense",
     noticeAddress: 'Notice address', generateDocument: 'Generate document',
-    signatureModalTitle: 'E-signature'
+    signatureModalTitle: 'E-signature',
+    replaceFile: 'Replace', uploading: 'Uploading...',
+    upcomingClosings: 'Upcoming closings', daysToCloseSingular: '{days} day to close', daysToClosePlural: '{days} days to close',
+    closingToday: 'Closes today', closingOverdue: 'Closing overdue'
   }
 };
 
@@ -884,6 +890,44 @@ function renderAdmin(body){
 }
 
 
+// Colores por urgencia (no por % de avance) — entre menos días falten para
+// el cierre, más "caliente" el color, independientemente de qué tan
+// avanzada esté la operación (una operación al 90% que cierra mañana sigue
+// necesitando atención esta semana).
+function closingUrgencyColor(daysToClose){
+  if (daysToClose <= 7) return { ring: 'var(--oxblood)', pillBg: 'var(--oxblood-soft)', pillFg: 'var(--oxblood)' };
+  if (daysToClose <= 21) return { ring: 'var(--gold)', pillBg: 'var(--gold-soft)', pillFg: '#6B4E1E' };
+  return { ring: 'var(--jade)', pillBg: 'var(--jade-soft)', pillFg: 'var(--jade)' };
+}
+
+function buildUpcomingClosings(closings){
+  const grid = document.createElement('div');
+  grid.style.cssText = 'display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:12px; margin-bottom:16px;';
+  closings.forEach(c => {
+    const colors = closingUrgencyColor(c.daysToClose);
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.cssText = 'display:flex; align-items:center; gap:14px; cursor:pointer; margin-bottom:0;';
+    const pct = Math.max(0, Math.min(100, c.percent));
+    const daysLabel = c.daysToClose < 0 ? t('closingOverdue')
+      : c.daysToClose === 0 ? t('closingToday')
+      : c.daysToClose === 1 ? t('daysToCloseSingular', { days: c.daysToClose })
+      : t('daysToClosePlural', { days: c.daysToClose });
+    card.innerHTML = `
+      <div style="width:70px; height:70px; border-radius:50%; flex-shrink:0; background:conic-gradient(${colors.ring} ${pct}%, var(--line) ${pct}% 100%); display:flex; align-items:center; justify-content:center;">
+        <div style="width:52px; height:52px; border-radius:50%; background:var(--stone-card); display:flex; align-items:center; justify-content:center; font-weight:600; font-size:15px;">${pct}%</div>
+      </div>
+      <div style="min-width:0;">
+        <div style="font-weight:600; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(c.property)}</div>
+        <span class="badge" style="background:${colors.pillBg}; color:${colors.pillFg}; margin-top:6px;">${escapeHtml(daysLabel)}</span>
+      </div>
+    `;
+    card.onclick = () => { adminView='list'; activeDealId=c.dealId; openDeal(c.dealId); };
+    grid.appendChild(card);
+  });
+  return grid;
+}
+
 function buildDashboard(){
   const wrap = document.createElement('div');
   const title = document.createElement('div');
@@ -911,6 +955,13 @@ function buildDashboard(){
     ${d.dealsByScenario.length ? `<div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap;">${d.dealsByScenario.map(s=>`<span class="badge">${(SCENARIOS[s.scenario]&&SCENARIOS[s.scenario].labelShort)||s.scenario}: ${s.count}</span>`).join('')}</div>` : ''}
   `;
   wrap.appendChild(totalsCard);
+
+  if(d.upcomingClosings && d.upcomingClosings.length){
+    const ucTitle = document.createElement('div');
+    ucTitle.className = 'section-title'; ucTitle.textContent = t('upcomingClosings');
+    wrap.appendChild(ucTitle);
+    wrap.appendChild(buildUpcomingClosings(d.upcomingClosings));
+  }
 
   if(d.signaturesAwaiting.length){
     const signTitle = document.createElement('div');
@@ -1787,8 +1838,9 @@ function buildDocItemLi(deal, doc){
   li.innerHTML = `<span class="doc-check ${doc.status==='done'?'done':''}">${doc.status==='done'?'<i class=\"ti ti-check\" aria-hidden=\"true\"></i>':''}</span><span>${label}</span>
     <span style="margin-left:auto; display:flex; align-items:center; gap:8px;">
       ${subChecksHtml}
-      ${doc.fileUrl ? `<a href="/api/deals/${deal.id}/documents/${doc.id}/file" target="_blank" style="font-size:11px;">${t('viewFile')}</a>` : ''}
-      <input type="file" style="font-size:11px; max-width:130px;" accept=".pdf,.jpg,.jpeg,.png,.heic" title="${t('attachDocument')}">
+      ${doc.fileUrl ? `<a href="/api/deals/${deal.id}/documents/${doc.id}/file" target="_blank" class="btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px;"><i class="ti ti-eye" aria-hidden="true"></i> ${t('viewFile')}</a>` : ''}
+      <button type="button" class="btn doc-upload-btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px;" title="${t('attachDocument')}"><i class="ti ti-upload" aria-hidden="true"></i> ${doc.fileUrl ? t('replaceFile') : t('upload')}</button>
+      <input type="file" class="doc-file-input" style="display:none;" accept=".pdf,.jpg,.jpeg,.png,.heic">
     </span>`;
   li.querySelector('.doc-check').onclick = async () => {
     const next = doc.status==='done' ? 'pending' : 'done';
@@ -1807,15 +1859,25 @@ function buildDocItemLi(deal, doc){
       }catch(err){ alert(err.message); e.target.checked = !next; }
     };
   });
-  li.querySelector('input[type=file]').onchange = async (e) => {
+  const uploadBtn = li.querySelector('.doc-upload-btn');
+  const fileInput = li.querySelector('.doc-file-input');
+  uploadBtn.onclick = () => fileInput.click();
+  fileInput.onchange = async (e) => {
     const file = e.target.files[0];
     if(!file) return;
+    const originalHtml = uploadBtn.innerHTML;
+    uploadBtn.disabled = true;
+    uploadBtn.innerHTML = `<i class="ti ti-loader-2" aria-hidden="true"></i> ${t('uploading')}`;
     const fd = new FormData();
     fd.append('file', file);
     try{
       await apiUpload(`/api/deals/${deal.id}/documents/${doc.id}/file`, fd);
       await openDeal(deal.id);
-    }catch(err){ alert(err.message); }
+    }catch(err){
+      alert(err.message);
+      uploadBtn.disabled = false;
+      uploadBtn.innerHTML = originalHtml;
+    }
   };
   return li;
 }

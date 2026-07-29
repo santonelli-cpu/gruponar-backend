@@ -72,6 +72,31 @@ router.get('/', requireAuth, (req, res) => {
       AND t.docusign_status IN ('sent','delivered')
   `).all(...params);
 
+  // "Cierres próximos" — solo operaciones con fecha de cierre capturada
+  // (deals.closing_date, ver PATCH /api/deals/:id), ordenadas por la más
+  // próxima primero. El % combina documentos y tareas en un solo avance
+  // general (no son dos indicadores separados como en el detalle de la
+  // operación, aquí es un solo anillo por tarjeta).
+  const upcomingClosings = db.prepare(`
+    SELECT deals.id AS dealId, deals.property, deals.closing_date AS closingDate,
+      CAST(julianday(deals.closing_date) - julianday('now') AS INTEGER) AS daysToClose,
+      (SELECT COUNT(*) FROM documents WHERE deal_id = deals.id) AS documentsTotal,
+      (SELECT COUNT(*) FROM documents WHERE deal_id = deals.id AND status = 'done') AS documentsDone,
+      (SELECT COUNT(*) FROM tasks WHERE deal_id = deals.id) AS tasksTotal,
+      (SELECT COUNT(*) FROM tasks WHERE deal_id = deals.id AND status = 'done') AS tasksDone
+    FROM deals
+    WHERE deals.id IN (${dealsSql}) AND deals.closing_date IS NOT NULL AND deals.closing_date >= date('now')
+    ORDER BY deals.closing_date ASC
+    LIMIT 6
+  `).all(...params).map(d => {
+    const total = d.documentsTotal + d.tasksTotal;
+    const done = d.documentsDone + d.tasksDone;
+    return {
+      dealId: d.dealId, property: d.property, closingDate: d.closingDate, daysToClose: d.daysToClose,
+      percent: total ? Math.round(done / total * 100) : 0
+    };
+  });
+
   res.json({
     totalDeals,
     dealsByScenario,
@@ -81,6 +106,7 @@ router.get('/', requireAuth, (req, res) => {
     pendingDocuments,
     pendingTasks,
     signaturesAwaiting,
+    upcomingClosings,
     staleDays: STALE_DAYS
   });
 });
