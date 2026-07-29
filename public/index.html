@@ -192,6 +192,10 @@ const STRINGS = {
     loginTitle: 'Iniciar sesión', loginSub: 'Ingresa con tu correo y contraseña.',
     loginEmailPh: 'correo@ejemplo.com', loginPasswordPh: 'Contraseña', loginSubmit: 'Entrar', loginSubmitting: 'Entrando...',
     loginNoAccount: '¿Eres agente o abogado y no tienes cuenta?', loginCreateAccount: 'Crear cuenta',
+    forgotPasswordLink: '¿Olvidaste tu contraseña?', forgotPasswordTitle: 'Restablece tu contraseña',
+    forgotPasswordSub: 'Escribe el correo de tu cuenta y te mandamos un link para poner una nueva contraseña.',
+    forgotPasswordSubmit: 'Enviar link', backToLogin: 'Volver a iniciar sesión',
+    forgotPasswordSent: 'Si ese correo tiene una cuenta, te mandamos un link para restablecer tu contraseña.',
     registerTitle: 'Crear cuenta', registerSub: 'Para agentes de venta y abogados/empleados internos. Tu cuenta queda pendiente de aprobación de un administrador.',
     registerNamePh: 'Nombre completo', registerEmailPh: 'correo@ejemplo.com', registerPasswordPh: 'Contraseña (mínimo 8 caracteres)',
     registerRoleAgent: 'Agente de venta', registerRoleLawyer: 'Abogado / empleado interno',
@@ -325,6 +329,10 @@ const STRINGS = {
     loginTitle: 'Log in', loginSub: 'Enter your email and password.',
     loginEmailPh: 'email@example.com', loginPasswordPh: 'Password', loginSubmit: 'Log in', loginSubmitting: 'Logging in...',
     loginNoAccount: 'Are you an agent or lawyer without an account?', loginCreateAccount: 'Create account',
+    forgotPasswordLink: 'Forgot your password?', forgotPasswordTitle: 'Reset your password',
+    forgotPasswordSub: "Enter your account's email and we'll send you a link to set a new password.",
+    forgotPasswordSubmit: 'Send link', backToLogin: 'Back to login',
+    forgotPasswordSent: 'If that email has an account, we sent a link to reset the password.',
     registerTitle: 'Create account', registerSub: 'For sales agents and lawyers/internal staff. Your account stays pending until an administrator approves it.',
     registerNamePh: 'Full name', registerEmailPh: 'email@example.com', registerPasswordPh: 'Password (minimum 8 characters)',
     registerRoleAgent: 'Sales agent', registerRoleLawyer: 'Lawyer / internal staff',
@@ -484,6 +492,8 @@ let authView = 'login';
 let registerError = '';
 let registerLoading = false;
 let registerSuccess = '';
+let forgotLoading = false;
+let forgotMessage = '';
 
 
 async function apiFetch(path, options={}){
@@ -697,6 +707,7 @@ function render(){
 
 function renderLogin(body){
   if(authView === 'register'){ renderRegister(body); return; }
+  if(authView === 'forgot'){ renderForgotPassword(body); return; }
 
   const wrap = document.createElement('div');
   wrap.className = 'gate-wrap';
@@ -710,7 +721,8 @@ function renderLogin(body){
       <input type="email" id="login-email" placeholder="${t('loginEmailPh')}" autocomplete="username">
       <input type="password" id="login-password" placeholder="${t('loginPasswordPh')}" autocomplete="current-password">
       <button class="btn primary" id="login-submit" style="width:100%;" ${loginLoading ? 'disabled' : ''}>${loginLoading ? t('loginSubmitting') : t('loginSubmit')}</button>
-      <div class="field-hint" style="text-align:center; margin-top:12px;">${t('loginNoAccount')} <a href="#" id="go-register">${t('loginCreateAccount')}</a></div>
+      <div class="field-hint" style="text-align:center; margin-top:10px;"><a href="#" id="go-forgot">${t('forgotPasswordLink')}</a></div>
+      <div class="field-hint" style="text-align:center; margin-top:2px;">${t('loginNoAccount')} <a href="#" id="go-register">${t('loginCreateAccount')}</a></div>
       <div class="gate-note"><i class="ti ti-server" aria-hidden="true"></i> ${t('gateNote', { base: API_BASE || t('sameOrigin') })}</div>
     </div>
   `;
@@ -737,6 +749,38 @@ function renderLogin(body){
   wrap.querySelector('#login-submit').onclick = submit;
   wrap.querySelector('#login-password').onkeydown = (e) => { if(e.key==='Enter') submit(); };
   wrap.querySelector('#go-register').onclick = (e) => { e.preventDefault(); authView='register'; loginError=''; render(); };
+  wrap.querySelector('#go-forgot').onclick = (e) => { e.preventDefault(); authView='forgot'; loginError=''; forgotMessage=''; render(); };
+}
+
+function renderForgotPassword(body){
+  const wrap = document.createElement('div');
+  wrap.className = 'gate-wrap';
+  wrap.innerHTML = `
+    <div class="gate-card">
+      <div class="gate-mark">Grupo Nar Legal Consultants</div>
+      <div class="gate-title">${t('forgotPasswordTitle')}</div>
+      <div class="gate-sub">${t('forgotPasswordSub')}</div>
+      ${forgotMessage ? `<div class="field-hint" style="color:var(--jade); margin-bottom:8px;">${escapeHtml(forgotMessage)}</div>` : ''}
+      <input type="email" id="forgot-email" placeholder="${t('loginEmailPh')}" autocomplete="username">
+      <button class="btn primary" id="forgot-submit" style="width:100%;" ${forgotLoading ? 'disabled' : ''}>${forgotLoading ? t('loginSubmitting') : t('forgotPasswordSubmit')}</button>
+      <div class="field-hint" style="text-align:center; margin-top:12px;"><a href="#" id="go-login">${t('backToLogin')}</a></div>
+    </div>
+  `;
+  body.appendChild(wrap);
+  wrap.querySelector('#forgot-submit').onclick = async () => {
+    const email = wrap.querySelector('#forgot-email').value.trim();
+    if(!email) return;
+    forgotLoading = true; render();
+    try{
+      await apiFetch('/api/auth/forgot-password', { method:'POST', body: JSON.stringify({ email }) });
+      forgotMessage = t('forgotPasswordSent');
+    }catch(e){
+      forgotMessage = e.message;
+    }
+    forgotLoading = false;
+    render();
+  };
+  wrap.querySelector('#go-login').onclick = (e) => { e.preventDefault(); authView='login'; forgotMessage=''; render(); };
 }
 
 function renderRegister(body){

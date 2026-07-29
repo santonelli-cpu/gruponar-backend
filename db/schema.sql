@@ -103,6 +103,20 @@ CREATE TABLE IF NOT EXISTS access_log (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- "Olvidé mi contraseña" — un token de un solo uso por solicitud, con
+-- vigencia corta (ver PASSWORD_RESET_TTL_HOURS en routes/auth.js). Varias
+-- solicitudes seguidas del mismo usuario no invalidan las anteriores solas
+-- (se revisa used_at/expires_at al usarlas), así que quien haga clic en un
+-- link viejo pero todavía vigente puede seguir usándolo.
+CREATE TABLE IF NOT EXISTS password_resets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT UNIQUE NOT NULL,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at TEXT NOT NULL,
+  used_at TEXT
+);
+
 -- Invitaciones para que un comprador/vendedor/agente cree su propia cuenta
 -- y quede ligado a una operación específica, sin que el admin tenga que
 -- inventarle una contraseña temporal. deal_id es NULL para invitaciones de

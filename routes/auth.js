@@ -1,11 +1,15 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 const db = require('../db');
 const { createRateLimiter } = require('../lib/rateLimit');
+const mailer = require('../lib/email');
 
 const router = express.Router();
 
 const rateLimitRegister = createRateLimiter({ windowMs: 15 * 60 * 1000, maxAttempts: 10 });
+const rateLimitForgotPassword = createRateLimiter({ windowMs: 15 * 60 * 1000, maxAttempts: 10 });
+const PASSWORD_RESET_TTL_HOURS = 1;
 
 // Agencias con las que trabaja Grupo Nar — un agente que no es de ninguna de
 // estas elige "Otro" y escribe la suya. Solo aplica a role='agent' (un
@@ -91,6 +95,58 @@ router.get('/me', (req, res) => {
   const user = db.prepare('SELECT id, name, email, role, agency FROM users WHERE id = ?').get(req.session.userId);
   if (!user) return res.status(401).json({ error: 'No autenticado.' });
   res.json(user);
+});
+
+// POST /api/auth/forgot-password { email } — siempre responde genérico
+// (nunca revela si el correo existe o no, para no filtrar quién tiene
+// cuenta) — si existe y está activa, manda el correo con el link de un
+// solo uso vía Resend.
+router.post('/forgot-password', rateLimitForgotPassword, async (req, res) => {
+  const { email } = req.body || {};
+  const generic = { ok: true, message: 'Si ese correo tiene una cuenta, te mandamos un link para restablecer tu contraseña.' };
+  if (!email) return res.json(generic);
+
+  const user = db.prepare("SELECT * FROM users WHERE email = ? AND status = 'active'").get(email.toLowerCase().trim());
+  if (!user) return res.json(generic);
+  if (!mailer.isConfigured()) return res.json(generic);
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + PASSWORD_RESET_TTL_HOURS * 3600000).toISOString();
+  db.prepare('INSERT INTO password_resets (token, user_id, expires_at) VALUES (?,?,?)').run(token, user.id, expiresAt);
+
+  const url = `${req.protocol}://${req.get('host')}/reset-password.html?token=${token}`;
+  await mailer.sendPasswordResetEmail({ to: user.email, name: user.name, url });
+  res.json(generic);
+});
+
+// GET /api/auth/reset-password/:token — público, solo valida que el token
+// sirva todavía (para que la página muestre el formulario o un error).
+router.get('/reset-password/:token', (req, res) => {
+  const reset = db.prepare('SELECT * FROM password_resets WHERE token = ?').get(req.params.token);
+  if (!reset) return res.status(404).json({ error: 'Este link no es válido.', code: 'invalid' });
+  if (reset.used_at) return res.status(410).json({ error: 'Este link ya fue usado.', code: 'used' });
+  if (new Date(reset.expires_at) < new Date()) return res.status(410).json({ error: 'Este link expiró — pide uno nuevo.', code: 'expired' });
+  res.json({ ok: true });
+});
+
+// POST /api/auth/reset-password/:token { password }
+router.post('/reset-password/:token', (req, res) => {
+  const { password } = req.body || {};
+  if (!password || password.length < 8) {
+    return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres.' });
+  }
+  const reset = db.prepare('SELECT * FROM password_resets WHERE token = ?').get(req.params.token);
+  if (!reset) return res.status(404).json({ error: 'Este link no es válido.', code: 'invalid' });
+  if (reset.used_at) return res.status(410).json({ error: 'Este link ya fue usado.', code: 'used' });
+  if (new Date(reset.expires_at) < new Date()) return res.status(410).json({ error: 'Este link expiró — pide uno nuevo.', code: 'expired' });
+
+  const hash = bcrypt.hashSync(password, 12);
+  db.transaction(() => {
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, reset.user_id);
+    db.prepare("UPDATE password_resets SET used_at = datetime('now') WHERE id = ?").run(reset.id);
+  })();
+  logAccess(reset.user_id, 'password_reset', req);
+  res.json({ ok: true });
 });
 
 // Middleware para proteger rutas
