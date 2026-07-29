@@ -259,9 +259,16 @@ router.get('/:id', requireAuth, (req, res) => {
     p.linkedUser = linkedByParty[p.id] || null;
   });
 
+  const agents = db.prepare(`
+    SELECT dp.id AS dealPartyId, u.id AS userId, u.name, u.email, u.agency
+    FROM deal_parties dp JOIN users u ON u.id = dp.user_id
+    WHERE dp.deal_id = ? AND dp.role_in_deal = 'agent'
+    ORDER BY u.name
+  `).all(deal.id);
+
   const documents = db.prepare('SELECT * FROM documents WHERE deal_id = ?').all(deal.id);
   const tasks = db.prepare('SELECT * FROM tasks WHERE deal_id = ? ORDER BY sort_order').all(deal.id);
-  res.json({ ...deal, parties, documents, tasks });
+  res.json({ ...deal, parties, agents, documents, tasks });
 });
 
 // PATCH /api/deals/:id — cambia la escrow company y/o las fechas clave
@@ -430,6 +437,48 @@ router.post('/:id/parties/:partyId/remind', requireRole('admin', 'agent', 'lawye
     ON CONFLICT(deal_party_entity_id) DO UPDATE SET last_sent_at = datetime('now')
   `).run(party.id);
   res.json({ ok: true, count: pending.length });
+});
+
+// GET /api/deals/:id/available-agents — agentes activos (ya con cuenta,
+// aprobados) que todavía NO están ligados a esta operación — para el
+// dropdown de "agregar agente" en el detalle de la operación, en vez de
+// tener que generar una invitación nueva para alguien que ya es parte del
+// equipo. Los abogados no aparecen acá: ya ven todas las operaciones
+// (UNRESTRICTED_ROLES en lib/access.js), no hace falta ligarlos por deal.
+router.get('/:id/available-agents', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const agents = db.prepare(`
+    SELECT id, name, email, agency FROM users
+    WHERE role = 'agent' AND status = 'active'
+      AND id NOT IN (SELECT user_id FROM deal_parties WHERE deal_id = ? AND role_in_deal = 'agent')
+    ORDER BY name
+  `).all(req.params.id);
+  res.json(agents);
+});
+
+// POST /api/deals/:id/agents — liga a esta operación un agente que YA tiene
+// cuenta (elegido del dropdown de available-agents), sin pasar por el flujo
+// de invitación/contraseña — solo tiene sentido para alguien que ya inició
+// sesión antes en la plataforma.
+router.post('/:id/agents', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const { userId } = req.body || {};
+  const user = db.prepare("SELECT * FROM users WHERE id = ? AND role = 'agent' AND status = 'active'").get(userId);
+  if (!user) return res.status(400).json({ error: 'Ese usuario no existe o no es un agente activo.' });
+  const already = db.prepare('SELECT 1 FROM deal_parties WHERE deal_id = ? AND user_id = ?').get(req.params.id, userId);
+  if (already) return res.status(409).json({ error: 'Ese agente ya está en esta operación.' });
+  db.prepare("INSERT INTO deal_parties (deal_id, user_id, role_in_deal) VALUES (?,?,'agent')").run(req.params.id, userId);
+  res.status(201).json({ ok: true });
+});
+
+// DELETE /api/deals/:id/agents/:userId — quita a un agente de la operación
+// (no de la plataforma, solo deja de verla). Restringido a role_in_deal
+// 'agent' para no poder usar esta ruta contra un comprador/vendedor ligado.
+router.delete('/:id/agents/:userId', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const info = db.prepare("DELETE FROM deal_parties WHERE deal_id = ? AND user_id = ? AND role_in_deal = 'agent'").run(req.params.id, req.params.userId);
+  if (!info.changes) return res.status(404).json({ error: 'Ese agente no está en esta operación.' });
+  res.json({ ok: true });
 });
 
 // PATCH /api/deals/:id/documents/:docId — marcar documento recibido y/o
