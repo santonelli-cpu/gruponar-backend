@@ -1,0 +1,89 @@
+{
+  "key": "armour-individual-es",
+  "label": "Armour Secure — Expediente de Identificación (Persona Física, español)",
+  "docxFile": "armour-individual-es.docx",
+  "company": "armour",
+  "partyKind": "individual",
+  "language": "es",
+  "sections": [
+    {
+      "title": "Tipo de persona",
+      "fields": [
+        { "id": "tipoPersona", "label": "Tipo de persona", "type": "radio",
+          "options": [
+            { "value": "mexicana", "label": "Persona física mexicana" },
+            { "value": "extranjera_residente", "label": "Persona física extranjera residente" },
+            { "value": "extranjera_visitante", "label": "Persona física extranjera visitante" }
+          ], "required": true },
+        { "id": "numeroExpediente", "label": "Número de expediente (ASE-___, lo asigna tu coordinador)", "type": "text" }
+      ]
+    },
+    {
+      "title": "Identificación",
+      "fields": [
+        { "id": "nombre", "label": "Nombre completo (apellido paterno, materno y nombre(s) tal como aparece en identificación oficial)", "type": "text", "required": true, "prefillFrom": "partyName" },
+        { "id": "fechaNacimiento", "label": "Fecha de nacimiento", "type": "date", "required": true },
+        { "id": "lugarNacimiento", "label": "Lugar de nacimiento (ciudad y país)", "type": "text", "required": true },
+        { "id": "nacionalidad", "label": "Nacionalidad", "type": "text", "required": true },
+        { "id": "condicionEstanciaMexico", "label": "Condición de legal estancia en México (opcional, solo si aplica)", "type": "text" },
+        { "id": "lugarResidencia", "label": "Lugar de residencia", "type": "text", "required": true },
+        { "id": "ocupacion", "label": "Ocupación", "type": "text", "required": true }
+      ]
+    },
+    {
+      "title": "Contacto",
+      "fields": [
+        { "id": "telefonoCasa", "label": "Teléfono de casa (clave internacional)", "type": "text" },
+        { "id": "telefonoOficina", "label": "Teléfono de oficina (clave internacional)", "type": "text" },
+        { "id": "telefonoCelular", "label": "Teléfono celular (clave internacional)", "type": "text", "required": true },
+        { "id": "correoElectronico", "label": "Correo electrónico", "type": "email", "required": true, "prefillFrom": "partyEmail" }
+      ]
+    },
+    {
+      "title": "Documento de identificación",
+      "fields": [
+        { "id": "tipoDocumento", "label": "Tipo de documento con el que se identifica", "type": "text", "required": true },
+        { "id": "autoridadEmisora", "label": "Autoridad que emite la identificación", "type": "text", "required": true },
+        { "id": "numeroIdentificacion", "label": "Número de identificación", "type": "text", "required": true },
+        { "id": "fechaExpedicionId", "label": "Fecha de expedición de identificación", "type": "date", "required": true },
+        { "id": "fechaVencimientoId", "label": "Fecha de vencimiento de identificación", "type": "date", "required": true }
+      ]
+    },
+    {
+      "title": "Domicilio",
+      "fields": [
+        { "id": "domicilioMexico", "label": "Domicilio particular en México (opcional, solo si aplica — calle, número exterior e interior, colonia, delegación o municipio, ciudad, entidad federativa, código postal y país)", "type": "textarea" },
+        { "id": "domicilioExtranjero", "label": "Domicilio particular en el extranjero (opcional, solo si aplica — mismo formato)", "type": "textarea" }
+      ]
+    },
+    {
+      "title": "Identificadores fiscales",
+      "fields": [
+        { "id": "curp", "label": "CURP (opcional — solo mexicanos y residentes, 18 caracteres)", "type": "text", "maxLength": 18 },
+        { "id": "rfc", "label": "RFC (opcional — solo mexicanos y residentes, 13 caracteres)", "type": "text", "maxLength": 13 },
+        { "id": "numeroSeguridadSocial", "label": "Número de seguridad social o de acreditación de ciudadanía (opcional — solo extranjeros)", "type": "text" }
+      ]
+    },
+    {
+      "title": "Dueño beneficiario",
+      "fields": [
+        { "id": "tieneDuenoBeneficiario", "label": "¿Tiene conocimiento de la existencia de dueño beneficiario?", "type": "radio",
+          "options": [ { "value": "si", "label": "Sí" }, { "value": "no", "label": "No" } ], "required": true },
+        { "id": "tipoDuenoBeneficiario", "label": "Tipo de dueño beneficiario (solo si respondió sí arriba)", "type": "radio",
+          "options": [
+            { "value": "persona_fisica_mx", "label": "Persona física mexicana o extranjera residente" },
+            { "value": "persona_fisica_visitante", "label": "Persona física extranjera visitante" },
+            { "value": "persona_moral_mx", "label": "Persona moral mexicana" },
+            { "value": "persona_moral_extranjera", "label": "Persona moral extranjera" },
+            { "value": "fideicomiso", "label": "Fideicomiso" }
+          ] }
+      ]
+    },
+    {
+      "title": "Declaración",
+      "fields": [
+        { "id": "fechaFirma", "label": "Fecha", "type": "date", "required": true }
+      ]
+    }
+  ]
+}

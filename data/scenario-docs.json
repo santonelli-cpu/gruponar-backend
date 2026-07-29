@@ -1,0 +1,29 @@
+{
+  "purchase": {
+    "seller_individual": ["Escritura pública","Predial","CURP","Constancia de Situación Fiscal","Comprobante de domicilio","Identificación oficial","Acta de nacimiento","Acta de matrimonio (si aplica)"],
+    "buyer_individual": ["CURP","Constancia de Situación Fiscal","Comprobante de domicilio","Identificación oficial","Acta de nacimiento","Acta de matrimonio (si aplica)"],
+    "corporation_extra": ["Acta constitutiva","Poder del representante legal"],
+    "legal_rep": ["CURP (rep. legal)","Constancia de Situación Fiscal (rep. legal)","Comprobante de domicilio (rep. legal)","Identificación oficial (rep. legal)","Acta de nacimiento (rep. legal)","Acta de matrimonio (rep. legal, si aplica)"],
+    "llc_entity": ["Acta constitutiva de LLC (notariada y apostillada)","Acuerdo operativo (notariado y apostillado)","Certificado de vigencia / good standing (apostillado)","Constancia de facultades del gerente (notariada y apostillada)","Comprobante de domicilio de la LLC","Carta del IRS"],
+    "llc_members": ["Copia de pasaporte (miembro)","Comprobante de domicilio (miembro)","Ocupación (miembro)","SSN (miembro)","Teléfono (miembro)"],
+    "llc_manager": ["Copia de pasaporte (gerente/rep. legal)","Comprobante de domicilio (gerente)","Ocupación (gerente)","SSN (gerente)","Teléfono (gerente)"]
+  },
+  "trust": {
+    "seller_individual": ["Escritura pública","Predial","CURP","Constancia de Situación Fiscal","Comprobante de domicilio","Identificación oficial","Acta de nacimiento","Acta de matrimonio (si aplica)"],
+    "buyer_individual": ["Pasaporte","Comprobante de domicilio","Tax ID / Seguro Social","Acta de nacimiento","Acta de matrimonio (si aplica)","Licencia de conducir","Estatus migratorio","Pasaporte y licencia de beneficiarios sustitutos"],
+    "corporation_extra": ["Acta constitutiva","Poder del representante legal"],
+    "legal_rep": ["CURP (rep. legal)","Constancia de Situación Fiscal (rep. legal)","Comprobante de domicilio (rep. legal)","Identificación oficial (rep. legal)","Acta de nacimiento (rep. legal)","Acta de matrimonio (rep. legal, si aplica)"],
+    "llc_entity": ["Acta constitutiva de LLC (notariada y apostillada)","Acuerdo operativo (notariado y apostillado)","Certificado de vigencia / good standing (apostillado)","Constancia de facultades del gerente (notariada y apostillada)","Comprobante de domicilio de la LLC","Carta del IRS"],
+    "llc_members": ["Copia de pasaporte (miembro)","Comprobante de domicilio (miembro)","Ocupación (miembro)","SSN (miembro)","Teléfono (miembro)"],
+    "llc_manager": ["Copia de pasaporte (gerente/rep. legal)","Comprobante de domicilio (gerente)","Ocupación (gerente)","SSN (gerente)","Teléfono (gerente)"]
+  },
+  "transfer": {
+    "seller_individual": ["Pasaporte","Comprobante de domicilio","Tax ID / Seguro Social","Acta de nacimiento","Acta de matrimonio (si aplica)","Licencia de conducir","Estatus migratorio","Escritura y recibo de predial","Último pago anual de fideicomiso"],
+    "buyer_individual": ["Pasaporte","Comprobante de domicilio","Tax ID / Seguro Social","Acta de nacimiento","Acta de matrimonio (si aplica)","Licencia de conducir","Estatus migratorio","Pasaporte y licencia de beneficiarios sustitutos"],
+    "corporation_extra": ["Acta constitutiva","Poder del representante legal"],
+    "legal_rep": ["CURP (rep. legal)","Constancia de Situación Fiscal (rep. legal)","Comprobante de domicilio (rep. legal)","Identificación oficial (rep. legal)","Acta de nacimiento (rep. legal)","Acta de matrimonio (rep. legal, si aplica)"],
+    "llc_entity": ["Acta constitutiva de LLC (notariada y apostillada)","Acuerdo operativo (notariado y apostillado)","Certificado de vigencia / good standing (apostillado)","Constancia de facultades del gerente (notariada y apostillada)","Comprobante de domicilio de la LLC","Carta del IRS"],
+    "llc_members": ["Copia de pasaporte (miembro)","Comprobante de domicilio (miembro)","Ocupación (miembro)","SSN (miembro)","Teléfono (miembro)"],
+    "llc_manager": ["Copia de pasaporte (gerente/rep. legal)","Comprobante de domicilio (gerente)","Ocupación (gerente)","SSN (gerente)","Teléfono (gerente)"]
+  }
+}

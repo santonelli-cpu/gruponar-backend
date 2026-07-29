@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: gruponar-backend
+    runtime: docker
+    plan: starter
+    region: oregon
+    disk:
+      name: gruponar-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: DATA_DIR
+        value: /data
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ADMIN_NAME
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: DOCUSIGN_INTEGRATION_KEY
+        sync: false
+      - key: DOCUSIGN_USER_ID
+        sync: false
+      - key: DOCUSIGN_ACCOUNT_ID
+        sync: false
+      - key: DOCUSIGN_PRIVATE_KEY
+        sync: false

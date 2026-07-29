@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><title>Firma completada</title></head>
+<body style="font-family:sans-serif; display:flex; align-items:center; justify-content:center; height:100vh; margin:0;">
+  <div>Procesando...</div>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const event = params.get('event');
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'docusign-return', event }, window.location.origin);
+    }
+  </script>
+</body>
+</html>

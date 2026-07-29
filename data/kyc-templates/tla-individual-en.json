@@ -1,0 +1,95 @@
+{
+  "key": "tla-individual-en",
+  "label": "TLA Financial Services — Know Your Customer (Individuals, English)",
+  "docxFile": "tla-individual-en.docx",
+  "company": "tla",
+  "partyKind": "individual",
+  "language": "en",
+  "sections": [
+    {
+      "title": "Identification of the Person",
+      "fields": [
+        { "id": "fullLegalName", "label": "Full Legal Name", "type": "text", "required": true, "prefillFrom": "partyName" },
+        { "id": "identificationDocumentType", "label": "Identification Document", "type": "radio",
+          "options": [
+            { "value": "passport", "label": "Passport" },
+            { "value": "drivers_license", "label": "Drivers' License" },
+            { "value": "other", "label": "Other" }
+          ], "required": true },
+        { "id": "identificationDocumentOther", "label": "If \"Other\", specify", "type": "text" },
+        { "id": "documentNumber", "label": "Document Number", "type": "text", "required": true },
+        { "id": "expiration", "label": "Expiration", "type": "date", "required": true },
+        { "id": "issuedBy", "label": "Issued By", "type": "text", "required": true },
+        { "id": "citizenship", "label": "Citizenship", "type": "text", "required": true },
+        { "id": "otherCitizenship", "label": "Other Citizenship", "type": "text" },
+        { "id": "placeOfBirth", "label": "Place of Birth", "type": "text", "required": true },
+        { "id": "dateOfBirth", "label": "Date of Birth", "type": "date", "required": true }
+      ]
+    },
+    {
+      "title": "Tax Residency",
+      "fields": [
+        { "id": "socialSecurityNo", "label": "Social Security No.", "type": "text" },
+        { "id": "countryOfTaxResidency", "label": "Country of Tax Residency", "type": "text", "required": true }
+      ]
+    },
+    {
+      "title": "Other Details",
+      "fields": [
+        { "id": "residencyAddress", "label": "Residency Address", "type": "textarea", "required": true },
+        { "id": "mailingAddress", "label": "Mailing Address (if different)", "type": "textarea" },
+        { "id": "mobilePhone", "label": "Mobile Phone No.", "type": "text", "required": true },
+        { "id": "workHomePhone", "label": "Work/Home Phone No.", "type": "text" },
+        { "id": "email", "label": "Email", "type": "email", "required": true, "prefillFrom": "partyEmail" },
+        { "id": "occupation", "label": "Occupation (if retired, retired as what?)", "type": "text", "required": true },
+        { "id": "employerOrBusiness", "label": "Employer or nature of business", "type": "text", "required": true },
+        { "id": "actsAsIntermediary", "label": "Do you act as an intermediary on behalf of someone else?", "type": "radio",
+          "options": [ { "value": "yes", "label": "Yes" }, { "value": "no", "label": "No" } ], "required": true },
+        { "id": "intermediaryDescription", "label": "If yes, provide description", "type": "textarea" }
+      ]
+    },
+    {
+      "title": "Political Associations",
+      "fields": [
+        { "id": "hasPoliticalPosition", "label": "Are you, or a member of your family currently, or in the past, holding a political position?", "type": "radio",
+          "options": [ { "value": "yes", "label": "Yes" }, { "value": "no", "label": "No" } ], "required": true },
+        { "id": "familyRelationship", "label": "If a family member, what is the relationship?", "type": "text" },
+        { "id": "whenAndWhichPosition", "label": "If yes, when and which position?", "type": "text" },
+        { "id": "familyMemberName", "label": "Family member name (if political association)", "type": "text" },
+        { "id": "familyMemberAddress", "label": "Family member physical address", "type": "textarea" },
+        { "id": "familyMemberDateOfBirth", "label": "Family member date of birth", "type": "date" },
+        { "id": "familyMemberSSN", "label": "Family member Social Security Number", "type": "text" },
+        { "id": "otherPrimaryId", "label": "Other forms of primary ID, if non-US person", "type": "text" }
+      ]
+    },
+    {
+      "title": "Source of Funds (complete if you are the depositor of funds)",
+      "fields": [
+        { "id": "sourceOfFunds", "label": "Source of funds (employment salaries, commercial activity, financing, etc. / where do they come from and how?)", "type": "textarea" },
+        { "id": "depositsCount", "label": "Number of deposits/installments to be made to the escrow account", "type": "radio",
+          "options": [
+            { "value": "1-2", "label": "1-2 Deposits" },
+            { "value": "3-5", "label": "3-5 Deposits" },
+            { "value": "5-10", "label": "5-10 Deposits" },
+            { "value": "10+", "label": "10 and more" }
+          ] },
+        { "id": "fundsCountry", "label": "Which country(ies) the funds will be coming from?", "type": "text" },
+        { "id": "bankAccountNames", "label": "Bank account names where the funds will be coming from", "type": "textarea" }
+      ]
+    },
+    {
+      "title": "Wire Instructions (where escrow should send funds owed to you)",
+      "fields": [
+        { "id": "wireBankName", "label": "Bank Name", "type": "text", "required": true },
+        { "id": "wireRoutingOrSwift", "label": "ABA/Wire Routing Number or SWIFT Code", "type": "text", "required": true },
+        { "id": "wireAccountName", "label": "Account Name", "type": "text", "required": true },
+        { "id": "wireAccountNumber", "label": "Account No. (IBAN/CLABE)", "type": "text", "required": true },
+        { "id": "wireBeneficiaryAddress", "label": "Beneficiary Address", "type": "textarea", "required": true },
+        { "id": "wireReference", "label": "Reference (optional)", "type": "text" },
+        { "id": "intermediaryBankName", "label": "Intermediary Bank (optional — international wires only)", "type": "text" },
+        { "id": "intermediaryBankSwift", "label": "Intermediary Bank ABA No or SWIFT Code (optional)", "type": "text" },
+        { "id": "wireAdditionalDetails", "label": "Additional Details (optional)", "type": "textarea" }
+      ]
+    }
+  ]
+}

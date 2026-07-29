@@ -1,0 +1,22 @@
+{
+  "name": "gruponar-closing-platform-backend",
+  "version": "0.1.0",
+  "description": "Backend real (auth con roles, base de datos, API de operaciones) para la plataforma de coordinación de cierres de Grupo Nar.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "seed": "node db/seed.js"
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "better-sqlite3": "^11.3.0",
+    "connect-sqlite3": "^0.9.15",
+    "cors": "^2.8.5",
+    "docusign-esign": "^10.0.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-session": "^1.18.0",
+    "multer": "^2.2.0",
+    "sqlite3": "^5.1.7"
+  }
+}
