@@ -412,12 +412,21 @@ function attachParties(rows) {
 router.get('/', requireAuth, (req, res) => {
   let rows;
   if (UNRESTRICTED_ROLES.includes(req.session.role)) {
-    rows = db.prepare(`SELECT d.*${COUNTS_SQL} FROM deals d ORDER BY d.created_at DESC`).all();
+    rows = db.prepare(`SELECT d.*${COUNTS_SQL} FROM deals d WHERE d.deleted_at IS NULL ORDER BY d.created_at DESC`).all();
+  } else if (req.session.role === 'lawyer') {
+    // Ve lo que creó (sin necesitar una fila en deal_parties) más lo que un
+    // admin le asignó explícitamente — ver lib/access.js canAccessDeal.
+    rows = db.prepare(`
+      SELECT DISTINCT d.*${COUNTS_SQL} FROM deals d
+      LEFT JOIN deal_parties dp ON dp.deal_id = d.id AND dp.user_id = ?
+      WHERE (dp.user_id = ? OR d.created_by = ?) AND d.deleted_at IS NULL
+      ORDER BY d.created_at DESC
+    `).all(req.session.userId, req.session.userId, req.session.userId);
   } else {
     rows = db.prepare(`
       SELECT d.*${COUNTS_SQL} FROM deals d
       JOIN deal_parties dp ON dp.deal_id = d.id
-      WHERE dp.user_id = ?
+      WHERE dp.user_id = ? AND d.deleted_at IS NULL
       ORDER BY d.created_at DESC
     `).all(req.session.userId);
   }
@@ -496,9 +505,22 @@ router.post('/', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rat
   }
 });
 
+// GET /api/deals/trash — solo admin, lista lo que está en la papelera.
+// Declarada ANTES de GET /:id (mismo largo de path, "trash" no debe
+// interpretarse como un :id) para que Express la reconozca primero.
+router.get('/trash', requireRole('admin'), (req, res) => {
+  const rows = db.prepare(`
+    SELECT d.*, u.name AS deleted_by_name
+    FROM deals d LEFT JOIN users u ON u.id = d.deleted_by
+    WHERE d.deleted_at IS NOT NULL
+    ORDER BY d.deleted_at DESC
+  `).all();
+  res.json(rows);
+});
+
 // GET /api/deals/:id — detalle completo con partes, docs y tareas.
 router.get('/:id', requireAuth, (req, res) => {
-  const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id);
+  const deal = db.prepare('SELECT * FROM deals WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
 
   if (!canAccessDeal(req, deal.id)) {
@@ -813,38 +835,42 @@ router.post('/:id/parties/:partyId/remind', requireRole('admin', 'agent', 'lawye
   res.json({ ok: true, count: pending.length });
 });
 
-// GET /api/deals/:id/available-agents — agentes (con cuenta, activos O
-// pendientes de aprobación) que todavía NO están ligados a esta operación —
-// para el dropdown de "agregar agente" en el detalle de la operación, en vez
-// de tener que generar una invitación nueva para alguien que ya es parte del
-// equipo. Se incluyen los pendientes porque a veces hay que asignar al
-// agente a la operación antes de que un admin le apruebe la cuenta (no
-// pueden iniciar sesión mientras siga pendiente, pero sí quedar asignados
-// desde ya) — status se manda para que la UI lo marque como "pendiente".
-// Los abogados no aparecen acá: ya ven todas las operaciones
-// (UNRESTRICTED_ROLES en lib/access.js), no hace falta ligarlos por deal.
+// GET /api/deals/:id/available-agents — agentes/abogados externos/abogados
+// internos (con cuenta, activos O pendientes de aprobación) que todavía NO
+// están ligados a esta operación — para el dropdown de "agregar" en el
+// detalle de la operación, en vez de tener que generar una invitación
+// nueva para alguien que ya es parte del equipo. Se incluyen los
+// pendientes porque a veces hay que asignar a la operación antes de que un
+// admin le apruebe la cuenta (no puede iniciar sesión mientras siga
+// pendiente, pero sí queda asignado desde ya) — status se manda para que
+// la UI lo marque como "pendiente".
+// Un abogado interno YA NO ve todas las operaciones automáticamente (ver
+// lib/access.js) — por eso ahora también aparece aquí, para que un admin
+// pueda asignarlo a una operación específica (o para que el que la creó
+// aparezca ya excluido, si se agregó a mano de más).
 router.get('/:id/available-agents', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const agents = db.prepare(`
     SELECT id, name, email, agency, status, role FROM users
-    WHERE role IN ('agent', 'external_lawyer') AND status IN ('active', 'pending')
+    WHERE role IN ('agent', 'external_lawyer', 'lawyer') AND status IN ('active', 'pending')
       AND id NOT IN (SELECT user_id FROM deal_parties WHERE deal_id = ? AND role_in_deal = 'agent')
     ORDER BY status = 'pending', name
   `).all(req.params.id);
   res.json(agents);
 });
 
-// POST /api/deals/:id/agents — liga a esta operación un agente que YA tiene
-// cuenta (elegido del dropdown de available-agents), sin pasar por el flujo
-// de invitación/contraseña — solo tiene sentido para alguien que ya se
-// registró antes en la plataforma. Se permite aunque su cuenta siga
-// 'pending' de aprobación (queda asignado desde ya; solo puede iniciar
-// sesión una vez que un admin lo apruebe, esa regla no cambia).
+// POST /api/deals/:id/agents — liga a esta operación un agente/abogado
+// externo/abogado interno que YA tiene cuenta (elegido del dropdown de
+// available-agents), sin pasar por el flujo de invitación/contraseña —
+// solo tiene sentido para alguien que ya se registró antes en la
+// plataforma. Se permite aunque su cuenta siga 'pending' de aprobación
+// (queda asignado desde ya; solo puede iniciar sesión una vez que un admin
+// lo apruebe, esa regla no cambia).
 router.post('/:id/agents', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, validateBody(addAgentSchema), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const { userId, representsSide } = req.body;
-  const user = db.prepare("SELECT * FROM users WHERE id = ? AND role IN ('agent', 'external_lawyer') AND status IN ('active', 'pending')").get(userId);
-  if (!user) return res.status(400).json({ error: 'Ese usuario no existe o no es un agente/abogado externo.' });
+  const user = db.prepare("SELECT * FROM users WHERE id = ? AND role IN ('agent', 'external_lawyer', 'lawyer') AND status IN ('active', 'pending')").get(userId);
+  if (!user) return res.status(400).json({ error: 'Ese usuario no existe o no es un agente/abogado.' });
   const already = db.prepare('SELECT 1 FROM deal_parties WHERE deal_id = ? AND user_id = ?').get(req.params.id, userId);
   if (already) return res.status(409).json({ error: 'Ese agente ya está en esta operación.' });
   db.prepare("INSERT INTO deal_parties (deal_id, user_id, role_in_deal, represents_side) VALUES (?,?,'agent',?)").run(req.params.id, userId, representsSide || null);
@@ -1144,11 +1170,38 @@ router.patch('/:id/tasks/:taskId', requireRole('admin', 'lawyer'), rateLimitWrit
   res.json({ ok: true });
 });
 
-// DELETE /api/deals/:id — admin/abogado cualquiera; agente solo las suyas.
+// DELETE /api/deals/:id — a la papelera, no se borra de una vez. Antes un
+// solo clic + el confirm() del navegador bastaban para perder una
+// operación real para siempre (borraba la fila, sus partes/documentos/
+// tareas/KYC en cascada, Y los archivos en Cloud Storage, todo sin
+// respaldo) — ahora solo se marca deleted_at y se esconde de la lista
+// normal; un admin la puede restaurar desde la Papelera, o borrarla de
+// verdad aparte (DELETE .../permanent) cuando esté seguro.
 router.delete('/:id', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
-  const info = db.prepare('DELETE FROM deals WHERE id = ?').run(req.params.id);
+  const info = db.prepare("UPDATE deals SET deleted_at = datetime('now'), deleted_by = ? WHERE id = ? AND deleted_at IS NULL")
+    .run(req.session.userId, req.params.id);
   if (!info.changes) return res.status(404).json({ error: 'Operación no encontrada.' });
+  res.json({ ok: true });
+});
+
+// POST /api/deals/:id/restore — solo admin, saca una operación de la
+// papelera (limpia deleted_at, vuelve a aparecer normal en todos lados).
+router.post('/:id/restore', requireRole('admin'), rateLimitWrite, (req, res) => {
+  const info = db.prepare("UPDATE deals SET deleted_at = NULL, deleted_by = NULL WHERE id = ? AND deleted_at IS NOT NULL")
+    .run(req.params.id);
+  if (!info.changes) return res.status(404).json({ error: 'No hay ninguna operación borrada con ese id.' });
+  res.json({ ok: true });
+});
+
+// DELETE /api/deals/:id/permanent — solo admin, el borrado de verdad (lo
+// que antes hacía DELETE /:id): borra la fila en cascada y los archivos en
+// Cloud Storage. Solo funciona sobre algo que YA está en la papelera —
+// no se puede saltar directo de "activa" a "borrada para siempre" sin
+// pasar por ahí primero.
+router.delete('/:id/permanent', requireRole('admin'), rateLimitWrite, (req, res) => {
+  const info = db.prepare('DELETE FROM deals WHERE id = ? AND deleted_at IS NOT NULL').run(req.params.id);
+  if (!info.changes) return res.status(404).json({ error: 'Esa operación no está en la papelera (bórrala primero para poder eliminarla para siempre).' });
   gcsStorage.deletePrefix(String(req.params.id) + '/').catch(err => {
     console.error('[gcs] no se pudieron borrar los archivos de la operación', req.params.id, err.message);
   });

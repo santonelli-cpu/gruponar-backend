@@ -54,7 +54,13 @@
   .btn.primary:hover{background:var(--oxblood-deep); color:#fff;}
   .btn.gold{background:var(--gold); color:#fff; border-color:var(--gold);}
   .btn.gold:hover{color:#fff; opacity:0.9;}
-  .deal-card{border:0.5px solid var(--line); border-radius:14px; padding:16px; margin-bottom:12px; background:var(--stone-card); cursor:pointer; transition:all 0.15s; box-shadow:var(--shadow-card);}
+  .deal-card{position:relative; border:0.5px solid var(--line); border-radius:14px; padding:16px; margin-bottom:12px; background:var(--stone-card); cursor:pointer; transition:all 0.15s; box-shadow:var(--shadow-card);}
+  .deal-card-menu-btn{position:absolute; top:10px; right:10px; width:28px; height:28px; border-radius:50%; border:none; background:transparent; color:var(--ink-faint); display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:16px;}
+  .deal-card-menu-btn:hover{background:var(--stone); color:var(--ink);}
+  .deal-card-menu{position:absolute; top:40px; right:10px; background:var(--stone-card); border:0.5px solid var(--line); border-radius:10px; box-shadow:0 4px 16px rgba(33,22,19,0.14); z-index:5; min-width:170px; overflow:hidden;}
+  .deal-card-menu button{display:flex; align-items:center; gap:8px; width:100%; text-align:left; padding:9px 12px; font-size:12.5px; background:none; border:none; cursor:pointer; color:var(--ink);}
+  .deal-card-menu button:hover{background:var(--stone);}
+  .deal-card-menu button.danger{color:var(--oxblood);}
   .deal-card:hover{border-color:var(--oxblood); transform:translateY(-1px);}
   .deal-card.active{border-color:var(--oxblood); box-shadow:0 0 0 3px var(--oxblood-soft);}
   .deal-title{font-weight:600; font-size:14.5px;}
@@ -371,7 +377,12 @@ const TYPE_LABEL = new Proxy(TYPE_LABEL_I18N, {
 const STRINGS = {
   es: {
     tabAdmin: 'Admin', tabStaffOperations: 'Operaciones', tabPortal: 'Portal cliente / agente',
-    navDashboard: 'Dashboard', navOperations: 'Operaciones', navTeam: 'Equipo', navClients: 'Clientes',
+    navDashboard: 'Dashboard', navOperations: 'Operaciones', navTeam: 'Equipo', navClients: 'Clientes', navTrash: 'Papelera',
+    trashTitle: 'Papelera', trashEmpty: 'No hay operaciones en la papelera.',
+    trashDeletedBy: 'Borrada por', trashDeletedAt: 'el', restoreDeal: 'Restaurar',
+    deletePermanently: 'Eliminar para siempre', confirmDeletePermanently: 'Esto SÍ borra la operación para siempre, incluyendo sus archivos. No se puede deshacer. ¿Seguro?',
+    dealMovedToTrash: 'La operación se movió a la Papelera — un admin la puede restaurar desde ahí si hizo falta.',
+    dealMenu: 'Más opciones',
     downloadCsv: 'Descargar lista (CSV)', noClientsYet: 'Todavía no hay compradores ni vendedores con cuenta.',
     phonePh: 'Teléfono', noDealsYet: 'Sin operación ligada',
     searchByName: 'Buscar por nombre...', allRoles: 'Todos', noClientsMatch: 'Ningún cliente coincide con la búsqueda/filtro.',
@@ -424,7 +435,7 @@ const STRINGS = {
     dashboard: 'Dashboard', loadingDashboard: 'Cargando dashboard...',
     statActiveDeals: 'Operaciones activas', statDocsPending: 'Documentos pendientes', statTasksUnfinished: 'Tareas sin terminar', statAwaitingSignature: 'Esperando firma',
     awaitingSignature: 'Esperando firma', signature: 'Firma',
-    pendingByDeal: 'Pendientes por operación', noPending: 'No hay documentos ni tareas pendientes. Al día.',
+    pendingByDeal: 'Pendientes por operación', noPending: 'No hay documentos ni tareas pendientes. Al día.', toggleExpand: 'Desplegar/ocultar',
     viewDeal: 'Ver operación', stale: 'Atrasado',
     docLabel: 'Documento', taskLabel: 'Tarea', propertyLabel: 'Propiedad', sellerLabel: 'vendedor', buyerLabel: 'comprador',
     pendingApprovalTitle: 'Cuentas pendientes de aprobación', loading: 'Cargando...',
@@ -489,7 +500,7 @@ const STRINGS = {
     closingDateLabel: 'Fecha de cierre', ddEndLabel: 'Fin de due diligence',
     deleteDeal: 'Eliminar operación',
     confirmChangeEscrow: '¿Cambiar la escrow company a {company}? Si ya hay expedientes KYC guardados con la plantilla vieja, van a seguir con esa plantilla hasta que los reinicies desde su sección.',
-    confirmDeleteDeal: '¿Eliminar esta operación? Esta acción no se puede deshacer.',
+    confirmDeleteDeal: '¿Eliminar esta operación? Se mueve a la Papelera — un admin la puede restaurar desde ahí si hace falta.',
     sellersAndBuyers: 'Vendedores y compradores', propertySection: 'Propiedad', docsChecklist: 'Checklist de documentos (KYC)',
     notaryClosingCostsSection: 'Gastos de cierre (notario)',
     viewClosingCosts: 'Ver costos de cierre', closingCostsNotReady: 'Todavía no están listos los costos de cierre.',
@@ -594,7 +605,12 @@ const STRINGS = {
   },
   en: {
     tabAdmin: 'Admin', tabStaffOperations: 'Deals', tabPortal: 'Client / agent portal',
-    navDashboard: 'Dashboard', navOperations: 'Deals', navTeam: 'Team', navClients: 'Clients',
+    navDashboard: 'Dashboard', navOperations: 'Deals', navTeam: 'Team', navClients: 'Clients', navTrash: 'Trash',
+    trashTitle: 'Trash', trashEmpty: 'No deals in the trash.',
+    trashDeletedBy: 'Deleted by', trashDeletedAt: 'on', restoreDeal: 'Restore',
+    deletePermanently: 'Delete forever', confirmDeletePermanently: 'This DOES delete the deal forever, including its files. This cannot be undone. Are you sure?',
+    dealMovedToTrash: 'The deal was moved to Trash — an admin can restore it from there if needed.',
+    dealMenu: 'More options',
     downloadCsv: 'Download list (CSV)', noClientsYet: 'No buyers or sellers with an account yet.',
     phonePh: 'Phone', noDealsYet: 'No linked deal',
     searchByName: 'Search by name...', allRoles: 'All', noClientsMatch: 'No client matches that search/filter.',
@@ -647,7 +663,7 @@ const STRINGS = {
     dashboard: 'Dashboard', loadingDashboard: 'Loading dashboard...',
     statActiveDeals: 'Active deals', statDocsPending: 'Pending documents', statTasksUnfinished: 'Unfinished tasks', statAwaitingSignature: 'Awaiting signature',
     awaitingSignature: 'Awaiting signature', signature: 'Signature',
-    pendingByDeal: 'Pending by deal', noPending: 'No pending documents or tasks. All caught up.',
+    pendingByDeal: 'Pending by deal', noPending: 'No pending documents or tasks. All caught up.', toggleExpand: 'Expand/collapse',
     viewDeal: 'View deal', stale: 'Overdue',
     docLabel: 'Document', taskLabel: 'Task', propertyLabel: 'Property', sellerLabel: 'seller', buyerLabel: 'buyer',
     pendingApprovalTitle: 'Accounts pending approval', loading: 'Loading...',
@@ -712,7 +728,7 @@ const STRINGS = {
     closingDateLabel: 'Closing date', ddEndLabel: 'Due diligence end',
     deleteDeal: 'Delete deal',
     confirmChangeEscrow: "Change the escrow company to {company}? If there are already saved KYC records with the old template, they'll keep using that template until you reset them from their own section.",
-    confirmDeleteDeal: 'Delete this deal? This action cannot be undone.',
+    confirmDeleteDeal: 'Delete this deal? It moves to Trash — an admin can restore it from there if needed.',
     sellersAndBuyers: 'Sellers and buyers', propertySection: 'Property', docsChecklist: 'Document checklist (KYC)',
     notaryClosingCostsSection: 'Closing costs (notary)',
     viewClosingCosts: 'View closing costs', closingCostsNotReady: "Closing costs aren't ready yet.",
@@ -846,10 +862,16 @@ function clearKycCacheForDeal(dealId){
 let contractCache = {};
 let availableAgentsCache = {};
 let notaryPaymentNote = undefined;
+// Cuáles tarjetas de "Pendientes por operación" del Dashboard están
+// desplegadas — sin entrada todavía, una tarjeta con pocos pendientes
+// arranca abierta y una con muchos arranca cerrada (ver buildDashboard).
+let dashboardExpandedGroups = {};
 let driveStatus = null;
 let escrowFormOpenFor = null;
 let activeDealId = null;
 let editingDealId = null;
+let trashedDeals = null;
+let dealMenuOpenFor = null;
 let portalRole = 'agent'; // solo se usa en isPreview para elegir "Agente" vs una parte específica
 let portalPartyId = null; // qué deal_party_entities.id está previsualizando el staff
 let portalDealId = null;
@@ -1018,7 +1040,7 @@ async function loadData(){
     }
   }
   if(['admin','agent','lawyer','external_lawyer'].includes(currentUser.role)) loadDashboard();
-  if(currentUser.role === 'admin') loadPendingUsers();
+  if(currentUser.role === 'admin'){ loadPendingUsers(); loadTrash(); }
   // Link directo a una operación (ej. desde el correo de "te agregamos a
   // esta operación") — ?dealId=123 en la URL la abre de una vez.
   const linkedDealId = Number(new URLSearchParams(window.location.search).get('dealId'));
@@ -1032,6 +1054,12 @@ async function loadData(){
 async function loadDashboard(){
   try{ dashboardData = await apiFetch('/api/dashboard'); }
   catch(e){ dashboardData = null; }
+  render();
+}
+
+async function loadTrash(){
+  try{ trashedDeals = await apiFetch('/api/deals/trash'); }
+  catch(e){ trashedDeals = []; }
   render();
 }
 
@@ -1050,7 +1078,17 @@ async function openDeal(dealId){
     const adapted = adaptDealDetail(full);
     const idx = deals.findIndex(d=>d.id===dealId);
     if(idx>=0) deals[idx] = adapted; else deals.push(adapted);
-  }catch(e){ alert(e.message); }
+  }catch(e){
+    alert(e.message);
+    // La operación ya no existe (alguien más la borró) o ya no la puedes
+    // ver — antes se quedaba la copia vieja en `deals` (de cuando sí
+    // existía) y el detalle se seguía mostrando con esos datos viejos
+    // justo después del aviso de error. Se quita de la lista en memoria y
+    // se regresa a la lista, en vez de dejar la operación "fantasma"
+    // abierta.
+    deals = deals.filter(d => d.id !== dealId);
+    if(activeDealId === dealId) activeDealId = null;
+  }
   render();
 }
 
@@ -1672,7 +1710,7 @@ document.getElementById('header-logout').addEventListener('click', logout);
 
 // ---------- ADMIN ----------
 function renderAdmin(body){
-  if(adminView === 'list' || adminView === 'dashboard' || adminView === 'team' || adminView === 'clients' || adminView === null){
+  if(adminView === 'list' || adminView === 'dashboard' || adminView === 'team' || adminView === 'clients' || adminView === 'trash' || adminView === null){
     const secCard = document.createElement('div');
     secCard.className = 'card';
     const initials = currentUser.name.trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
@@ -1700,6 +1738,7 @@ function renderAdmin(body){
       <button class="btn ${adminView==='list'?'primary':''}" id="nav-list">${t('navOperations')}</button>
       ${currentUser.role==='admin' ? `<button class="btn ${adminView==='team'?'primary':''}" id="nav-team">${t('navTeam')}${pendingUsers && pendingUsers.length ? ` (${pendingUsers.length})` : ''}</button>` : ''}
       ${currentUser.role==='admin' ? `<button class="btn ${adminView==='clients'?'primary':''}" id="nav-clients">${t('navClients')}</button>` : ''}
+      ${currentUser.role==='admin' ? `<button class="btn ${adminView==='trash'?'primary':''}" id="nav-trash">${t('navTrash')}${trashedDeals && trashedDeals.length ? ` (${trashedDeals.length})` : ''}</button>` : ''}
     `;
     body.appendChild(nav);
     nav.querySelector('#nav-dashboard').onclick = () => { adminView='dashboard'; activeDealId=null; loadDashboard(); };
@@ -1708,6 +1747,8 @@ function renderAdmin(body){
     if(teamBtn) teamBtn.onclick = () => { adminView='team'; activeDealId=null; render(); };
     const clientsBtn = nav.querySelector('#nav-clients');
     if(clientsBtn) clientsBtn.onclick = () => { adminView='clients'; activeDealId=null; render(); };
+    const trashBtn = nav.querySelector('#nav-trash');
+    if(trashBtn) trashBtn.onclick = () => { adminView='trash'; activeDealId=null; loadTrash(); };
   }
 
   if(adminView === 'team'){
@@ -1717,6 +1758,11 @@ function renderAdmin(body){
 
   if(adminView === 'clients'){
     body.appendChild(buildClientsSection());
+    return;
+  }
+
+  if(adminView === 'trash'){
+    body.appendChild(buildTrashSection());
     return;
   }
 
@@ -1768,17 +1814,62 @@ function renderAdmin(body){
   }
   visibleDeals.forEach(d => {
     const s = SCENARIOS[d.scenario];
+    const canManageDeal = ['admin','agent','lawyer','external_lawyer'].includes(currentUser.role);
     const card = document.createElement('div');
     card.className = 'deal-card';
     card.innerHTML = `
+      ${canManageDeal ? `<button class="deal-card-menu-btn" id="menu-btn-${d.id}" title="${t('dealMenu')}"><i class="ti ti-dots-vertical" aria-hidden="true"></i></button>` : ''}
       <div class="deal-title">${escapeHtml(d.property)}</div>
       <div class="deal-sub">${escapeHtml(dealPartyNames(d,'seller'))} → ${escapeHtml(dealPartyNames(d,'buyer'))} · ${d.currency||'USD'} ${Number(d.price||0).toLocaleString()}${d.furniturePrice ? ' + '+Number(d.furniturePrice).toLocaleString()+' muebles' : ''}</div>
       <span class="badge ${s.badgeClass}">${s.labelShort}</span>
       <span class="badge" style="background:var(--stone); border:0.5px solid var(--line); color:var(--ink-soft); margin-left:4px;">${DEVELOPMENT_LABEL[d.development||'punta_mita'].split(' (')[0]}</span>
       ${d.status==='completed' ? `<span class="badge" style="background:var(--jade-soft); color:var(--jade); margin-left:4px;">${t('dealCompletedBadge')}</span>` : ''}
       <div class="deal-sub" style="margin-top:6px;">Docs: ${pctDocs(d)}% · Tracker: ${pctTasks(d)}%</div>
+      ${dealMenuOpenFor === d.id ? `
+        <div class="deal-card-menu" id="menu-${d.id}">
+          <button id="menu-edit-${d.id}"><i class="ti ti-pencil" aria-hidden="true"></i> ${t('editDeal')}</button>
+          <button id="menu-status-${d.id}"><i class="ti ti-${d.status==='completed'?'rotate':'check'}" aria-hidden="true"></i> ${d.status==='completed' ? t('reopenDeal') : t('markDealCompleted')}</button>
+          <button class="danger" id="menu-delete-${d.id}"><i class="ti ti-trash" aria-hidden="true"></i> ${t('deleteDeal')}</button>
+        </div>
+      ` : ''}
     `;
     card.onclick = () => { activeDealId = d.id; openDeal(d.id); };
+    const menuBtn = card.querySelector(`#menu-btn-${d.id}`);
+    if(menuBtn) menuBtn.onclick = (e) => {
+      e.stopPropagation();
+      dealMenuOpenFor = dealMenuOpenFor === d.id ? null : d.id;
+      render();
+    };
+    const menuEl = card.querySelector(`#menu-${d.id}`);
+    if(menuEl){
+      menuEl.onclick = (e) => e.stopPropagation();
+      menuEl.querySelector(`#menu-edit-${d.id}`).onclick = async () => {
+        dealMenuOpenFor = null;
+        activeDealId = d.id;
+        editingDealId = d.id;
+        await openDeal(d.id);
+      };
+      menuEl.querySelector(`#menu-status-${d.id}`).onclick = async () => {
+        dealMenuOpenFor = null;
+        const nextStatus = d.status === 'completed' ? 'active' : 'completed';
+        if(nextStatus === 'completed' && !confirm(t('confirmMarkCompleted'))) return;
+        try{
+          await apiFetch(`/api/deals/${d.id}`, { method:'PATCH', body: JSON.stringify({ status: nextStatus }) });
+          d.status = nextStatus;
+          render();
+        }catch(err){ alert(err.message); }
+      };
+      menuEl.querySelector(`#menu-delete-${d.id}`).onclick = async () => {
+        dealMenuOpenFor = null;
+        if(!confirm(t('confirmDeleteDeal'))) return;
+        try{
+          await apiFetch(`/api/deals/${d.id}`, { method: 'DELETE' });
+          deals = deals.filter(x => x.id !== d.id);
+          if(currentUser.role === 'admin') loadTrash();
+          render();
+        }catch(err){ alert(err.message); }
+      };
+    }
     body.appendChild(card);
   });
 }
@@ -1899,11 +1990,30 @@ function buildDashboard(){
   } else {
     Object.entries(groups).forEach(([dealId, g]) => {
       const card = document.createElement('div'); card.className = 'card';
+      const totalCount = g.docs.length + g.tasks.length;
+      // Sin tocar todavía: pocos pendientes arranca abierto, muchos arranca
+      // cerrado — para que una operación con 15+ pendientes no siempre
+      // ocupe toda la pantalla del Dashboard.
+      const isExpanded = dashboardExpandedGroups[dealId] !== undefined ? dashboardExpandedGroups[dealId] : totalCount <= 4;
       const header = document.createElement('div');
       header.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; cursor:pointer;';
-      header.innerHTML = `<span style="font-weight:600; font-size:13.5px;">${escapeHtml(g.property)}</span><span class="field-hint" style="margin:0;">${t('viewDeal')} <i class="ti ti-arrow-right" aria-hidden="true"></i></span>`;
+      header.innerHTML = `
+        <span style="display:flex; align-items:center; gap:8px;">
+          <button class="icon-btn" id="toggle-${dealId}" style="width:24px; height:24px; flex-shrink:0;" title="${t('toggleExpand')}"><i class="ti ti-chevron-${isExpanded?'down':'right'}" aria-hidden="true"></i></button>
+          <span style="font-weight:600; font-size:13.5px;">${escapeHtml(g.property)}</span>
+          <span class="field-hint" style="margin:0;">(${totalCount})</span>
+        </span>
+        <span class="field-hint" style="margin:0;">${t('viewDeal')} <i class="ti ti-arrow-right" aria-hidden="true"></i></span>
+      `;
       header.onclick = () => { adminView='list'; activeDealId=Number(dealId); openDeal(Number(dealId)); };
       card.appendChild(header);
+      header.querySelector(`#toggle-${dealId}`).onclick = (e) => {
+        e.stopPropagation();
+        dashboardExpandedGroups[dealId] = !isExpanded;
+        render();
+      };
+
+      if(!isExpanded){ wrap.appendChild(card); return; }
 
       g.docs.forEach(doc => {
         const row = document.createElement('div');
@@ -2256,6 +2366,67 @@ async function loadClients(){
     clientsCache = { error: e.message };
   }
   render();
+}
+
+// Papelera — operaciones borradas (DELETE /api/deals/:id ya no las borra de
+// una vez, ver routes/deals.js) que un admin puede restaurar o eliminar
+// para siempre. Se agregó después de que un abogado interno borró una
+// operación real sin querer y no había forma de recuperarla.
+function buildTrashSection(){
+  const wrap = document.createElement('div');
+  const title = document.createElement('div');
+  title.className = 'section-title'; title.textContent = t('trashTitle');
+  wrap.appendChild(title);
+  const card = document.createElement('div'); card.className = 'card';
+
+  if(trashedDeals === null){
+    card.innerHTML = `<div class="field-hint" style="margin:0;">${t('loading')}</div>`;
+    loadTrash();
+    wrap.appendChild(card);
+    return wrap;
+  }
+  if(!trashedDeals.length){
+    card.innerHTML = `<div class="field-hint" style="margin:0;">${t('trashEmpty')}</div>`;
+    wrap.appendChild(card);
+    return wrap;
+  }
+
+  card.innerHTML = '';
+  trashedDeals.forEach(d => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; padding:10px 0; border-bottom:0.5px solid var(--line);';
+    const deletedAt = d.deleted_at ? new Date(d.deleted_at.replace(' ', 'T') + 'Z').toLocaleString(lang === 'en' ? 'en-US' : 'es-MX') : '';
+    row.innerHTML = `
+      <div>
+        <div style="font-weight:600; font-size:13.5px;">${escapeHtml(d.property)}</div>
+        <div class="field-hint" style="margin:2px 0 0;">${t('trashDeletedBy')} ${escapeHtml(d.deleted_by_name || '—')} ${t('trashDeletedAt')} ${escapeHtml(deletedAt)}</div>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn success" id="restore-${d.id}"><i class="ti ti-rotate" aria-hidden="true"></i> ${t('restoreDeal')}</button>
+        <button class="btn danger" id="purge-${d.id}"><i class="ti ti-trash" aria-hidden="true"></i> ${t('deletePermanently')}</button>
+      </div>
+    `;
+    card.appendChild(row);
+    row.querySelector(`#restore-${d.id}`).onclick = async () => {
+      try{
+        await apiFetch(`/api/deals/${d.id}/restore`, { method: 'POST' });
+        trashedDeals = trashedDeals.filter(x => x.id !== d.id);
+        deals = [];
+        render();
+        loadData();
+      }catch(e){ alert(e.message); }
+    };
+    row.querySelector(`#purge-${d.id}`).onclick = async () => {
+      if(!confirm(t('confirmDeletePermanently'))) return;
+      try{
+        await apiFetch(`/api/deals/${d.id}/permanent`, { method: 'DELETE' });
+        trashedDeals = trashedDeals.filter(x => x.id !== d.id);
+        render();
+      }catch(e){ alert(e.message); }
+    };
+  });
+  wrap.appendChild(card);
+  return wrap;
 }
 
 function downloadClientsCsv(clients){
@@ -4765,6 +4936,13 @@ function buildEscrowForm(deal, task){
   };
   return wrap;
 }
+
+// Cierra el menú "···" de una tarjeta de operación si se hace clic fuera de
+// él — los clics del propio botón/menú ya llaman stopPropagation, así que
+// esto solo se dispara para clics genuinamente afuera.
+document.addEventListener('click', () => {
+  if(dealMenuOpenFor !== null){ dealMenuOpenFor = null; render(); }
+});
 
 // --- Modal de firma embebida (DocuSign) ---
 loadData();

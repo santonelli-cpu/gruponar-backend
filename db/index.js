@@ -158,6 +158,16 @@ ensureColumn('invites', 'represents_side', 'represents_side TEXT');
 ensureColumn('deals', 'status', "status TEXT NOT NULL DEFAULT 'active'");
 ensureColumn('deals', 'closed_at', 'closed_at TEXT');
 
+// "Papelera" — DELETE /api/deals/:id (routes/deals.js) ya no borra la fila
+// de una vez: la marca como borrada (deleted_at) y la esconde de todo lo
+// normal (lista, dashboard, canAccessDeal), sin tocar sus documentos en
+// Cloud Storage todavía. Un admin puede restaurarla (limpia deleted_at) o
+// borrarla PARA SIEMPRE aparte (ahí sí se borra la fila y los archivos) —
+// antes un solo clic + confirmar en el navegador bastaba para perder una
+// operación real sin ninguna forma de recuperarla.
+ensureColumn('deals', 'deleted_at', 'deleted_at TEXT');
+ensureColumn('deals', 'deleted_by', 'deleted_by INTEGER');
+
 // La tarea "Cuenta de escrow aperturada" nunca traía requires_signature=1 en
 // data/scenario-tasks.json, así que la sección de "Firma electrónica" (donde
 // vive subir/generar el escrow agreement y mandarlo a firma) nunca se
