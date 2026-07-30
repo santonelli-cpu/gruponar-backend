@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const db = require('../db');
 const { requireRole, resolveAgency, KNOWN_AGENCIES } = require('./auth');
+const mailer = require('../lib/email');
 
 const router = express.Router();
 
@@ -42,11 +43,18 @@ router.get('/', requireRole('admin'), (req, res) => {
 });
 
 // PATCH /api/users/:id/approve — activa una cuenta autoregistrada
-// (routes/auth.js POST /register la crea en status='pending').
+// (routes/auth.js POST /register la crea en status='pending'). Le avisamos
+// por correo a la persona misma — antes no se enteraba de que ya podía
+// entrar hasta que lo intentaba por su cuenta.
 router.patch('/:id/approve', requireRole('admin'), (req, res) => {
-  const info = db.prepare("UPDATE users SET status = 'active' WHERE id = ? AND status = 'pending'").run(req.params.id);
-  if (!info.changes) return res.status(404).json({ error: 'No hay una cuenta pendiente con ese id.' });
+  const user = db.prepare("SELECT id, name, email FROM users WHERE id = ? AND status = 'pending'").get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'No hay una cuenta pendiente con ese id.' });
+  db.prepare("UPDATE users SET status = 'active' WHERE id = ?").run(user.id);
   res.json({ ok: true });
+
+  if (mailer.isConfigured()) {
+    mailer.sendAccountApprovedEmail({ to: user.email, name: user.name, url: `${req.protocol}://${req.get('host')}/` });
+  }
 });
 
 // POST /api/users/:id/reset-2fa — para cuando alguien pierde el teléfono

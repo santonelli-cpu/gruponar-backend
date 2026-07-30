@@ -72,6 +72,7 @@
   .badge.scn-trust-termination{background:var(--oxblood-soft); color:var(--oxblood);}
   .doc-list{list-style:none; padding:0; margin:0;}
   .doc-item{display:flex; align-items:center; flex-wrap:wrap; gap:10px; padding:9px 0; border-bottom:0.5px solid var(--line); font-size:13px;}
+  .doc-item-actions{margin-left:auto; display:flex; align-items:center; flex-wrap:wrap; gap:8px;}
   .review-badge{font-size:10.5px; padding:3px 10px; border-radius:20px; font-weight:500; white-space:nowrap;}
   .review-badge.pending{background:var(--stone); border:0.5px solid var(--line); color:var(--ink-soft);}
   .review-badge.approved{background:var(--jade-soft); color:var(--jade);}
@@ -159,6 +160,7 @@
     .step:not(:last-child)::after{display:none;}
     .step-label{max-width:none; text-align:left;}
     .callout{flex-direction:column; align-items:flex-start;}
+    .doc-item-actions{margin-left:0; flex-basis:100%; justify-content:flex-start;}
   }
   .task-en{font-weight:500; font-size:13.5px;}
   .task-es{font-size:12px; color:var(--ink-soft); font-style:italic;}
@@ -3230,7 +3232,7 @@ function buildDocItemLi(deal, doc, isStaffView, readOnly){
     ? `<span class="review-badge ${doc.reviewStatus}">${t(doc.reviewStatus === 'approved' ? 'reviewApproved' : doc.reviewStatus === 'rejected' ? 'reviewRejected' : 'reviewPending')}</span>`
     : '';
   li.innerHTML = `<span class="doc-check ${doc.status==='done'?'done':''}" ${readOnly ? 'style="cursor:default;"' : ''}>${doc.status==='done'?'<i class=\"ti ti-check\" aria-hidden=\"true\"></i>':''}</span><span>${label}</span>
-    <span style="margin-left:auto; display:flex; align-items:center; gap:8px;">
+    <span class="doc-item-actions">
       ${subChecksHtml}
       ${reviewBadgeHtml}
       ${doc.fileUrl ? `<a href="/api/deals/${deal.id}/documents/${doc.id}/file" target="_blank" class="btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px;"><i class="ti ti-eye" aria-hidden="true"></i> ${t('viewFile')}</a>` : (readOnly ? `<span class="field-hint" style="margin:0;">${t('notUploaded')}</span>` : '')}
