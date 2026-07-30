@@ -188,7 +188,7 @@ router.post('/deals/:id/tasks/:taskId/generate-escrow-document', requireRole('ad
   let docxPath, pdfPath;
   try {
     docxPath = path.join(dealDir(req.params.id), `escrow-${task.id}-${Date.now()}.docx`);
-    fillArmourEscrow(deal, { placeDate, purchaseAgreementDescription, depositAmount, fees, expirationDate, noticeAddress, propertyLegalDescription }, docxPath, sellerNames, buyerNames);
+    fillArmourEscrow(deal, { placeDate, purchaseAgreementDescription, depositAmount, fees, expirationDate, noticeAddress, noticeAddressSeller, noticeAddressBuyer, propertyLegalDescription }, docxPath, sellerNames, buyerNames);
     pdfPath = convertDocxToPdf(docxPath);
     const key = path.join(String(req.params.id), path.basename(pdfPath));
     await gcsStorage.uploadLocalFile(key, pdfPath, 'application/pdf');

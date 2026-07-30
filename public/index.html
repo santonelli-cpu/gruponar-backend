@@ -3199,6 +3199,11 @@ function buildNotaryClosingCostsSection(deal, isStaffView){
       </div>
     </div>
   `;
+  // Subir/reemplazar la cotización del notario, y aprobarla/rechazarla, es
+  // solo de admin/abogado interno — igual que generar/mandar a firma el
+  // escrow y el contrato, un agente (aunque tenga isStaffView=true para el
+  // resto de la operación) no debe poder tocar este documento, solo verlo.
+  const canManageQuote = isStaffView && ['admin','lawyer'].includes(currentUser.role);
   const quoteActions = document.createElement('div');
   quoteActions.style.cssText = 'display:flex; gap:8px; flex-wrap:wrap;';
   if(quoteDoc.fileUrl){
@@ -3209,7 +3214,7 @@ function buildNotaryClosingCostsSection(deal, isStaffView){
     viewLink.innerHTML = `<i class="ti ti-eye" aria-hidden="true"></i> ${t('viewClosingCosts')}`;
     quoteActions.appendChild(viewLink);
   }
-  if(isStaffView){
+  if(canManageQuote){
     const fileInput = document.createElement('input');
     fileInput.type = 'file'; fileInput.style.display = 'none'; fileInput.accept = '.pdf,.jpg,.jpeg,.png,.heic';
     const uploadBtn = document.createElement('button');
@@ -3228,7 +3233,7 @@ function buildNotaryClosingCostsSection(deal, isStaffView){
     };
     quoteActions.appendChild(uploadBtn);
     quoteActions.appendChild(fileInput);
-    const canReview = ['admin','lawyer'].includes(currentUser.role);
+    const canReview = canManageQuote;
     if(canReview && quoteDoc.fileUrl && quoteDoc.reviewStatus !== 'approved'){
       const approveBtn = document.createElement('button');
       approveBtn.className = 'btn success'; approveBtn.style.fontSize = '11px'; approveBtn.textContent = t('approveDocument');
@@ -3260,7 +3265,7 @@ function buildNotaryClosingCostsSection(deal, isStaffView){
     noteEl.innerHTML = `<b>${t('reviewRejectedNote')}:</b> ${escapeHtml(quoteDoc.reviewNote)}`;
     box.appendChild(noteEl);
   }
-  if(!quoteDoc.fileUrl && !isStaffView){
+  if(!quoteDoc.fileUrl && !canManageQuote){
     const hint = document.createElement('div');
     hint.className = 'field-hint'; hint.style.cssText = 'margin:-8px 0 12px;';
     hint.textContent = t('closingCostsNotReady');
