@@ -12,7 +12,7 @@
     --stone:#F6F4F0; --stone-card:#FFFFFF;
     --ink:#211613; --ink-soft:#6E5F5A; --ink-faint:#A79A94;
     --oxblood:#58130E; --oxblood-deep:#3A0C08; --oxblood-soft:#F1E1DE;
-    --gold:#BD9247; --gold-soft:#F4E3BE;
+    --gold:#BD9247; --gold-soft:#F8F1E2;
     --clay:#9C5A32; --clay-soft:#F2E1D2;
     --jade:#3E6B52; --jade-soft:#DEE9E2;
     --line:rgba(33,22,19,0.12); --line-strong:rgba(33,22,19,0.24);
@@ -4140,6 +4140,11 @@ function buildNextStepCallout(deal, myParty){
   if(signatures.length){
     const task = signatures[0];
     box.innerHTML = `<p class="callout-text"><b>${t('nextStepLabel')}:</b> ${t('nextStepSignature', { name: escapeHtml(lang==='en' ? task.en : task.es) })}</p>`;
+    const btn = document.createElement('button');
+    btn.className = 'btn primary'; btn.style.whiteSpace = 'nowrap';
+    btn.textContent = t('viewSection');
+    btn.onclick = () => { document.getElementById('portal-esignature-section')?.scrollIntoView({ behavior:'smooth', block:'start' }); };
+    box.appendChild(btn);
   } else {
     const doc = uploads[0];
     const isPaymentProof = [ESCROW_PAYMENT_PROOF_DOC_NAME, NOTARY_PAYMENT_PROOF_DOC_NAME].includes(doc.name);
@@ -4334,7 +4339,7 @@ function buildSignatureTasksSection(deal, body, isStaffView){
   const canManage = isStaffView && ['admin','lawyer'].includes(currentUser.role);
   const signTasks = deal.tasks.filter(task=>task.sign);
   if(!signTasks.length) return;
-  const st = document.createElement('div'); st.className='section-title'; st.textContent=t('eSignature');
+  const st = document.createElement('div'); st.className='section-title'; st.id='portal-esignature-section'; st.textContent=t('eSignature');
   body.appendChild(st);
   const scard = document.createElement('div'); scard.className='card';
   scard.innerHTML = `<div class="field-hint" style="margin-top:0;">${canManage ? t('eSignHintStaff') : t('eSignHintClient')}</div>`;
