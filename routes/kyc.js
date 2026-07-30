@@ -7,6 +7,7 @@ const { requireAuth, requireRole } = require('./auth');
 const { canAccessDeal, myDealPartyEntityId } = require('../lib/access');
 const { dealDir } = require('../lib/storage');
 const gcsStorage = require('../lib/gcsStorage');
+const driveClient = require('../lib/googleDriveClient');
 const docusignClient = require('../lib/docusignClient');
 const { fillArmourIndividualEs, SIGNATURE_ANCHOR: ARMOUR_INDIVIDUAL_ANCHOR } = require('../lib/kycFill/armourIndividualEs');
 const { fillTlaIndividualEn, SIGNATURE_ANCHOR: TLA_IND_EN_ANCHOR } = require('../lib/kycFill/tlaIndividualEn');
@@ -121,6 +122,21 @@ function loadDeal(dealId) {
 
 function loadParty(dealId, partyId) {
   return db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(partyId, dealId);
+}
+
+// Copia el expediente KYC generado también a la subcarpeta Vendedor/Comprador
+// de Drive — best-effort, no bloquea la generación si Drive no está listo.
+async function syncKycToDrive(req, dealId, party, filename, pdfPath) {
+  if (!driveClient.isConfigured() || !driveClient.isConnected()) return;
+  const deal = db.prepare('SELECT drive_folder_id FROM deals WHERE id = ?').get(dealId);
+  if (!deal || !deal.drive_folder_id) return;
+  try {
+    const buffer = fs.readFileSync(pdfPath);
+    const subfolder = party.side === 'seller' ? 'Vendedor' : 'Comprador';
+    await driveClient.uploadFileToDealSubfolder(req, deal.drive_folder_id, subfolder, filename, buffer, 'application/pdf');
+  } catch (err) {
+    console.error('[google-drive] no se pudo copiar el KYC a Drive', dealId, filename, err.message);
+  }
 }
 
 function getSubmission(partyId, templateKey) {
@@ -298,6 +314,7 @@ router.post('/deals/:id/kyc/:partyId/generate', requireAuth, async (req, res) =>
     const pdfPath = convertDocxToPdf(docxPath);
     const key = path.join(String(id), path.basename(pdfPath));
     await gcsStorage.uploadLocalFile(key, pdfPath, 'application/pdf');
+    syncKycToDrive(req, id, party, `KYC ${template.label || submission.template_key} - ${party.name}.pdf`, pdfPath);
     fs.rmSync(docxPath, { force: true });
     fs.rmSync(pdfPath, { force: true });
 

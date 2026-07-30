@@ -25,6 +25,27 @@ async function tryCreateDriveFolder(req, dealId, property) {
   }
 }
 
+// Copia un documento ya subido a Cloud Storage también a la subcarpeta que
+// le toca en Drive (Propiedad/Vendedor/Comprador) — best-effort, nunca
+// bloquea ni revienta la subida real si Drive no está conectado o falla.
+// (kyc.js/contracts.js/docusign.js tienen su propia versión chica de esta
+// misma idea, no se comparte código entre archivos de rutas en este repo.)
+async function syncDocumentToDrive(req, dealId, deal_party_entity_id, filename, buffer, mimeType) {
+  if (!driveClient.isConfigured() || !driveClient.isConnected()) return;
+  const deal = db.prepare('SELECT drive_folder_id FROM deals WHERE id = ?').get(dealId);
+  if (!deal || !deal.drive_folder_id) return;
+  let subfolder = 'Propiedad';
+  if (deal_party_entity_id !== null && deal_party_entity_id !== undefined) {
+    const party = db.prepare('SELECT side FROM deal_party_entities WHERE id = ?').get(deal_party_entity_id);
+    if (party) subfolder = party.side === 'seller' ? 'Vendedor' : 'Comprador';
+  }
+  try {
+    await driveClient.uploadFileToDealSubfolder(req, deal.drive_folder_id, subfolder, filename, buffer, mimeType);
+  } catch (err) {
+    console.error('[google-drive] no se pudo copiar el documento a Drive', dealId, filename, err.message);
+  }
+}
+
 const ALLOWED_MIME = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/heic']);
 // memoryStorage: el archivo llega como buffer en req.file.buffer y cada
 // handler decide la clave y lo sube a Cloud Storage — ya no toca disco local
@@ -567,6 +588,7 @@ router.post('/:id/documents/:docId/file', requireAuth, (req, res, next) => {
           uploaded_by=?, uploaded_at=datetime('now') WHERE id=? AND deal_id=?
       `).run(key, req.file.originalname, req.file.mimetype, req.file.size, req.session.userId, req.params.docId, req.params.id);
       res.json({ ok: true });
+      syncDocumentToDrive(req, req.params.id, doc.deal_party_entity_id, `${doc.name}${doc.sub_label ? ' - ' + doc.sub_label : ''} - ${req.file.originalname}`, req.file.buffer, req.file.mimetype);
     } catch (uploadErr) {
       res.status(502).json({ error: uploadErr.message || 'Error al subir el archivo.' });
     }

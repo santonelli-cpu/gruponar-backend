@@ -9,6 +9,7 @@ const { requireAuth, requireRole } = require('./auth');
 const { canAccessDeal, myRoleInDeal } = require('../lib/access');
 const { genFilename } = require('../lib/storage');
 const gcsStorage = require('../lib/gcsStorage');
+const driveClient = require('../lib/googleDriveClient');
 const docusignClient = require('../lib/docusignClient');
 const { extractPlaceholders, fillContractTemplate, countPdfPages } = require('../lib/contractFill/mergeEngine');
 const { convertDocxToPdf } = require('../lib/kycFill/docxFillEngine');
@@ -87,6 +88,20 @@ function dealContractScratchDir(dealId) {
   const dir = path.join(os.tmpdir(), 'contract-scratch', String(dealId));
   fs.mkdirSync(dir, { recursive: true });
   return dir;
+}
+
+// Copia el contrato de promesa generado a la subcarpeta Propiedad de Drive
+// (es de la operación en general, no de una parte específica) — best-effort.
+async function syncContractToDrive(req, dealId, property, pdfPath) {
+  if (!driveClient.isConfigured() || !driveClient.isConnected()) return;
+  const deal = db.prepare('SELECT drive_folder_id FROM deals WHERE id = ?').get(dealId);
+  if (!deal || !deal.drive_folder_id) return;
+  try {
+    const buffer = fs.readFileSync(pdfPath);
+    await driveClient.uploadFileToDealSubfolder(req, deal.drive_folder_id, 'Propiedad', `Contrato de Promesa - ${property}.pdf`, buffer, 'application/pdf');
+  } catch (err) {
+    console.error('[google-drive] no se pudo copiar el contrato a Drive', dealId, err.message);
+  }
 }
 
 // GET /api/contract-templates?scenario=purchase — machotes disponibles para
@@ -226,6 +241,7 @@ router.post('/deals/:id/contract/generate', requireRole('admin', 'lawyer'), asyn
     const relPdf = path.join(String(id), 'contract', path.basename(pdfPath));
     await gcsStorage.uploadLocalFile(relDocx, docxPath, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     await gcsStorage.uploadLocalFile(relPdf, pdfPath, 'application/pdf');
+    syncContractToDrive(req, id, deal.property, pdfPath);
 
     db.prepare("UPDATE deals SET contract_status = 'generated', contract_generated_file_url = ? WHERE id = ?")
       .run(relPdf, id);

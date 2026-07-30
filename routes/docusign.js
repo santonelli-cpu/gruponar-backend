@@ -8,6 +8,7 @@ const { requireAuth, requireRole } = require('./auth');
 const { canAccessDeal, myRoleInDeal } = require('../lib/access');
 const { dealDir, genFilename } = require('../lib/storage');
 const gcsStorage = require('../lib/gcsStorage');
+const driveClient = require('../lib/googleDriveClient');
 const docusignClient = require('../lib/docusignClient');
 const { fillArmourEscrow } = require('../lib/kycFill/armourEscrow');
 const { convertDocxToPdf } = require('../lib/kycFill/docxFillEngine');
@@ -22,6 +23,20 @@ const upload = multer({
 
 function getTask(dealId, taskId) {
   return db.prepare('SELECT * FROM tasks WHERE id = ? AND deal_id = ?').get(taskId, dealId);
+}
+
+// Copia el documento de una tarea (escrow agreement generado, o cualquier
+// otro documento de cierre subido a mano) a la subcarpeta Escrow de Drive —
+// best-effort, no bloquea la subida/generación real si Drive no está listo.
+async function syncTaskDocToDrive(req, dealId, filename, buffer) {
+  if (!driveClient.isConfigured() || !driveClient.isConnected()) return;
+  const deal = db.prepare('SELECT drive_folder_id FROM deals WHERE id = ?').get(dealId);
+  if (!deal || !deal.drive_folder_id) return;
+  try {
+    await driveClient.uploadFileToDealSubfolder(req, deal.drive_folder_id, 'Escrow', filename, buffer, 'application/pdf');
+  } catch (err) {
+    console.error('[google-drive] no se pudo copiar el documento de la tarea a Drive', dealId, filename, err.message);
+  }
 }
 
 // Comprador y vendedor son quienes firman los documentos de cierre (escritura,
@@ -55,6 +70,7 @@ router.post('/deals/:id/tasks/:taskId/document', requireRole('admin', 'agent', '
       db.prepare('UPDATE tasks SET document_url = ?, document_original_name = ? WHERE id = ?')
         .run(key, req.file.originalname, task.id);
       res.json({ ok: true });
+      syncTaskDocToDrive(req, req.params.id, `${task.label_es} - ${req.file.originalname}`, req.file.buffer);
     } catch (uploadErr) {
       res.status(502).json({ error: uploadErr.message || 'Error al subir el archivo.' });
     }
@@ -82,6 +98,7 @@ router.post('/deals/:id/tasks/:taskId/generate-escrow-document', requireRole('ad
     pdfPath = convertDocxToPdf(docxPath);
     const key = path.join(String(req.params.id), path.basename(pdfPath));
     await gcsStorage.uploadLocalFile(key, pdfPath, 'application/pdf');
+    syncTaskDocToDrive(req, req.params.id, 'Escrow Agreement.pdf', fs.readFileSync(pdfPath));
 
     db.prepare('UPDATE tasks SET document_url = ?, document_original_name = ? WHERE id = ?')
       .run(key, 'Escrow Agreement.pdf', task.id);
