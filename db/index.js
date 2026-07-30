@@ -165,6 +165,11 @@ db.prepare(`
   WHERE doc_type = 'manual' AND label_es = 'Cuenta de escrow aperturada'
 `).run();
 
+// Lado que firma una tarea de firma ad-hoc (routes/docusign.js POST
+// /deals/:id/tasks) — NULL para las tareas fijas de scenario-tasks.json
+// (escrow, etc.), que siempre firman ambos lados.
+ensureColumn('tasks', 'sign_side', 'sign_side TEXT');
+
 // "Costos de cierre (recibo del notario)" se agregó a data/scenario-docs.json
 // como documento de Propiedad — insertPropertyDocs (routes/deals.js) solo
 // corre al CREAR una operación, así que las que ya existían nunca lo

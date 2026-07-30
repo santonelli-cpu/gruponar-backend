@@ -45,13 +45,17 @@ async function syncTaskDocToDrive(req, dealId, filename, buffer) {
 // vendedor(es) después ('2') — DocuSign no habilita la firma del vendedor
 // hasta que el/los comprador(es) completen la suya. dp.id como desempate deja
 // un orden estable cuando hay más de un firmante del mismo lado.
-function getSigners(dealId) {
+// `side`, si se manda, restringe los firmantes a solo ese lado — lo usan las
+// tareas de firma ad-hoc (tasks.sign_side, ver POST /deals/:id/tasks abajo)
+// para documentos que solo le tocan a comprador o a vendedor, nunca a ambos.
+function getSigners(dealId, side) {
   return db.prepare(`
     SELECT u.id AS userId, u.name, u.email, dp.role_in_deal AS roleInDeal
     FROM deal_parties dp JOIN users u ON u.id = dp.user_id
     WHERE dp.deal_id = ? AND dp.role_in_deal IN ('buyer','seller')
+      AND (? IS NULL OR dp.role_in_deal = ?)
     ORDER BY CASE dp.role_in_deal WHEN 'buyer' THEN 0 ELSE 1 END, dp.id
-  `).all(dealId);
+  `).all(dealId, side || null, side || null);
 }
 
 // Ancla de firma por lado — misma convención que routes/contracts.js y
@@ -72,6 +76,27 @@ function withSideIndex(signers) {
   const counters = { buyer: 0, seller: 0 };
   return signers.map(s => ({ ...s, sideIndex: counters[s.roleInDeal]++ }));
 }
+
+// POST /api/deals/:id/tasks — crea una tarea de firma ad-hoc para un
+// documento que no tiene su propio renglón fijo en scenario-tasks.json (ej.
+// un NDA o un poder que solo aplica a esta operación). Solo admin/abogado
+// interno, y siempre eligiendo un solo lado firmante — si hiciera falta que
+// firmen ambos ya está el escrow agreement/contrato para eso.
+router.post('/deals/:id/tasks', requireRole('admin', 'lawyer'), (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const deal = db.prepare('SELECT id FROM deals WHERE id = ?').get(req.params.id);
+  if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
+  const { label, side } = req.body || {};
+  const name = (label || '').trim();
+  if (!name) return res.status(400).json({ error: 'Escribe un nombre para el documento.' });
+  if (!['buyer', 'seller'].includes(side)) return res.status(400).json({ error: 'Elige si firma el comprador o el vendedor.' });
+  const nextOrder = db.prepare('SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM tasks WHERE deal_id = ?').get(req.params.id).n;
+  const info = db.prepare(`
+    INSERT INTO tasks (deal_id, label_en, label_es, requires_signature, doc_type, sign_side, sort_order, created_at)
+    VALUES (?, ?, ?, 1, 'manual', ?, ?, datetime('now'))
+  `).run(req.params.id, name, name, side, nextOrder);
+  res.json({ id: info.lastInsertRowid });
+});
 
 // POST /api/deals/:id/tasks/:taskId/document — sube el documento que hay
 // que firmar para esta tarea (distinto del checklist KYC de /api/deals, que
@@ -163,19 +188,21 @@ router.post('/deals/:id/tasks/:taskId/send-for-signature', requireRole('admin', 
 
   // El escrow agreement (y cualquier otro documento de cierre) lo firman
   // TODAS las partes, no solo las que ya tengan cuenta — si a alguna le
-  // falta, se bloquea el envío en vez de mandar el sobre incompleto.
+  // falta, se bloquea el envío en vez de mandar el sobre incompleto. Si la
+  // tarea es ad-hoc y solo le toca a un lado (tasks.sign_side), la revisión
+  // se limita a ese lado — al otro no le corresponde firmar este documento.
   const missingParties = db.prepare(`
     SELECT name FROM deal_party_entities
-    WHERE deal_id = ? AND side IN ('buyer','seller')
+    WHERE deal_id = ? AND side = COALESCE(?, side) AND side IN ('buyer','seller')
       AND id NOT IN (SELECT deal_party_entity_id FROM deal_parties WHERE deal_party_entity_id IS NOT NULL)
-  `).all(req.params.id);
+  `).all(req.params.id, task.sign_side || null);
   if (missingParties.length) {
     return res.status(400).json({
       error: `Falta darles cuenta a: ${missingParties.map(p => p.name).join(', ')} — no pueden firmar sin una. Agrégales un correo (en su parte o en "Invitar") antes de mandar a firma.`
     });
   }
 
-  const signers = withSideIndex(getSigners(req.params.id));
+  const signers = withSideIndex(getSigners(req.params.id, task.sign_side));
   if (!signers.length) {
     return res.status(400).json({ error: 'Esta operación no tiene comprador ni vendedor con cuenta ligada todavía.' });
   }

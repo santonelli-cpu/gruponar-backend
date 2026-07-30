@@ -331,8 +331,9 @@ const STRINGS = {
     confirmChangeEscrow: '¿Cambiar la escrow company a {company}? Si ya hay expedientes KYC guardados con la plantilla vieja, van a seguir con esa plantilla hasta que los reinicies desde su sección.',
     confirmDeleteDeal: '¿Eliminar esta operación? Esta acción no se puede deshacer.',
     sellersAndBuyers: 'Vendedores y compradores', propertySection: 'Propiedad', docsChecklist: 'Checklist de documentos (KYC)',
+    notaryClosingCostsSection: 'Gastos de cierre (notario)',
     kycFile: 'Expediente KYC (firma electrónica)', closingTracker: 'Tracker de cierre', inviteToThisDeal: 'Invitar a esta operación',
-    contractPromise: 'Contrato de promesa (firma electrónica)',
+    contractPromise: 'Contrato de promesa',
     loadingEllipsis: 'cargando...', formLanguage: 'Idioma del formulario', spanish: 'Español', english: 'English',
     fillForm: 'Llenar formulario', viewEditForm: 'Ver / editar formulario', viewDocument: 'Ver documento',
     sendForSignature: 'Enviar a firma', resetFile: 'Reiniciar expediente',
@@ -379,6 +380,8 @@ const STRINGS = {
     uploadTemplateHint: 'Sube el machote en .docx para el tipo de operación <b>{scenario}</b>, con los campos escritos como <code>{{CLAVE}}</code> — la plataforma los detecta solos, no hace falta definir nada más.',
     templateName: 'Nombre del machote', templateNamePh: 'Ej. Compraventa individual — Punta Mita', docxFile: 'Archivo .docx', upload: 'Subir',
     errNameOrFile: 'Falta el nombre o el archivo.',
+    addSignatureTaskTitle: 'Mandar cualquier documento a firma', signatureTaskNamePh: 'Nombre del documento...',
+    selectSignerSide: '¿Quién firma?', errNameOrSide: 'Falta el nombre del documento o elegir quién firma.',
     detectedFields: 'Campos detectados en el machote — se llenan aquí y se insertan donde esté cada <code>{{CLAVE}}</code> en el documento final.',
     noFieldsTitle: 'Este machote no tiene ningún campo <code>{{CLAVE}}</code> — la plataforma no encontró nada que llenar.',
     noFieldsHint1: 'Para que se detecten campos, abre el .docx y escribe el marcador directamente en el texto donde va cada dato, por ejemplo:',
@@ -510,8 +513,9 @@ const STRINGS = {
     confirmChangeEscrow: "Change the escrow company to {company}? If there are already saved KYC records with the old template, they'll keep using that template until you reset them from their own section.",
     confirmDeleteDeal: 'Delete this deal? This action cannot be undone.',
     sellersAndBuyers: 'Sellers and buyers', propertySection: 'Property', docsChecklist: 'Document checklist (KYC)',
+    notaryClosingCostsSection: 'Closing costs (notary)',
     kycFile: 'KYC file (e-signature)', closingTracker: 'Closing tracker', inviteToThisDeal: 'Invite to this deal',
-    contractPromise: 'Promise of purchase contract (e-signature)',
+    contractPromise: 'Purchase Agreement',
     loadingEllipsis: 'loading...', formLanguage: 'Form language', spanish: 'Español', english: 'English',
     fillForm: 'Fill out form', viewEditForm: 'View / edit form', viewDocument: 'View document',
     sendForSignature: 'Send for signature', resetFile: 'Reset file',
@@ -550,7 +554,7 @@ const STRINGS = {
     inviteEmailSent: 'Invitation email sent to {email}.',
     inviteEmailFailed: "Couldn't send the automatic email ({error}) — share the link manually.",
     resendNotConfigured: 'Resend not configured',
-    contractPromiseShort: 'Promise contract', viewContract: 'View contract',
+    contractPromiseShort: 'Purchase Agreement', viewContract: 'View contract',
     coordinatorPreparing: 'Your coordinator is still preparing the contract.',
     template: 'Template', selectTemplate: 'Select a template...', uploadNewTemplate: 'Upload new template',
     deleteTemplateTitle: "Delete this template from the list (doesn't affect contracts already generated with it)", deleteCurrentTemplate: 'Delete current template',
@@ -558,6 +562,8 @@ const STRINGS = {
     uploadTemplateHint: 'Upload the .docx template for the <b>{scenario}</b> deal type, with fields written as <code>{{FIELD}}</code> — the platform detects them automatically, nothing else to configure.',
     templateName: 'Template name', templateNamePh: 'E.g. Individual purchase — Punta Mita', docxFile: '.docx file', upload: 'Upload',
     errNameOrFile: 'Missing name or file.',
+    addSignatureTaskTitle: 'Send any document for signature', signatureTaskNamePh: 'Document name...',
+    selectSignerSide: 'Who signs?', errNameOrSide: 'Missing document name or who signs.',
     detectedFields: 'Fields detected in the template — fill them in here and they get inserted wherever each <code>{{FIELD}}</code> appears in the final document.',
     noFieldsTitle: 'This template has no <code>{{FIELD}}</code> placeholders — the platform found nothing to fill in.',
     noFieldsHint1: 'For fields to be detected, open the .docx and type the marker directly in the text where each piece of data goes, for example:',
@@ -700,7 +706,7 @@ const SUB_CHECKS_BY_DOC = {
 function adaptTask(t){
   return {
     id: t.id, en: t.label_en, es: t.label_es, status: t.status, sign: !!t.requires_signature,
-    docType: t.doc_type || 'manual',
+    docType: t.doc_type || 'manual', signSide: t.sign_side || null,
     docusignStatus: t.docusign_status, documentOriginalName: t.document_original_name
   };
 }
@@ -2264,6 +2270,13 @@ function buildAdminDealDetail(deal){
   propCard.appendChild(buildPropertyDocsSection(deal, true));
   wrap.appendChild(propCard);
 
+  const notaryTitle = document.createElement('div');
+  notaryTitle.className = 'section-title'; notaryTitle.textContent = t('notaryClosingCostsSection');
+  wrap.appendChild(notaryTitle);
+  const notaryCard = document.createElement('div'); notaryCard.className = 'card';
+  notaryCard.appendChild(buildNotaryClosingCostsSection(deal, true));
+  wrap.appendChild(notaryCard);
+
   const docsTitle = document.createElement('div');
   docsTitle.className = 'section-title'; docsTitle.textContent = t('docsChecklist');
   wrap.appendChild(docsTitle);
@@ -2855,22 +2868,14 @@ function buildDocListForParty(deal, party, isStaffView){
 
 // Documentos de LA PROPIEDAD (Escritura pública, Predial) — una sola vez
 // por operación, no ligados a ningún vendedor/comprador en particular
-// (documents.deal_party_entity_id es NULL para estos).
+// (documents.deal_party_entity_id es NULL para estos). El de costos de
+// cierre del notario vive aparte, ver buildNotaryClosingCostsSection abajo
+// — aquí se lo excluye para no mostrarlo dos veces.
+const NOTARY_CLOSING_DOC_NAME = 'Costos de cierre (recibo del notario)';
 function buildPropertyDocsSection(deal, isStaffView){
-  const docs = deal.documents.filter(d => d.partyId === null);
+  const docs = deal.documents.filter(d => d.partyId === null && d.name !== NOTARY_CLOSING_DOC_NAME);
   const box = document.createElement('div');
   box.style.marginBottom = '14px';
-  if(docs.some(d => d.name === 'Costos de cierre (recibo del notario)')){
-    if(notaryPaymentNote === undefined){
-      loadNotaryPaymentNote();
-    } else if(notaryPaymentNote){
-      const note = document.createElement('div');
-      note.className = 'field-hint';
-      note.style.cssText = 'margin:0 0 8px; padding:8px 10px; border-radius:8px; background:var(--stone); white-space:pre-wrap;';
-      note.innerHTML = `<b>${escapeHtml(t('notaryPaymentNoteLabel'))}:</b> ${escapeHtml(notaryPaymentNote)}`;
-      box.appendChild(note);
-    }
-  }
   const ul = document.createElement('ul');
   ul.className = 'doc-list';
   docs.forEach(doc => ul.appendChild(buildDocItemLi(deal, doc, isStaffView)));
@@ -2878,6 +2883,31 @@ function buildPropertyDocsSection(deal, isStaffView){
   if(isStaffView){
     box.appendChild(buildAddDocumentRow(deal, null));
   }
+  return box;
+}
+
+// Costos de cierre del notario, en su propia sección — antes era un renglón
+// más dentro de "Propiedad" y tanto admin (para subirlo) como comprador
+// (para verlo) no lo encontraban ahí. Aquí es inconfundible: la cuenta a la
+// que se paga (nota configurable en Ajustes → solo se ve si ya se llenó) y
+// el documento en sí.
+function buildNotaryClosingCostsSection(deal, isStaffView){
+  const box = document.createElement('div');
+  const doc = deal.documents.find(d => d.partyId === null && d.name === NOTARY_CLOSING_DOC_NAME);
+  if(!doc) return box;
+  if(notaryPaymentNote === undefined){
+    loadNotaryPaymentNote();
+  } else if(notaryPaymentNote){
+    const note = document.createElement('div');
+    note.className = 'field-hint';
+    note.style.cssText = 'margin:0 0 8px; padding:8px 10px; border-radius:8px; background:var(--stone); white-space:pre-wrap;';
+    note.innerHTML = `<b>${escapeHtml(t('notaryPaymentNoteLabel'))}:</b> ${escapeHtml(notaryPaymentNote)}`;
+    box.appendChild(note);
+  }
+  const ul = document.createElement('ul');
+  ul.className = 'doc-list';
+  ul.appendChild(buildDocItemLi(deal, doc, isStaffView));
+  box.appendChild(ul);
   return box;
 }
 
@@ -3608,6 +3638,12 @@ function renderPortal(body){
   pcard.appendChild(buildPropertyDocsSection(deal, isPreview && !myParty));
   body.appendChild(pcard);
 
+  const nt = document.createElement('div'); nt.className='section-title'; nt.textContent=t('notaryClosingCostsSection');
+  body.appendChild(nt);
+  const ncard = document.createElement('div'); ncard.className='card';
+  ncard.appendChild(buildNotaryClosingCostsSection(deal, isPreview && !myParty));
+  body.appendChild(ncard);
+
   if(myParty){
     const secTitle = document.createElement('div'); secTitle.className='section-title'; secTitle.textContent=t('yourDocsChecklist');
     body.appendChild(secTitle);
@@ -3664,7 +3700,8 @@ function buildSignatureTasksSection(deal, body){
     const row = document.createElement('div');
     row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:0.5px solid var(--line); flex-wrap:wrap; gap:8px;';
     const statusLabel = {not_sent:t('docusignNotSent'), sent:t('docusignSent'), delivered:t('docusignDelivered'), completed:t('docusignCompleted'), declined:t('docusignDeclined'), voided:t('docusignVoided')}[task.docusignStatus] || task.docusignStatus;
-    row.innerHTML = `<span style="font-size:13px;">${escapeHtml(task.en)} <span class="task-es">(${escapeHtml(task.es)})</span><br><span class="field-hint" style="margin:0;">${t('documentColon')}: ${task.documentOriginalName ? escapeHtml(task.documentOriginalName) : t('notUploaded')} · ${t('docusignStatusColon')}: ${escapeHtml(statusLabel)}</span></span>`;
+    const sideTag = task.signSide ? ` <span class="field-hint" style="margin:0;">(${task.signSide === 'buyer' ? t('buyerLabel2') : t('sellerLabel2')})</span>` : '';
+    row.innerHTML = `<span style="font-size:13px;">${escapeHtml(task.en)}${task.en !== task.es ? ` <span class="task-es">(${escapeHtml(task.es)})</span>` : ''}${sideTag}<br><span class="field-hint" style="margin:0;">${t('documentColon')}: ${task.documentOriginalName ? escapeHtml(task.documentOriginalName) : t('notUploaded')} · ${t('docusignStatusColon')}: ${escapeHtml(statusLabel)}</span></span>`;
 
     const actions = document.createElement('div');
     actions.style.cssText = 'display:flex; gap:8px; align-items:center;';
@@ -3732,7 +3769,64 @@ function buildSignatureTasksSection(deal, body){
       scard.appendChild(buildEscrowForm(deal, task));
     }
   });
+  if(canManage){
+    scard.appendChild(buildAddSignatureTaskRow(deal));
+  }
   body.appendChild(scard);
+}
+
+// Botón "+" para que admin/abogado interno manden a firma cualquier
+// documento que no tenga su propio renglón fijo (ej. un NDA o un poder) —
+// eligen a quién le toca firmar (nunca ambos lados a la vez: si hiciera
+// falta, ya está el escrow agreement/contrato). Una vez creada, la tarea
+// aparece arriba con los mismos controles de subir/mandar a firma que las demás.
+function buildAddSignatureTaskRow(deal){
+  const row = document.createElement('div');
+  row.style.cssText = 'margin-top:6px; padding-top:8px; border-top:0.5px solid var(--line);';
+  row.innerHTML = `
+    <button type="button" class="btn add-sign-task-toggle" title="${t('addSignatureTaskTitle')}" style="font-size:13px; padding:4px 9px; line-height:1;"><i class="ti ti-plus" aria-hidden="true"></i></button>
+    <div class="add-sign-task-form" style="display:none; gap:6px; align-items:center; margin-top:6px; flex-wrap:wrap;">
+      <input type="text" class="add-sign-task-name" placeholder="${t('signatureTaskNamePh')}" style="flex:1; min-width:180px; font-size:12px; padding:5px 8px;">
+      <select class="add-sign-task-side" style="font-size:12px; padding:5px 8px;">
+        <option value="">${t('selectSignerSide')}</option>
+        <option value="buyer">${t('buyerLabel2')}</option>
+        <option value="seller">${t('sellerLabel2')}</option>
+      </select>
+      <button type="button" class="btn primary add-sign-task-save" style="font-size:11px; padding:4px 10px; white-space:nowrap;">${t('addChecklistItem')}</button>
+      <button type="button" class="btn add-sign-task-cancel" title="${t('close')}" style="font-size:11px; padding:4px 8px;"><i class="ti ti-x" aria-hidden="true"></i></button>
+    </div>
+    <div class="gate-error add-sign-task-error"></div>
+  `;
+  const toggleBtn = row.querySelector('.add-sign-task-toggle');
+  const form = row.querySelector('.add-sign-task-form');
+  const nameInput = row.querySelector('.add-sign-task-name');
+  const sideSelect = row.querySelector('.add-sign-task-side');
+  const saveBtn = row.querySelector('.add-sign-task-save');
+  const cancelBtn = row.querySelector('.add-sign-task-cancel');
+  const errEl = row.querySelector('.add-sign-task-error');
+  toggleBtn.onclick = () => {
+    toggleBtn.style.display = 'none';
+    form.style.display = 'flex';
+    nameInput.focus();
+  };
+  cancelBtn.onclick = () => {
+    form.style.display = 'none';
+    toggleBtn.style.display = 'inline-flex';
+    nameInput.value = ''; sideSelect.value = ''; errEl.textContent = '';
+  };
+  saveBtn.onclick = async () => {
+    const label = nameInput.value.trim();
+    const side = sideSelect.value;
+    errEl.textContent = '';
+    if(!label || !side){ errEl.textContent = t('errNameOrSide'); return; }
+    saveBtn.disabled = true;
+    try{
+      await apiFetch(`/api/docusign/deals/${deal.id}/tasks`, { method:'POST', body: JSON.stringify({ label, side }) });
+      await openDeal(deal.id);
+    }catch(e){ errEl.textContent = e.message; saveBtn.disabled = false; }
+  };
+  nameInput.onkeydown = (e) => { if(e.key === 'Escape') cancelBtn.click(); };
+  return row;
 }
 
 function buildEscrowForm(deal, task){
