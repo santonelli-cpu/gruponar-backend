@@ -6,7 +6,8 @@ const docusign = require('docusign-esign');
 const db = require('../db');
 const { requireAuth, requireRole } = require('./auth');
 const { canAccessDeal, myRoleInDeal } = require('../lib/access');
-const { UPLOADS_ROOT, dealDir, genFilename } = require('../lib/storage');
+const { dealDir, genFilename } = require('../lib/storage');
+const gcsStorage = require('../lib/gcsStorage');
 const docusignClient = require('../lib/docusignClient');
 const { fillArmourEscrow } = require('../lib/kycFill/armourEscrow');
 const { convertDocxToPdf } = require('../lib/kycFill/docxFillEngine');
@@ -14,10 +15,7 @@ const { convertDocxToPdf } = require('../lib/kycFill/docxFillEngine');
 const router = express.Router();
 
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: (req, file, cb) => cb(null, dealDir(req.params.id)),
-    filename: (req, file, cb) => cb(null, genFilename(file.originalname))
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 },
   fileFilter: (req, file, cb) => cb(null, file.mimetype === 'application/pdf')
 });
@@ -48,13 +46,18 @@ router.post('/deals/:id/tasks/:taskId/document', requireRole('admin', 'agent', '
   const task = getTask(req.params.id, req.params.taskId);
   if (!task) return res.status(404).json({ error: 'Tarea no encontrada.' });
 
-  upload.single('file')(req, res, (err) => {
+  upload.single('file')(req, res, async (err) => {
     if (err) return res.status(400).json({ error: err.message || 'Archivo inválido.' });
     if (!req.file) return res.status(400).json({ error: 'Sube un PDF.' });
-    const relPath = path.join(String(req.params.id), req.file.filename);
-    db.prepare('UPDATE tasks SET document_url = ?, document_original_name = ? WHERE id = ?')
-      .run(relPath, req.file.originalname, task.id);
-    res.json({ ok: true });
+    try {
+      const key = path.join(String(req.params.id), genFilename(req.file.originalname));
+      await gcsStorage.uploadBuffer(key, req.file.buffer, req.file.mimetype);
+      db.prepare('UPDATE tasks SET document_url = ?, document_original_name = ? WHERE id = ?')
+        .run(key, req.file.originalname, task.id);
+      res.json({ ok: true });
+    } catch (uploadErr) {
+      res.status(502).json({ error: uploadErr.message || 'Error al subir el archivo.' });
+    }
   });
 });
 
@@ -63,7 +66,7 @@ router.post('/deals/:id/tasks/:taskId/document', requireRole('admin', 'agent', '
 // la operación; el resto lo captura quien llama) y lo deja como el
 // documento de esta tarea, listo para enviar a firma con el mismo flujo de
 // arriba (comprador firma primero, luego vendedor).
-router.post('/deals/:id/tasks/:taskId/generate-escrow-document', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+router.post('/deals/:id/tasks/:taskId/generate-escrow-document', requireRole('admin', 'agent', 'lawyer'), async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const task = getTask(req.params.id, req.params.taskId);
   if (!task) return res.status(404).json({ error: 'Tarea no encontrada.' });
@@ -72,18 +75,22 @@ router.post('/deals/:id/tasks/:taskId/generate-escrow-document', requireRole('ad
   if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
 
   const { placeDate, purchaseAgreementDescription, depositAmount, fees, expirationDate, noticeAddress } = req.body || {};
+  let docxPath, pdfPath;
   try {
-    const docxPath = path.join(dealDir(req.params.id), `escrow-${task.id}-${Date.now()}.docx`);
+    docxPath = path.join(dealDir(req.params.id), `escrow-${task.id}-${Date.now()}.docx`);
     fillArmourEscrow(deal, { placeDate, purchaseAgreementDescription, depositAmount, fees, expirationDate, noticeAddress }, docxPath);
-    const pdfPath = convertDocxToPdf(docxPath);
-    const relPath = path.join(String(req.params.id), path.basename(pdfPath));
+    pdfPath = convertDocxToPdf(docxPath);
+    const key = path.join(String(req.params.id), path.basename(pdfPath));
+    await gcsStorage.uploadLocalFile(key, pdfPath, 'application/pdf');
 
     db.prepare('UPDATE tasks SET document_url = ?, document_original_name = ? WHERE id = ?')
-      .run(relPath, 'Escrow Agreement.pdf', task.id);
+      .run(key, 'Escrow Agreement.pdf', task.id);
 
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Error al generar el escrow agreement.' });
+  } finally {
+    [docxPath, pdfPath].forEach(p => { if (p) fs.rmSync(p, { force: true }); });
   }
 });
 
@@ -110,8 +117,7 @@ router.post('/deals/:id/tasks/:taskId/send-for-signature', requireRole('admin', 
   }
 
   try {
-    const absPath = path.join(dealDir(req.params.id), path.basename(task.document_url));
-    const documentBase64 = fs.readFileSync(absPath).toString('base64');
+    const documentBase64 = (await gcsStorage.downloadToBuffer(task.document_url)).toString('base64');
 
     const envelopeDefinition = {
       emailSubject: `Firma requerida: ${task.label_es}`,
@@ -210,8 +216,7 @@ router.get('/deals/:id/tasks/:taskId/status', requireAuth, async (req, res) => {
     if (docusignStatus === 'completed' && task.status !== 'done' && task.document_url) {
       try {
         const signedBytes = await docusignClient.downloadEnvelopeDocument(task.docusign_envelope_id);
-        const resolved = path.resolve(UPLOADS_ROOT, task.document_url);
-        if (resolved.startsWith(path.resolve(UPLOADS_ROOT) + path.sep)) fs.writeFileSync(resolved, signedBytes);
+        await gcsStorage.uploadBuffer(task.document_url, signedBytes, 'application/pdf');
       } catch (docErr) {
         // No bloquea la sincronización de estado — se puede reintentar en
         // la próxima llamada a /status.

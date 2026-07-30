@@ -1,12 +1,14 @@
 const express = require('express');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const multer = require('multer');
 const docusign = require('docusign-esign');
 const db = require('../db');
 const { requireAuth, requireRole } = require('./auth');
 const { canAccessDeal, myRoleInDeal } = require('../lib/access');
-const { UPLOADS_ROOT, genFilename } = require('../lib/storage');
+const { genFilename } = require('../lib/storage');
+const gcsStorage = require('../lib/gcsStorage');
 const docusignClient = require('../lib/docusignClient');
 const { extractPlaceholders, fillContractTemplate, countPdfPages } = require('../lib/contractFill/mergeEngine');
 const { convertDocxToPdf } = require('../lib/kycFill/docxFillEngine');
@@ -14,15 +16,29 @@ const { getSmartSchema, expandSmartFields } = require('../lib/contractFill/smart
 
 const router = express.Router();
 
-const TEMPLATES_DIR = path.join(UPLOADS_ROOT, 'contract-templates');
+// Los machotes (.docx) no son por operación, viven bajo un prefijo fijo del
+// bucket — contract_templates.docx_file sigue guardando solo el nombre de
+// archivo (sin el prefijo), igual que antes con TEMPLATES_DIR, para no
+// necesitar una migración de datos de los machotes ya subidos.
+const TEMPLATES_PREFIX = 'contract-templates';
+const templateKey = (filename) => `${TEMPLATES_PREFIX}/${filename}`;
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: (req, file, cb) => { fs.mkdirSync(TEMPLATES_DIR, { recursive: true }); cb(null, TEMPLATES_DIR); },
-    filename: (req, file, cb) => cb(null, genFilename(file.originalname))
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 },
   fileFilter: (req, file, cb) => cb(null, file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
 });
+
+// extractPlaceholders/fillContractTemplate necesitan un .docx real en disco
+// (lo desempacan con el binario `unzip`) — se baja del bucket a un temporal,
+// se corre `fn`, y se borra el temporal pase lo que pase.
+async function withLocalTemplate(docxFile, fn) {
+  const localPath = await gcsStorage.downloadToTempFile(templateKey(docxFile));
+  try {
+    return await fn(localPath);
+  } finally {
+    fs.rmSync(localPath, { force: true });
+  }
+}
 
 // Ancla de firma en el propio machote — el admin/abogado la escribe como
 // texto literal dentro del .docx (igual que los placeholders {{CLAVE}}),
@@ -64,8 +80,11 @@ function loadDeal(dealId) {
   return db.prepare('SELECT * FROM deals WHERE id = ?').get(dealId);
 }
 
-function dealContractDir(dealId) {
-  const dir = path.join(UPLOADS_ROOT, String(dealId), 'contract');
+// Carpeta de trabajo local temporal (LibreOffice/unzip necesitan archivos
+// reales en disco) — el resultado final se sube a Cloud Storage y esta
+// carpeta se borra, no es donde vive el archivo permanentemente.
+function dealContractScratchDir(dealId) {
+  const dir = path.join(os.tmpdir(), 'contract-scratch', String(dealId));
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -82,27 +101,32 @@ router.get('/contract-templates', requireRole('admin', 'lawyer'), (req, res) => 
 
 // POST /api/contract-templates — sube un machote nuevo (.docx con {{CLAVE}}).
 router.post('/contract-templates', requireRole('admin', 'lawyer'), (req, res) => {
-  upload.single('file')(req, res, (err) => {
+  upload.single('file')(req, res, async (err) => {
     if (err) return res.status(400).json({ error: err.message || 'Archivo inválido.' });
     if (!req.file) return res.status(400).json({ error: 'Sube un archivo .docx.' });
     const { scenario, label } = req.body || {};
     if (!scenario || !['purchase', 'trust', 'transfer', 'trust_termination'].includes(scenario) || !label) {
-      fs.rmSync(req.file.path, { force: true });
       return res.status(400).json({ error: 'Faltan campos requeridos (scenario, label).' });
     }
-    const info = db.prepare('INSERT INTO contract_templates (scenario, label, docx_file, created_by) VALUES (?,?,?,?)')
-      .run(scenario, label, req.file.filename, req.session.userId);
-    res.json({ id: info.lastInsertRowid });
+    try {
+      const filename = genFilename(req.file.originalname);
+      await gcsStorage.uploadBuffer(templateKey(filename), req.file.buffer, req.file.mimetype);
+      const info = db.prepare('INSERT INTO contract_templates (scenario, label, docx_file, created_by) VALUES (?,?,?,?)')
+        .run(scenario, label, filename, req.session.userId);
+      res.json({ id: info.lastInsertRowid });
+    } catch (uploadErr) {
+      res.status(502).json({ error: uploadErr.message || 'Error al subir el machote.' });
+    }
   });
 });
 
 // DELETE /api/contract-templates/:id — quita un machote de la lista (no
 // afecta contratos ya generados con él, esos ya son archivos independientes).
-router.delete('/contract-templates/:id', requireRole('admin', 'lawyer'), (req, res) => {
+router.delete('/contract-templates/:id', requireRole('admin', 'lawyer'), async (req, res) => {
   const tpl = db.prepare('SELECT * FROM contract_templates WHERE id = ?').get(req.params.id);
   if (!tpl) return res.status(404).json({ error: 'Machote no encontrado.' });
   db.prepare('DELETE FROM contract_templates WHERE id = ?').run(tpl.id);
-  fs.rmSync(path.join(TEMPLATES_DIR, tpl.docx_file), { force: true });
+  await gcsStorage.deleteFile(templateKey(tpl.docx_file));
   res.json({ ok: true });
 });
 
@@ -111,7 +135,7 @@ router.delete('/contract-templates/:id', requireRole('admin', 'lawyer'), (req, r
 // /vendedor: solo lo necesario para ver el contrato ya preparado (nada de
 // machotes en blanco) — generar y editar el contrato es trabajo exclusivo
 // de admin/abogado.
-router.get('/deals/:id/contract', requireAuth, (req, res) => {
+router.get('/deals/:id/contract', requireAuth, async (req, res) => {
   const { id } = req.params;
   if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
   const deal = loadDeal(id);
@@ -133,7 +157,9 @@ router.get('/deals/:id/contract', requireAuth, (req, res) => {
   // `rawFieldCount` es solo informativo (para el aviso de "detectamos N
   // campos, X ya salen solos") — el formulario que llena el admin es el
   // esquema compacto de smartContractFields, no la lista cruda de {{CLAVE}}.
-  const rawFieldCount = template ? extractPlaceholders(path.join(TEMPLATES_DIR, template.docx_file)).length : 0;
+  const rawFieldCount = template
+    ? await withLocalTemplate(template.docx_file, (localPath) => extractPlaceholders(localPath).length)
+    : 0;
 
   res.json({
     templates,
@@ -171,7 +197,7 @@ router.post('/deals/:id/contract', requireRole('admin', 'lawyer'), (req, res) =>
 // conversión a PDF. Un solo botón produce ambos formatos: el .docx (para que
 // el admin lo descargue) y el .pdf (para verlo en el portal y mandarlo a
 // firma).
-router.post('/deals/:id/contract/generate', requireRole('admin', 'lawyer'), (req, res) => {
+router.post('/deals/:id/contract/generate', requireRole('admin', 'lawyer'), async (req, res) => {
   const { id } = req.params;
   if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
   const deal = loadDeal(id);
@@ -181,6 +207,7 @@ router.post('/deals/:id/contract/generate', requireRole('admin', 'lawyer'), (req
   const tpl = db.prepare('SELECT * FROM contract_templates WHERE id = ?').get(deal.contract_template_id);
   if (!tpl) return res.status(500).json({ error: 'El machote elegido ya no existe.' });
 
+  let templateLocalPath, docxPath, pdfPath;
   try {
     const smartValues = JSON.parse(deal.contract_json || '{}');
     const values = expandSmartFields(deal, smartValues);
@@ -188,14 +215,17 @@ router.post('/deals/:id/contract/generate', requireRole('admin', 'lawyer'), (req
       .filter(s => s.sideIndex > 0)
       .map(s => ({ side: s.roleInDeal, name: s.name, anchor: anchorForSigner(s.roleInDeal, s.sideIndex) }));
 
-    const dir = dealContractDir(id);
+    const dir = dealContractScratchDir(id);
     const stamp = Date.now();
-    const docxPath = path.join(dir, `contrato-${stamp}.docx`);
-    fillContractTemplate(path.join(TEMPLATES_DIR, tpl.docx_file), values, docxPath, extraSigners);
-    const pdfPath = convertDocxToPdf(docxPath);
+    templateLocalPath = await gcsStorage.downloadToTempFile(templateKey(tpl.docx_file));
+    docxPath = path.join(dir, `contrato-${stamp}.docx`);
+    fillContractTemplate(templateLocalPath, values, docxPath, extraSigners);
+    pdfPath = convertDocxToPdf(docxPath);
 
     const relDocx = path.join(String(id), 'contract', path.basename(docxPath));
     const relPdf = path.join(String(id), 'contract', path.basename(pdfPath));
+    await gcsStorage.uploadLocalFile(relDocx, docxPath, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    await gcsStorage.uploadLocalFile(relPdf, pdfPath, 'application/pdf');
 
     db.prepare("UPDATE deals SET contract_status = 'generated', contract_generated_file_url = ? WHERE id = ?")
       .run(relPdf, id);
@@ -203,13 +233,15 @@ router.post('/deals/:id/contract/generate', requireRole('admin', 'lawyer'), (req
     res.json({ ok: true, docxFile: relDocx });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Error al generar el contrato.' });
+  } finally {
+    [templateLocalPath, docxPath, pdfPath].forEach(p => { if (p) fs.rmSync(p, { force: true }); });
   }
 });
 
 // GET /api/deals/:id/contract/file?format=pdf|docx — pdf: cualquiera con
 // acceso a la operación (para ver el contrato ya preparado); docx: solo
 // admin/abogado (descarga de trabajo, no es lo que firman las partes).
-router.get('/deals/:id/contract/file', requireAuth, (req, res) => {
+router.get('/deals/:id/contract/file', requireAuth, async (req, res) => {
   const { id } = req.params;
   if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
   const format = req.query.format === 'docx' ? 'docx' : 'pdf';
@@ -220,20 +252,22 @@ router.get('/deals/:id/contract/file', requireAuth, (req, res) => {
   const deal = loadDeal(id);
   if (!deal || !deal.contract_generated_file_url) return res.status(404).json({ error: 'Todavía no se ha generado el contrato.' });
 
-  const pdfRel = deal.contract_generated_file_url;
-  const targetRel = format === 'docx' ? pdfRel.replace(/\.pdf$/, '.docx') : pdfRel;
-  const resolved = path.resolve(UPLOADS_ROOT, targetRel);
-  if (!resolved.startsWith(path.resolve(UPLOADS_ROOT) + path.sep)) return res.status(400).json({ error: 'Ruta inválida.' });
-  if (!fs.existsSync(resolved)) return res.status(404).json({ error: 'Archivo no encontrado.' });
+  const pdfKey = deal.contract_generated_file_url;
+  const targetKey = format === 'docx' ? pdfKey.replace(/\.pdf$/, '.docx') : pdfKey;
+  if (!await gcsStorage.existsFile(targetKey)) return res.status(404).json({ error: 'Archivo no encontrado.' });
 
-  if (format === 'docx') {
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    res.setHeader('Content-Disposition', 'attachment; filename="Contrato de Promesa.docx"');
-  } else {
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'inline; filename="Contrato de Promesa.pdf"');
+  try {
+    if (format === 'docx') {
+      await gcsStorage.streamToResponse(targetKey, res, {
+        contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        downloadName: 'Contrato de Promesa.docx'
+      });
+    } else {
+      await gcsStorage.streamToResponse(targetKey, res, { contentType: 'application/pdf', downloadName: 'Contrato de Promesa.pdf', inline: true });
+    }
+  } catch (err) {
+    if (!res.headersSent) res.status(502).json({ error: 'Error al leer el archivo.' });
   }
-  res.sendFile(resolved);
 });
 
 // POST /api/deals/:id/contract/send-for-signature — firma secuencial
@@ -257,16 +291,17 @@ router.post('/deals/:id/contract/send-for-signature', requireRole('admin', 'lawy
   const signers = withSideIndex(loadSigners(id));
   if (!signers.length) return res.status(400).json({ error: 'Esta operación no tiene comprador ni vendedor con cuenta ligada todavía.' });
 
+  let localPdfPath;
   try {
-    const absPath = path.resolve(UPLOADS_ROOT, deal.contract_generated_file_url);
-    const documentBase64 = fs.readFileSync(absPath).toString('base64');
+    localPdfPath = await gcsStorage.downloadToTempFile(deal.contract_generated_file_url);
+    const documentBase64 = fs.readFileSync(localPdfPath).toString('base64');
 
     // Cada hoja del contrato lleva las iniciales de todas las partes (uso
     // habitual en este tipo de documento) — se ubican por posición fija en
     // cada página (no por texto ancla en el footer, más frágil de mantener
     // si el machote cambia de formato), una fila por lado para que no se
     // encimen entre comprador(es) y vendedor(es).
-    const pageCount = countPdfPages(absPath);
+    const pageCount = countPdfPages(localPdfPath);
     const INITIAL_Y_BY_SIDE = { buyer: 730, seller: 755 };
 
     const envelopeDefinition = {
@@ -307,6 +342,8 @@ router.post('/deals/:id/contract/send-for-signature', requireRole('admin', 'lawy
     res.json({ ok: true, envelopeId: result.envelopeId });
   } catch (err) {
     res.status(502).json({ error: err.message || 'Error al enviar el contrato a firma.' });
+  } finally {
+    if (localPdfPath) fs.rmSync(localPdfPath, { force: true });
   }
 });
 
@@ -360,8 +397,7 @@ router.get('/deals/:id/contract/status', requireAuth, async (req, res) => {
     if (envelope.status === 'completed' && deal.contract_status !== 'signed' && deal.contract_generated_file_url) {
       try {
         const signedBytes = await docusignClient.downloadEnvelopeDocument(deal.contract_docusign_envelope_id);
-        const resolved = path.resolve(UPLOADS_ROOT, deal.contract_generated_file_url);
-        if (resolved.startsWith(path.resolve(UPLOADS_ROOT) + path.sep)) fs.writeFileSync(resolved, signedBytes);
+        await gcsStorage.uploadBuffer(deal.contract_generated_file_url, signedBytes, 'application/pdf');
       } catch (docErr) {
         // No bloquea la sincronización de estado — se puede reintentar en
         // la próxima llamada a /status.

@@ -1,13 +1,13 @@
 const express = require('express');
-const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const db = require('../db');
 const { requireAuth, requireRole } = require('./auth');
-const { UPLOADS_ROOT, dealDir, genFilename } = require('../lib/storage');
+const { genFilename } = require('../lib/storage');
 const { canAccessDeal, myRoleInDeal, myDealPartyEntityId, UNRESTRICTED_ROLES } = require('../lib/access');
 const mailer = require('../lib/email');
 const driveClient = require('../lib/googleDriveClient');
+const gcsStorage = require('../lib/gcsStorage');
 
 const router = express.Router();
 
@@ -26,11 +26,11 @@ async function tryCreateDriveFolder(req, dealId, property) {
 }
 
 const ALLOWED_MIME = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/heic']);
+// memoryStorage: el archivo llega como buffer en req.file.buffer y cada
+// handler decide la clave y lo sube a Cloud Storage — ya no toca disco local
+// en ningún punto intermedio (ver lib/gcsStorage.js).
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: (req, file, cb) => cb(null, dealDir(req.params.id)),
-    filename: (req, file, cb) => cb(null, genFilename(file.originalname))
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 },
   fileFilter: (req, file, cb) => cb(null, ALLOWED_MIME.has(file.mimetype))
 });
@@ -556,20 +556,25 @@ router.post('/:id/documents/:docId/file', requireAuth, (req, res, next) => {
   if (doc.deal_party_entity_id !== null && !['admin', 'agent', 'lawyer'].includes(role) && myPartyId !== doc.deal_party_entity_id) {
     return res.status(403).json({ error: 'No puedes subir documentos de otra parte.' });
   }
-  upload.single('file')(req, res, (err) => {
+  upload.single('file')(req, res, async (err) => {
     if (err) return res.status(400).json({ error: err.message || 'Archivo inválido.' });
     if (!req.file) return res.status(400).json({ error: 'Tipo de archivo no permitido (solo PDF, JPG, PNG, HEIC) o falta el archivo.' });
-    const relPath = path.join(String(req.params.id), req.file.filename);
-    db.prepare(`
-      UPDATE documents SET file_url=?, original_name=?, mime_type=?, size_bytes=?, status='done',
-        uploaded_by=?, uploaded_at=datetime('now') WHERE id=? AND deal_id=?
-    `).run(relPath, req.file.originalname, req.file.mimetype, req.file.size, req.session.userId, req.params.docId, req.params.id);
-    res.json({ ok: true });
+    try {
+      const key = path.join(String(req.params.id), genFilename(req.file.originalname));
+      await gcsStorage.uploadBuffer(key, req.file.buffer, req.file.mimetype);
+      db.prepare(`
+        UPDATE documents SET file_url=?, original_name=?, mime_type=?, size_bytes=?, status='done',
+          uploaded_by=?, uploaded_at=datetime('now') WHERE id=? AND deal_id=?
+      `).run(key, req.file.originalname, req.file.mimetype, req.file.size, req.session.userId, req.params.docId, req.params.id);
+      res.json({ ok: true });
+    } catch (uploadErr) {
+      res.status(502).json({ error: uploadErr.message || 'Error al subir el archivo.' });
+    }
   });
 });
 
 // GET /api/deals/:id/documents/:docId/file — descarga autenticada del archivo subido.
-router.get('/:id/documents/:docId/file', requireAuth, (req, res) => {
+router.get('/:id/documents/:docId/file', requireAuth, async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deal_id = ?').get(req.params.docId, req.params.id);
   if (!doc || !doc.file_url) return res.status(404).json({ error: 'Archivo no encontrado.' });
@@ -580,15 +585,16 @@ router.get('/:id/documents/:docId/file', requireAuth, (req, res) => {
     return res.status(403).json({ error: 'No puedes ver documentos de otra parte.' });
   }
 
-  const resolved = path.resolve(UPLOADS_ROOT, doc.file_url);
-  if (!resolved.startsWith(path.resolve(UPLOADS_ROOT) + path.sep)) {
-    return res.status(400).json({ error: 'Ruta de archivo inválida.' });
+  if (!await gcsStorage.existsFile(doc.file_url)) return res.status(404).json({ error: 'Archivo no encontrado.' });
+  try {
+    await gcsStorage.streamToResponse(doc.file_url, res, {
+      contentType: doc.mime_type || 'application/octet-stream',
+      downloadName: doc.original_name || 'documento',
+      inline: true
+    });
+  } catch (err) {
+    if (!res.headersSent) res.status(502).json({ error: 'Error al leer el archivo.' });
   }
-  if (!fs.existsSync(resolved)) return res.status(404).json({ error: 'Archivo no encontrado.' });
-
-  res.setHeader('Content-Type', doc.mime_type || 'application/octet-stream');
-  res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(doc.original_name || 'documento')}"`);
-  res.sendFile(resolved);
 });
 
 // PATCH /api/deals/:id/tasks/:taskId — actualizar estado del tracker.
@@ -606,7 +612,9 @@ router.delete('/:id', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const info = db.prepare('DELETE FROM deals WHERE id = ?').run(req.params.id);
   if (!info.changes) return res.status(404).json({ error: 'Operación no encontrada.' });
-  fs.rm(path.join(UPLOADS_ROOT, String(req.params.id)), { recursive: true, force: true }, () => {});
+  gcsStorage.deletePrefix(String(req.params.id) + '/').catch(err => {
+    console.error('[gcs] no se pudieron borrar los archivos de la operación', req.params.id, err.message);
+  });
   res.json({ ok: true });
 });
 

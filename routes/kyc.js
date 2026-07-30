@@ -6,6 +6,7 @@ const db = require('../db');
 const { requireAuth, requireRole } = require('./auth');
 const { canAccessDeal, myDealPartyEntityId } = require('../lib/access');
 const { dealDir } = require('../lib/storage');
+const gcsStorage = require('../lib/gcsStorage');
 const docusignClient = require('../lib/docusignClient');
 const { fillArmourIndividualEs, SIGNATURE_ANCHOR: ARMOUR_INDIVIDUAL_ANCHOR } = require('../lib/kycFill/armourIndividualEs');
 const { fillTlaIndividualEn, SIGNATURE_ANCHOR: TLA_IND_EN_ANCHOR } = require('../lib/kycFill/tlaIndividualEn');
@@ -184,7 +185,7 @@ router.get('/deals/:id/kyc/:partyId', requireAuth, (req, res) => {
 // con el idioma/compañía equivocada). Solo staff, y solo si todavía no se
 // envió a firma — una vez enviado, borrar la fila local no cancela el sobre
 // de DocuSign, así que no se permite.
-router.delete('/deals/:id/kyc/:partyId', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+router.delete('/deals/:id/kyc/:partyId', requireRole('admin', 'agent', 'lawyer'), async (req, res) => {
   const { id, partyId } = req.params;
   if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
 
@@ -194,9 +195,7 @@ router.delete('/deals/:id/kyc/:partyId', requireRole('admin', 'agent', 'lawyer')
     return res.status(400).json({ error: 'Este expediente ya se envió a firma, no se puede reiniciar.' });
   }
   if (submission.generated_file_url) {
-    const { UPLOADS_ROOT } = require('../lib/storage');
-    const resolved = path.resolve(UPLOADS_ROOT, submission.generated_file_url);
-    if (resolved.startsWith(path.resolve(UPLOADS_ROOT) + path.sep)) fs.rmSync(resolved, { force: true });
+    await gcsStorage.deleteFile(submission.generated_file_url);
   }
   db.prepare('DELETE FROM kyc_submissions WHERE id = ?').run(submission.id);
   res.json({ ok: true });
@@ -245,9 +244,7 @@ async function sendKycEnvelope(deal, party, submission, template) {
     throw new Error(`Todavía no hay cuenta ligada a "${party.name}" para firmar este expediente.`);
   }
 
-  const { UPLOADS_ROOT } = require('../lib/storage');
-  const absPath = path.resolve(UPLOADS_ROOT, submission.generated_file_url);
-  const documentBase64 = fs.readFileSync(absPath).toString('base64');
+  const documentBase64 = (await gcsStorage.downloadToBuffer(submission.generated_file_url)).toString('base64');
 
   const envelopeDefinition = {
     emailSubject: `Firma requerida: Expediente KYC — ${deal.property}`,
@@ -299,10 +296,13 @@ router.post('/deals/:id/kyc/:partyId/generate', requireAuth, async (req, res) =>
     const docxPath = path.join(dealDir(id), `${fileBase}.docx`);
     template.fill(answers, docxPath);
     const pdfPath = convertDocxToPdf(docxPath);
-    const relPath = path.join(String(id), path.basename(pdfPath));
+    const key = path.join(String(id), path.basename(pdfPath));
+    await gcsStorage.uploadLocalFile(key, pdfPath, 'application/pdf');
+    fs.rmSync(docxPath, { force: true });
+    fs.rmSync(pdfPath, { force: true });
 
     db.prepare("UPDATE kyc_submissions SET status = 'generated', generated_file_url = ?, updated_at = datetime('now') WHERE id = ?")
-      .run(relPath, submission.id);
+      .run(key, submission.id);
 
     let sentForSignature = false;
     let autoSendError = null;
@@ -323,21 +323,21 @@ router.post('/deals/:id/kyc/:partyId/generate', requireAuth, async (req, res) =>
 });
 
 // GET /api/deals/:id/kyc/:partyId/file — descarga autenticada del PDF generado.
-router.get('/deals/:id/kyc/:partyId/file', requireAuth, (req, res) => {
+router.get('/deals/:id/kyc/:partyId/file', requireAuth, async (req, res) => {
   const { id, partyId } = req.params;
   if (!canWorkOnKyc(req, id, partyId)) return res.status(403).json({ error: 'No autorizado.' });
 
   const submission = getLatestSubmission(partyId);
   if (!submission || !submission.generated_file_url) return res.status(404).json({ error: 'Todavía no se ha generado el documento.' });
 
-  const { UPLOADS_ROOT } = require('../lib/storage');
-  const resolved = path.resolve(UPLOADS_ROOT, submission.generated_file_url);
-  if (!resolved.startsWith(path.resolve(UPLOADS_ROOT) + path.sep)) return res.status(400).json({ error: 'Ruta inválida.' });
-  if (!fs.existsSync(resolved)) return res.status(404).json({ error: 'Archivo no encontrado.' });
-
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', 'inline; filename="expediente-kyc.pdf"');
-  res.sendFile(resolved);
+  if (!await gcsStorage.existsFile(submission.generated_file_url)) return res.status(404).json({ error: 'Archivo no encontrado.' });
+  try {
+    await gcsStorage.streamToResponse(submission.generated_file_url, res, {
+      contentType: 'application/pdf', downloadName: 'expediente-kyc.pdf', inline: true
+    });
+  } catch (err) {
+    if (!res.headersSent) res.status(502).json({ error: 'Error al leer el archivo.' });
+  }
 });
 
 // POST /api/deals/:id/kyc/:partyId/send-for-signature — solo admin/agente/
@@ -428,9 +428,7 @@ router.get('/deals/:id/kyc/:partyId/status', requireAuth, async (req, res) => {
     if (envelope.status === 'completed' && submission.status !== 'signed' && submission.generated_file_url) {
       try {
         const signedBytes = await docusignClient.downloadEnvelopeDocument(submission.docusign_envelope_id);
-        const { UPLOADS_ROOT } = require('../lib/storage');
-        const resolved = path.resolve(UPLOADS_ROOT, submission.generated_file_url);
-        if (resolved.startsWith(path.resolve(UPLOADS_ROOT) + path.sep)) fs.writeFileSync(resolved, signedBytes);
+        await gcsStorage.uploadBuffer(submission.generated_file_url, signedBytes, 'application/pdf');
       } catch (docErr) {
         // No bloquea la sincronización de estado si esto falla — se puede
         // reintentar en la próxima llamada a /status.
