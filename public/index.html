@@ -229,6 +229,10 @@ const STRINGS = {
     uploadSignedKyc: 'Subir ya firmado', uploadSignedKycTitle: 'Si el KYC se llenó y firmó fuera del portal, súbelo aquí ya firmado en vez de generarlo/enviarlo a firma.',
     uploadSignedContract: 'Subir ya firmado', uploadSignedContractTitle: 'Si el contrato se redactó/firmó fuera del portal, súbelo aquí ya firmado en vez de generarlo/enviarlo a firma.',
     editDeal: 'Editar', editDealTitle: 'Editar datos de la operación', saveChanges: 'Guardar cambios', cancel: 'Cancelar',
+    registerDirect: 'Dar de alta directo', registerDirectTitle: 'Crea la cuenta de una vez con una contraseña temporal, en vez de mandar un link de invitación por correo.',
+    registerDirectDone: 'Cuenta creada — no se manda ningún correo automático. Comparte esta contraseña con la persona por el canal que prefieras (teléfono, WhatsApp, en persona).',
+    registerDirectHint: 'La persona puede cambiarla cuando quiera desde su cuenta una vez que inicie sesión con su correo y esta contraseña.',
+    temporaryPassword: 'Contraseña temporal',
     removeFromDeal: 'Quitar de esta operación', addAgentTitle: 'Agregar agente a esta operación', addAgentHint: 'Elige un agente que ya tiene cuenta — no hace falta invitarlo de nuevo.',
     noAvailableAgents: 'No hay agentes activos disponibles para agregar (o ya están todos en esta operación).', add: 'Agregar', agentsInDeal: 'Agentes en esta operación', noAgentsInDeal: 'Todavía no hay ningún agente agregado a esta operación.',
     approve: 'Aprobar', inviteAgentLawyer: 'Invitar agente o abogado',
@@ -374,6 +378,10 @@ const STRINGS = {
     uploadSignedKyc: 'Upload signed', uploadSignedKycTitle: 'If the KYC was filled and signed outside the portal, upload it here already signed instead of generating/sending it for signature.',
     uploadSignedContract: 'Upload signed', uploadSignedContractTitle: 'If the contract was drafted/signed outside the portal, upload it here already signed instead of generating/sending it for signature.',
     editDeal: 'Edit', editDealTitle: 'Edit deal details', saveChanges: 'Save changes', cancel: 'Cancel',
+    registerDirect: 'Register directly', registerDirectTitle: 'Create the account right away with a temporary password, instead of sending an email invite link.',
+    registerDirectDone: "Account created — no automatic email is sent. Share this password with the person however you prefer (phone, WhatsApp, in person).",
+    registerDirectHint: 'They can change it whenever they want from their account once they log in with their email and this password.',
+    temporaryPassword: 'Temporary password',
     removeFromDeal: 'Remove from this deal', addAgentTitle: 'Add an agent to this deal', addAgentHint: 'Pick an agent who already has an account — no need to invite them again.',
     noAvailableAgents: 'No active agents available to add (or they are all already on this deal).', add: 'Add', agentsInDeal: 'Agents on this deal', noAgentsInDeal: 'No agent has been added to this deal yet.',
     approve: 'Approve', inviteAgentLawyer: 'Invite agent or lawyer',
@@ -2307,6 +2315,7 @@ function buildInviteForm(deal){
     </div>
     <div class="form-row" style="align-items:flex-end;">
       <button class="btn primary" id="inv-generate">${t('generateInvite')}</button>
+      <button class="btn" id="inv-register-direct" title="${t('registerDirectTitle')}">${t('registerDirect')}</button>
     </div>
     <div id="inv-result" style="display:none;">
       <div class="field-hint" id="inv-email-status" style="margin:0 0 6px;"></div>
@@ -2317,6 +2326,16 @@ function buildInviteForm(deal){
         <button class="btn" id="inv-copy" style="align-self:flex-end;">${t('copy')}</button>
       </div>
     </div>
+    <div id="inv-direct-result" style="display:none;">
+      <div class="field-hint" style="margin:0 0 6px; color:var(--jade);">${t('registerDirectDone')}</div>
+      <div class="form-row">
+        <label style="flex:1;">${t('temporaryPassword')}
+          <input type="text" id="inv-direct-password" readonly>
+        </label>
+        <button class="btn" id="inv-direct-copy" style="align-self:flex-end;">${t('copy')}</button>
+      </div>
+      <div class="field-hint" style="margin:6px 0 0;">${t('registerDirectHint')}</div>
+    </div>
     <div class="gate-error" id="inv-error"></div>
   `;
   if(!unlinked.length){
@@ -2324,11 +2343,16 @@ function buildInviteForm(deal){
   }
   const targetSel = card.querySelector('#inv-target');
   const nameInput = card.querySelector('#inv-name');
+  const registerDirectBtn = card.querySelector('#inv-register-direct');
   const prefillName = () => {
     if(targetSel.value.startsWith('party:')){
       const party = unlinked.find(p => 'party:'+p.id === targetSel.value);
       if(party && !nameInput.value) nameInput.value = party.name;
     }
+    // Dar de alta directo solo tiene sentido para una parte específica
+    // (comprador/vendedor) — un agente se agrega por el dropdown de arriba
+    // si ya tiene cuenta, o por invitación normal si es nuevo.
+    registerDirectBtn.disabled = !targetSel.value.startsWith('party:');
   };
   targetSel.onchange = prefillName;
   prefillName();
@@ -2364,6 +2388,31 @@ function buildInviteForm(deal){
     const linkInput = card.querySelector('#inv-link');
     linkInput.select();
     navigator.clipboard.writeText(linkInput.value);
+  };
+  registerDirectBtn.onclick = async () => {
+    const target = targetSel.value;
+    const name = nameInput.value.trim();
+    const email = card.querySelector('#inv-email').value.trim();
+    const errEl = card.querySelector('#inv-error');
+    errEl.textContent = '';
+    if (!name || !email) { errEl.textContent = t('errNameOrEmail'); return; }
+    if (!target.startsWith('party:')) return;
+    const party = unlinked.find(p => 'party:'+p.id === target);
+    try {
+      const { temporaryPassword } = await apiFetch(`/api/deals/${deal.id}/parties/${party.id}/register-user`, {
+        method: 'POST', body: JSON.stringify({ name, email })
+      });
+      card.querySelector('#inv-direct-password').value = temporaryPassword;
+      card.querySelector('#inv-direct-result').style.display = 'block';
+      await openDeal(deal.id);
+    } catch(e) {
+      errEl.textContent = e.message;
+    }
+  };
+  card.querySelector('#inv-direct-copy').onclick = () => {
+    const pwInput = card.querySelector('#inv-direct-password');
+    pwInput.select();
+    navigator.clipboard.writeText(pwInput.value);
   };
   return card;
 }

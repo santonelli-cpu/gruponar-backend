@@ -1,6 +1,8 @@
 const express = require('express');
 const path = require('path');
 const multer = require('multer');
+const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 const db = require('../db');
 const { requireAuth, requireRole } = require('./auth');
 const { genFilename } = require('../lib/storage');
@@ -440,6 +442,43 @@ router.post('/:id/parties/:partyId/rebuild-checklist', requireRole('admin', 'age
     directTrustName: party.direct_trust_name
   });
   res.json({ ok: true });
+});
+
+// POST /api/deals/:id/parties/:partyId/register-user — alternativa a la
+// invitación por correo: da de alta la cuenta del comprador/vendedor de
+// una vez, con una contraseña temporal que tú le compartes por el canal que
+// prefieras (teléfono, WhatsApp, en persona) — útil cuando no quieres
+// depender de que revisen su correo y le den clic al link.
+router.post('/:id/parties/:partyId/register-user', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
+  if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
+
+  const alreadyLinked = db.prepare('SELECT 1 FROM deal_parties WHERE deal_party_entity_id = ?').get(party.id);
+  if (alreadyLinked) return res.status(409).json({ error: 'Esa parte ya tiene una cuenta ligada.' });
+
+  const { name, email } = req.body || {};
+  if (!name || !email) return res.status(400).json({ error: 'Falta el nombre o el correo.' });
+  const normalizedEmail = email.toLowerCase().trim();
+
+  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
+  if (existing) {
+    return res.status(409).json({ error: 'Ya existe una cuenta con ese correo — liga esa cuenta en vez de crear una nueva (por ahora no hay botón para esto, avísame si lo necesitas).' });
+  }
+
+  const password = crypto.randomBytes(6).toString('base64url');
+  const hash = bcrypt.hashSync(password, 12);
+
+  const linkTx = db.transaction(() => {
+    const info = db.prepare('INSERT INTO users (name, email, password_hash, role, status) VALUES (?,?,?,?,\'active\')')
+      .run(name.trim(), normalizedEmail, hash, party.side);
+    db.prepare('INSERT INTO deal_parties (deal_id, user_id, role_in_deal, deal_party_entity_id) VALUES (?,?,?,?)')
+      .run(req.params.id, info.lastInsertRowid, party.side, party.id);
+    return info.lastInsertRowid;
+  });
+
+  const userId = linkTx();
+  res.status(201).json({ id: userId, name: name.trim(), email: normalizedEmail, temporaryPassword: password });
 });
 
 // DELETE /api/deals/:id/parties/:partyId — quitar una parte agregada de más
