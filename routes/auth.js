@@ -5,6 +5,7 @@ const { authenticator } = require('otplib');
 const qrcode = require('qrcode');
 const db = require('../db');
 const { createRateLimiter } = require('../lib/rateLimit');
+const { isValidEmail } = require('../lib/validate');
 const mailer = require('../lib/email');
 
 const router = express.Router();
@@ -60,8 +61,21 @@ router.post('/register', rateLimitRegister, (req, res) => {
   if (!name || !email || !password || !['agent', 'lawyer', 'external_lawyer'].includes(role)) {
     return res.status(400).json({ error: 'Datos inválidos.' });
   }
+  if (!isValidEmail(email)) {
+    return res.status(400).json({ error: 'Ese correo no tiene un formato válido.' });
+  }
+  if (name.trim().length > 200) {
+    return res.status(400).json({ error: 'El nombre es demasiado largo.' });
+  }
   if (password.length < 8) {
     return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres.' });
+  }
+  // bcrypt solo usa los primeros 72 bytes de la contraseña — sin este
+  // límite, una contraseña más larga se recorta en silencio (queda "menos
+  // segura" de lo que la persona cree) y además cualquiera puede mandar un
+  // string enorme solo para hacer trabajar de más al servidor al hashearlo.
+  if (password.length > 72) {
+    return res.status(400).json({ error: 'La contraseña no puede tener más de 72 caracteres.' });
   }
   let resolvedAgency = null;
   if (role === 'agent') {
@@ -342,6 +356,9 @@ router.post('/reset-password/:token', (req, res) => {
   const { password } = req.body || {};
   if (!password || password.length < 8) {
     return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres.' });
+  }
+  if (password.length > 72) {
+    return res.status(400).json({ error: 'La contraseña no puede tener más de 72 caracteres.' });
   }
   const reset = db.prepare('SELECT * FROM password_resets WHERE token = ?').get(req.params.token);
   if (!reset) return res.status(404).json({ error: 'Este link no es válido.', code: 'invalid' });

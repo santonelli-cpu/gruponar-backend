@@ -19,6 +19,7 @@ const googleDriveRouter = require('./routes/googleDrive');
 const settingsRouter = require('./routes/settings');
 const { runAutomaticReminders } = require('./lib/reminders');
 const { checkAndSendPredialReminders } = require('./lib/predialReminder');
+const { createRateLimiter } = require('./lib/rateLimit');
 
 const app = express();
 // Headers de seguridad estándar (X-Content-Type-Options, X-Frame-Options,
@@ -60,6 +61,15 @@ app.use(session({
     maxAge: 1000 * 60 * 60 * 8 // 8 horas
   }
 }));
+
+// Respaldo general para el resto de la API — los endpoints sensibles
+// (login, registro, 2FA, aceptar invitación) ya tienen sus propios límites
+// más estrictos en routes/auth.js e routes/invites.js; este es el piso
+// mínimo para todo lo demás (deals, documentos, KYC, DocuSign, Drive,
+// contratos), que antes no tenía ningún límite y se podía golpear sin
+// restricción por una sola sesión/IP.
+const rateLimitApi = createRateLimiter({ windowMs: 15 * 60 * 1000, maxAttempts: 600 });
+app.use('/api', rateLimitApi);
 
 app.use('/api/auth', authRouter);
 app.use('/api/deals', dealsRouter);

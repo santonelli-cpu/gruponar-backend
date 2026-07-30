@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const db = require('../db');
 const { requireRole, resolveAgency, KNOWN_AGENCIES } = require('./auth');
+const { isValidEmail } = require('../lib/validate');
 const mailer = require('../lib/email');
 
 const router = express.Router();
@@ -22,6 +23,9 @@ router.post('/', requireRole('admin'), (req, res) => {
   const { name, email, role } = req.body || {};
   if (!name || !email || !['admin', 'agent', 'lawyer', 'external_lawyer', 'buyer', 'seller'].includes(role)) {
     return res.status(400).json({ error: 'Datos inválidos.' });
+  }
+  if (!isValidEmail(email)) {
+    return res.status(400).json({ error: 'Ese correo no tiene un formato válido.' });
   }
   const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase().trim());
   if (existing) return res.status(409).json({ error: 'Ya existe una cuenta con ese correo.' });

@@ -7,6 +7,7 @@ const db = require('../db');
 const { requireAuth, requireRole, resolveAgency } = require('./auth');
 const { genFilename } = require('../lib/storage');
 const { canAccessDeal, myRoleInDeal, myDealPartyEntityId, myRepresentsSide, UNRESTRICTED_ROLES, AGENT_LIKE_ROLES } = require('../lib/access');
+const { isValidEmail } = require('../lib/validate');
 
 // Comprador/vendedor solo puede tocar documentos de su propia parte; un
 // agente que ya eligió a qué lado representa solo los de ese lado; los de
@@ -213,6 +214,11 @@ function insertPartyWithDocs(dealId, scenario, side, sortOrder, p) {
 // una cuenta de equipo (admin/agente/abogado), que no debería quedar ligada
 // como comprador/vendedor.
 function registerPartyUserRaw(dealId, party, name, email) {
+  if (!isValidEmail(email)) {
+    const err = new Error('Ese correo no tiene un formato válido.');
+    err.status = 400;
+    throw err;
+  }
   const normalizedEmail = email.toLowerCase().trim();
   const existing = db.prepare('SELECT id, role FROM users WHERE email = ?').get(normalizedEmail);
   if (existing) {

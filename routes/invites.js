@@ -5,6 +5,7 @@ const db = require('../db');
 const { requireRole, beginTwoFactorChallenge } = require('./auth');
 const { canAccessDeal } = require('../lib/access');
 const { createRateLimiter } = require('../lib/rateLimit');
+const { isValidEmail } = require('../lib/validate');
 const { resolveAgency } = require('./auth');
 const mailer = require('../lib/email');
 
@@ -26,6 +27,9 @@ router.post('/', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), asy
   const { dealId, dealPartyEntityId, roleInDeal, name, email, representsSide } = req.body || {};
   if (!['buyer', 'seller', 'agent', 'lawyer', 'external_lawyer'].includes(roleInDeal) || !name || !email) {
     return res.status(400).json({ error: 'Datos inválidos.' });
+  }
+  if (!isValidEmail(email)) {
+    return res.status(400).json({ error: 'Ese correo no tiene un formato válido.' });
   }
   if (representsSide !== undefined && representsSide !== null && !['buyer', 'seller'].includes(representsSide)) {
     return res.status(400).json({ error: 'representsSide debe ser buyer o seller.' });
@@ -100,6 +104,9 @@ router.post('/:token/accept', rateLimitAccept, (req, res) => {
   const { password, agency, agencyOther } = req.body || {};
   if (!password || password.length < 8) {
     return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres.' });
+  }
+  if (password.length > 72) {
+    return res.status(400).json({ error: 'La contraseña no puede tener más de 72 caracteres.' });
   }
 
   const invite = db.prepare('SELECT * FROM invites WHERE token = ?').get(req.params.token);
