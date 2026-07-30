@@ -615,6 +615,13 @@ async function loadData(){
   }catch(e){ deals = []; }
   if(['admin','agent','lawyer'].includes(currentUser.role)) loadDashboard();
   if(currentUser.role === 'admin') loadPendingUsers();
+  // Link directo a una operación (ej. desde el correo de "te agregamos a
+  // esta operación") — ?dealId=123 en la URL la abre de una vez.
+  const linkedDealId = Number(new URLSearchParams(window.location.search).get('dealId'));
+  if(linkedDealId && ['admin','agent','lawyer'].includes(currentUser.role)){
+    mainTab = 'admin'; adminView = 'list'; activeDealId = linkedDealId;
+    openDeal(linkedDealId);
+  }
   render();
 }
 
@@ -2541,15 +2548,43 @@ function buildContractSection(deal, isStaffView){
         const grid = document.createElement('div');
         grid.style.cssText = 'display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:8px;';
         section.fields.forEach(f => {
-          const label = document.createElement('label');
-          label.style.cssText = 'display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--ink-soft);';
-          label.innerHTML = `${escapeHtml(f.label)}${fieldInputHtml(f, smartValues[f.id])}`;
-          grid.appendChild(label);
+          if(f.type === 'notary-select'){
+            const wrap = document.createElement('div');
+            wrap.style.cssText = 'display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--ink-soft);';
+            const currentVal = smartValues[f.id] !== undefined && smartValues[f.id] !== null ? String(smartValues[f.id]) : '';
+            wrap.innerHTML = `${escapeHtml(f.label)}
+              <select data-field="${f.id}">
+                <option value="">…</option>
+                ${f.options.map(o=>`<option value="${o.value}" ${currentVal===String(o.value)?'selected':''}>${escapeHtml(o.label)}</option>`).join('')}
+                <option value="otro" ${currentVal==='otro'?'selected':''}>${escapeHtml(f.otherLabel || 'Otro')}</option>
+              </select>
+              <div data-other-wrap style="display:${currentVal==='otro'?'flex':'none'}; flex-direction:column; gap:6px; margin-top:4px;">
+                ${f.otherFields.map(of => `<label style="display:flex; flex-direction:column; gap:2px;">${escapeHtml(of.label)}${fieldInputHtml(of, smartValues[of.id])}</label>`).join('')}
+              </div>`;
+            const selectEl = wrap.querySelector('select');
+            const otherWrap = wrap.querySelector('[data-other-wrap]');
+            selectEl.onchange = () => { otherWrap.style.display = selectEl.value === 'otro' ? 'flex' : 'none'; };
+            grid.appendChild(wrap);
+          } else {
+            const label = document.createElement('label');
+            label.style.cssText = 'display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--ink-soft);';
+            label.innerHTML = `${escapeHtml(f.label)}${fieldInputHtml(f, smartValues[f.id])}`;
+            grid.appendChild(label);
+          }
         });
         sec.appendChild(grid);
         sec._collect = () => {
           const rowVal = {};
-          section.fields.forEach(f => { rowVal[f.id] = grid.querySelector(`[data-field="${f.id}"]`).value.trim(); });
+          section.fields.forEach(f => {
+            const el = grid.querySelector(`[data-field="${f.id}"]`);
+            if(el) rowVal[f.id] = el.value.trim();
+            if(f.otherFields){
+              f.otherFields.forEach(of => {
+                const oEl = grid.querySelector(`[data-field="${of.id}"]`);
+                if(oEl) rowVal[of.id] = oEl.value.trim();
+              });
+            }
+          });
           return rowVal;
         };
       }

@@ -506,6 +506,15 @@ router.post('/:id/agents', requireRole('admin', 'agent', 'lawyer'), (req, res) =
   if (already) return res.status(409).json({ error: 'Ese agente ya está en esta operación.' });
   db.prepare("INSERT INTO deal_parties (deal_id, user_id, role_in_deal) VALUES (?,?,'agent')").run(req.params.id, userId);
   res.status(201).json({ ok: true });
+
+  // Aviso por correo (best-effort, no bloquea la respuesta) — el agente ya
+  // tiene cuenta, solo le avisamos que esta operación se agregó a la suya.
+  if (mailer.isConfigured()) {
+    const deal = db.prepare('SELECT property FROM deals WHERE id = ?').get(req.params.id);
+    const url = `${req.protocol}://${req.get('host')}/?dealId=${req.params.id}`;
+    mailer.sendAgentAddedToDealEmail({ to: user.email, name: user.name, dealProperty: deal.property, url })
+      .then(result => { if (!result.ok) console.error('[resend] no se pudo avisar al agente agregado', req.params.id, result.error); });
+  }
 });
 
 // DELETE /api/deals/:id/agents/:userId — quita a un agente de la operación
