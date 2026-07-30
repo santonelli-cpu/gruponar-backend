@@ -6,6 +6,7 @@ const qrcode = require('qrcode');
 const db = require('../db');
 const { createRateLimiter } = require('../lib/rateLimit');
 const { isValidEmail } = require('../lib/validate');
+const { getClientIp } = require('../lib/clientIp');
 const mailer = require('../lib/email');
 
 const router = express.Router();
@@ -49,7 +50,7 @@ function resolveAgency(agency, agencyOther) {
 
 function logAccess(userId, action, req) {
   db.prepare('INSERT INTO access_log (user_id, action, ip) VALUES (?, ?, ?)')
-    .run(userId, action, req.ip);
+    .run(userId, action, getClientIp(req));
 }
 
 // POST /api/auth/register — agente/abogado se autoregistran. Queda en
