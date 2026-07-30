@@ -399,6 +399,9 @@ const STRINGS = {
     partyRegisterFailedAlert: 'La parte se agregó bien, pero no se pudo dar de alta su cuenta: {error}',
     partyRegisteredLine: '{name} ({email}) — contraseña temporal: {password}',
     partyRegisterFailedLine: '{name} — no se pudo dar de alta su cuenta: {error}',
+    partyLinkedExistingLine: '{name} ({email}) — ya tenía cuenta (de otra operación), se ligó a esta parte.',
+    welcomeEmailFailedNote: '\n\n⚠️ No se pudo mandar el correo de bienvenida automático ({error}) — comparte la contraseña de arriba tú directamente.',
+    welcomeEmailSentNote: '\n\nAdemás, se le mandó un correo de bienvenida para que entre y ponga su propia contraseña si prefiere.',
     ownershipStructure: 'Estructura de propiedad',
     modeDirectOwners: '1-2 socios/accionistas directos', modeParentEntity: 'Otra entidad es dueña', modeDirectTrust: 'Un revocable trust es dueño directo',
     directOwners: 'Socios/accionistas directos (1-2)', owner1Ph: 'Nombre del socio 1', owner2Ph: 'Nombre del socio 2 (opcional)',
@@ -588,6 +591,9 @@ const STRINGS = {
     partyRegisterFailedAlert: 'The party was added fine, but their account could not be created: {error}',
     partyRegisteredLine: '{name} ({email}) — temporary password: {password}',
     partyRegisterFailedLine: '{name} — could not create their account: {error}',
+    partyLinkedExistingLine: '{name} ({email}) — already had an account (from another deal), linked it to this party.',
+    welcomeEmailFailedNote: '\n\n⚠️ Could not send the automatic welcome email ({error}) — share the password above with them directly.',
+    welcomeEmailSentNote: '\n\nA welcome email was also sent so they can log in and set their own password if they prefer.',
     ownershipStructure: 'Ownership structure',
     modeDirectOwners: '1-2 direct partners/shareholders', modeParentEntity: 'Another entity owns it', modeDirectTrust: 'A revocable trust is the direct owner',
     directOwners: 'Direct partners/shareholders (1-2)', owner1Ph: 'Partner 1 name', owner2Ph: 'Partner 2 name (optional)',
@@ -2248,9 +2254,13 @@ function buildNewDealForm(){
     try{
       const { id, partyResults } = await apiFetch('/api/deals', { method:'POST', body: JSON.stringify(body) });
       if(partyResults && partyResults.length){
-        const lines = partyResults.map(r => r.temporaryPassword
-          ? t('partyRegisteredLine', { name: r.partyName, email: r.email, password: r.temporaryPassword })
-          : t('partyRegisterFailedLine', { name: r.partyName, error: r.error }));
+        const lines = partyResults.map(r => {
+          if(r.linkedExisting) return t('partyLinkedExistingLine', { name: r.partyName, email: r.email });
+          if(!r.temporaryPassword) return t('partyRegisterFailedLine', { name: r.partyName, error: r.error });
+          let line = t('partyRegisteredLine', { name: r.partyName, email: r.email, password: r.temporaryPassword });
+          line += r.welcomeEmailSent ? t('welcomeEmailSentNote') : t('welcomeEmailFailedNote', { error: r.welcomeEmailError || '' });
+          return line;
+        });
         alert(lines.join('\n\n'));
       }
       adminView = 'list';
@@ -2324,7 +2334,9 @@ function buildPartiesSection(deal){
           try{
             const result = await apiFetch(`/api/deals/${deal.id}/parties/${p.id}`, { method:'PATCH', body: JSON.stringify(block.collectParty(side)) });
             if(result.temporaryPassword){
-              alert(t('partyRegisteredAlert', { password: result.temporaryPassword }));
+              let msg = t('partyRegisteredAlert', { password: result.temporaryPassword });
+              msg += result.welcomeEmailSent ? t('welcomeEmailSentNote') : t('welcomeEmailFailedNote', { error: result.welcomeEmailError || '' });
+              alert(msg);
             } else if(result.emailError){
               alert(t('partyRegisterFailedAlert', { error: result.emailError }));
             }
@@ -2362,7 +2374,9 @@ function buildPartiesSection(deal){
         try{
           const result = await apiFetch(`/api/deals/${deal.id}/parties`, { method:'POST', body: JSON.stringify(block.collectParty(side)) });
           if(result.temporaryPassword){
-            alert(t('partyRegisteredAlert', { password: result.temporaryPassword }));
+            let msg = t('partyRegisteredAlert', { password: result.temporaryPassword });
+            msg += result.welcomeEmailSent ? t('welcomeEmailSentNote') : t('welcomeEmailFailedNote', { error: result.welcomeEmailError || '' });
+            alert(msg);
           } else if(result.emailError){
             alert(t('partyRegisterFailedAlert', { error: result.emailError }));
           }

@@ -243,19 +243,28 @@ function registerPartyUserRaw(dealId, party, name, email) {
 // Nunca lanza — un correo que falla no debe tumbar el alta de la parte.
 // `scenario` decide el idioma (mailer.resolveClientLang) — un comprador
 // extranjero (ej. fideicomiso) no entiende un correo en español.
+// Devuelve { sent, error } en vez de tragarse el resultado — sendInviteEmail
+// nunca lanza en un error de Resend (dominio no verificado, etc.), lo
+// devuelve en result.error y ahí se quedaba sin que nadie lo viera. Sigue
+// sin lanzar ella misma (un correo que falla no debe tumbar el alta de la
+// parte), pero ahora quien la llama puede avisarle al admin en vez de que
+// parezca que todo salió bien cuando en realidad no llegó nada.
 async function sendPartyWelcomeEmail(req, dealProperty, name, email, side, scenario) {
-  if (!mailer.isConfigured()) return;
+  if (!mailer.isConfigured()) return { sent: false, error: 'Resend no está configurado (falta RESEND_API_KEY).' };
   try {
     const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase().trim());
-    if (!user) return;
+    if (!user) return { sent: false, error: 'Cuenta no encontrada.' };
     const token = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 7 * 86400000).toISOString();
     db.prepare('INSERT INTO password_resets (token, user_id, expires_at) VALUES (?,?,?)').run(token, user.id, expiresAt);
     const url = `${req.protocol}://${req.get('host')}/reset-password.html?token=${token}`;
     const lang = mailer.resolveClientLang(scenario, side);
-    await mailer.sendInviteEmail({ to: email, name, roleInDeal: side, dealProperty, url, lang });
+    const result = await mailer.sendInviteEmail({ to: email, name, roleInDeal: side, dealProperty, url, lang });
+    if (!result.ok) console.error('[welcome-email] no se pudo mandar a', email, '-', result.error);
+    return { sent: result.ok, error: result.ok ? null : result.error };
   } catch (err) {
     console.error('[welcome-email] no se pudo mandar a', email, '-', err.message);
+    return { sent: false, error: err.message };
   }
 }
 
@@ -299,7 +308,7 @@ router.get('/', requireAuth, (req, res) => {
 });
 
 // POST /api/deals — admin/agente/abogado crean operaciones.
-router.post('/', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
+router.post('/', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), async (req, res) => {
   const { scenario, development, property, price, furniturePrice, currency, startDate, parties, escrowCompany } = req.body || {};
   if (!scenario || !property || !Array.isArray(parties)) {
     return res.status(400).json({ error: 'Faltan campos requeridos.' });
@@ -364,11 +373,13 @@ router.post('/', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (re
       return { id, partyResults };
     })();
 
+    await Promise.all(result.partyResults.filter(r => !r.error && !r.linkedExisting).map(async r => {
+      const { sent, error } = await sendPartyWelcomeEmail(req, property, r.partyName, r.email, r.side, scenario);
+      r.welcomeEmailSent = sent;
+      r.welcomeEmailError = error;
+    }));
     res.status(201).json({ id: result.id, partyResults: result.partyResults });
     tryCreateDriveFolder(req, result.id, property);
-    result.partyResults
-      .filter(r => !r.error && !r.linkedExisting)
-      .forEach(r => sendPartyWelcomeEmail(req, property, r.partyName, r.email, r.side, scenario));
   } catch (err) {
     res.status(500).json({ error: err.message || 'Error al crear la operación.' });
   }
@@ -477,7 +488,7 @@ router.patch('/:id', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'),
 
 // POST /api/deals/:id/parties — agrega una parte nueva (vendedor/comprador
 // adicional) a una operación ya creada, con su propio checklist.
-router.post('/:id/parties', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
+router.post('/:id/parties', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id);
   if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
@@ -494,20 +505,20 @@ router.post('/:id/parties', requireRole('admin', 'agent', 'lawyer', 'external_la
 
   // Correo opcional: da de alta la cuenta de una vez, para poder mandar a
   // firmar documentos sin que la parte tenga que registrarse ella misma.
-  let temporaryPassword, emailError, linkedExisting;
+  let temporaryPassword, emailError, linkedExisting, welcomeEmailSent, welcomeEmailError;
   if (p.email && p.email.trim()) {
     try {
       const newParty = db.prepare('SELECT * FROM deal_party_entities WHERE id = ?').get(partyId);
       ({ temporaryPassword, linkedExisting } = db.transaction(() => registerPartyUserRaw(req.params.id, newParty, p.name, p.email))());
+      if (!linkedExisting) {
+        ({ sent: welcomeEmailSent, error: welcomeEmailError } = await sendPartyWelcomeEmail(req, deal.property, p.name, p.email, p.side, deal.scenario));
+      }
     } catch (err) {
       emailError = err.message;
     }
   }
 
-  res.status(201).json({ id: partyId, temporaryPassword, emailError });
-  if (p.email && p.email.trim() && !emailError && !linkedExisting) {
-    sendPartyWelcomeEmail(req, deal.property, p.name, p.email, p.side, deal.scenario);
-  }
+  res.status(201).json({ id: partyId, temporaryPassword, emailError, welcomeEmailSent, welcomeEmailError });
 });
 
 // PATCH /api/deals/:id/parties/:partyId — editar nombre/estructura de una
@@ -518,7 +529,7 @@ router.post('/:id/parties', requireRole('admin', 'agent', 'lawyer', 'external_la
 // deal") para esto y resultaba confuso, así que esa sección ahora es solo
 // para agentes/abogados externos (ver buildInviteForm en el frontend) y
 // esta es la ÚNICA forma de ligar/crear la cuenta de una parte.
-router.patch('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
+router.patch('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
   if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
@@ -565,10 +576,11 @@ router.patch('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer', 'e
     }
   })();
 
-  res.json({ ok: true, temporaryPassword, emailError });
+  let welcomeEmailSent, welcomeEmailError;
   if (!alreadyLinked && p.email && p.email.trim() && !emailError && !linkedExisting) {
-    sendPartyWelcomeEmail(req, deal.property, p.name, p.email, p.side, deal.scenario);
+    ({ sent: welcomeEmailSent, error: welcomeEmailError } = await sendPartyWelcomeEmail(req, deal.property, p.name, p.email, p.side, deal.scenario));
   }
+  res.json({ ok: true, temporaryPassword, emailError, welcomeEmailSent, welcomeEmailError });
 });
 
 // Inserta solo los documentos que falten según la estructura ACTUAL de la
