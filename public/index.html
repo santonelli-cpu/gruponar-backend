@@ -80,15 +80,18 @@
   a:hover{text-decoration:underline; color:var(--oxblood-deep);}
   .gate-stage{min-height:100vh; display:flex; align-items:center; justify-content:center; padding:32px 20px; background:radial-gradient(120% 100% at 15% -10%, var(--oxblood-soft) 0%, var(--stone) 55%);}
   .gate-shell{width:100%; max-width:1040px; min-height:600px; display:flex; background:var(--stone-card); border-radius:20px; overflow:hidden; border:0.5px solid var(--line); box-shadow:0 2px 4px rgba(33,22,19,0.05), 0 32px 64px -28px rgba(58,12,8,0.28);}
-  .gate-brand{flex:0 0 42%; background:radial-gradient(140% 180% at 12% -20%, #4E1610 0%, var(--oxblood-deep) 55%); color:var(--stone); display:flex; flex-direction:column; justify-content:space-between; padding:44px 40px;}
-  .gate-brand-mark{display:block;}
+  .gate-brand{flex:0 0 42%; position:relative; overflow:hidden; background:radial-gradient(140% 180% at 12% -20%, #4E1610 0%, var(--oxblood-deep) 55%); color:var(--stone); display:flex; flex-direction:column; justify-content:space-between; padding:44px 40px;}
+  .gate-brand-watermark{position:absolute; right:-72px; bottom:-64px; width:340px; height:340px; opacity:0.08; pointer-events:none;}
+  .gate-brand-mark{position:relative; z-index:1; display:block;}
   .gnar-logo-mark{display:block; width:148px; height:148px; margin-left:-4px;}
-  .gate-brand-mid{margin:auto 0; padding:48px 0;}
+  .gate-brand-mid{position:relative; z-index:1; margin:auto 0; padding:48px 0;}
   .gate-eyebrow{display:inline-flex; align-items:center; gap:8px; font-size:11px; letter-spacing:2px; color:var(--gold); text-transform:uppercase; margin:0 0 18px; font-weight:600;}
   .gate-eyebrow::before{content:""; width:18px; height:1px; background:var(--gold);}
   .gate-brand-mid h1{font-family:'Fraunces',serif; font-weight:500; font-size:30px; line-height:1.3; letter-spacing:-0.01em; margin:0 0 16px; max-width:320px;}
   .gate-brand-mid p{font-size:13.5px; line-height:1.7; color:rgba(246,244,240,0.68); max-width:300px; margin:0;}
-  .gate-brand-footer{font-size:12px; color:rgba(246,244,240,0.42);}
+  .gate-brand-footer{position:relative; z-index:1; display:flex; align-items:center; gap:14px; font-size:12px; color:rgba(246,244,240,0.42);}
+  .gate-brand-footer a{color:rgba(246,244,240,0.42); text-decoration:none;}
+  .gate-brand-footer a:hover{color:rgba(246,244,240,0.72);}
   .gate-panel{flex:1; display:flex; align-items:center; justify-content:center; padding:44px 40px;}
   .gate-panel-inner{width:100%; max-width:340px;}
   .gate-eyebrow-small{font-size:11px; letter-spacing:2px; color:var(--gold); text-transform:uppercase; margin:0 0 10px; font-weight:600;}
@@ -244,7 +247,8 @@ const STRINGS = {
     logout: 'Cerrar sesión',
     checkingSession: 'Verificando sesión...', loginGateSub: 'Ingresa con tu correo y contraseña para continuar.',
     gateBrandEyebrow: 'Coordinación de cierres', gateBrandHeadline: 'Un cierre. Todas las partes. Un solo lugar.',
-    gateBrandBody: 'Agentes autorizados, compradores y vendedores en transacción, y abogados externos dan seguimiento a documentos, expedientes y firmas en tiempo real — sin cadenas de correo ni versiones sueltas.',
+    gateBrandBody: 'Firma, comparte y da seguimiento a cada documento del cierre en un solo lugar seguro, hecho para cerrar más rápido y con total confianza.',
+    gateBrandPrivacy: 'Aviso de privacidad',
     gateWelcomeBack: 'Bienvenido de nuevo', emailLabel: 'Correo electrónico', passwordLabel: 'Contraseña',
     showPassword: 'Mostrar', hidePassword: 'Ocultar',
     loginErrFields: 'Escribe tu correo y contraseña.',
@@ -417,7 +421,8 @@ const STRINGS = {
     logout: 'Log out',
     checkingSession: 'Checking session...', loginGateSub: 'Sign in with your email and password to continue.',
     gateBrandEyebrow: 'Closing coordination', gateBrandHeadline: 'One closing. Every party. One place.',
-    gateBrandBody: 'Authorized agents, clients in an active transaction, and external counsel track documents, files, and signatures in real time — no email chains, no scattered versions.',
+    gateBrandBody: 'Sign, share, and track every closing document in one secure place, built to help you close faster with total confidence.',
+    gateBrandPrivacy: 'Privacy notice',
     gateWelcomeBack: 'Welcome back', emailLabel: 'Email address', passwordLabel: 'Password',
     showPassword: 'Show', hidePassword: 'Hide',
     loginErrFields: 'Enter your email and password.',
@@ -884,6 +889,28 @@ function buildGateShell(panelInnerHtml){
   wrap.innerHTML = `
     <div class="gate-shell">
       <div class="gate-brand">
+        <svg class="gate-brand-watermark" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
+	 viewBox="0 0 1080 1080" style="enable-background:new 0 0 1080 1080;" xml:space="preserve">
+<style type="text/css">
+	.st0{fill:#22130B;}
+	.st1{fill:#58130E;}
+	.st2{fill:#976B60;}
+	.st3{fill:#8E816F;}
+	.st4{fill:#A48887;}
+	.st5{fill:#D2D2D2;}
+	.st6{fill:#FFFFFF;}
+</style>
+<g>
+	<g>
+		<polygon class="st6" points="89.3,763 89.3,763 492.8,359.5 896.3,763 896.3,763 938.7,763 938.7,763 492.8,317 46.9,763 
+			46.9,763 		"/>
+		<g>
+			<polygon class="st6" points="513.8,432.9 492.6,411.7 141.3,763 141.3,763 183.7,763 183.7,763 			"/>
+			<polygon class="st6" points="587.2,317 566,338.3 587.2,359.5 587.2,359.5 990.7,763 990.7,763 1033.1,763 1033.1,763 			"/>
+		</g>
+	</g>
+</g>
+</svg>
         <div class="gate-brand-mark">
           <svg class="gnar-logo-mark" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
 	 viewBox="0 0 1080 1080" style="enable-background:new 0 0 1080 1080;" xml:space="preserve">
@@ -1044,6 +1071,7 @@ function buildGateShell(panelInnerHtml){
         </div>
         <div class="gate-brand-footer">
           <span>&copy; ${new Date().getFullYear()} Grupo NAR</span>
+          <a href="#" onclick="return false;">${t('gateBrandPrivacy')}</a>
         </div>
       </div>
       <div class="gate-panel">
