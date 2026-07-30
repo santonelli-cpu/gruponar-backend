@@ -124,6 +124,26 @@ router.post('/deals/:id/tasks/:taskId/document', requireRole('admin', 'lawyer'),
   });
 });
 
+// GET /api/docusign/deals/:id/tasks/:taskId/document — ver/descargar el
+// documento de esta tarea (generado o subido a mano) — antes no había forma
+// de verlo desde la tarjeta de E-signature, solo de subirlo/reemplazarlo.
+router.get('/deals/:id/tasks/:taskId/document', requireAuth, async (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const task = getTask(req.params.id, req.params.taskId);
+  if (!task || !task.document_url) return res.status(404).json({ error: 'Documento no encontrado.' });
+
+  if (!await gcsStorage.existsFile(task.document_url)) return res.status(404).json({ error: 'Documento no encontrado.' });
+  try {
+    await gcsStorage.streamToResponse(task.document_url, res, {
+      contentType: 'application/pdf',
+      downloadName: task.document_original_name || 'documento.pdf',
+      inline: true
+    });
+  } catch (err) {
+    if (!res.headersSent) res.status(502).json({ error: 'Error al leer el archivo.' });
+  }
+});
+
 // POST /api/deals/:id/tasks/:taskId/generate-escrow-document — genera el
 // escrow agreement de Armour Secure ya llenado (vendedor/comprador salen de
 // la operación; el resto lo captura quien llama) y lo deja como el
@@ -289,6 +309,22 @@ router.get('/deals/:id/tasks/:taskId/status', requireAuth, async (req, res) => {
 
     res.json({ docusignStatus, status: newStatus });
   } catch (err) {
+    // DocuSign responde 404 cuando el envelope_id no existe en la cuenta
+    // donde se está buscando — típicamente porque se mandó antes de tener
+    // las credenciales de producción bien puestas (fue a parar al sandbox
+    // sin darse cuenta) y ahora se busca en la cuenta real. Quedarse con
+    // docusign_status='sent' para siempre sería un callejón sin salida: ni
+    // se puede reintentar mandar (el botón se deshabilita si ya no está en
+    // 'not_sent') ni consultar estado va a funcionar jamás para ese
+    // envelope_id. Se resetea solo para que "Enviar a firma" vuelva a
+    // habilitarse.
+    if (err.response?.status === 404) {
+      db.prepare("UPDATE tasks SET docusign_status = 'not_sent', docusign_envelope_id = NULL WHERE id = ?").run(task.id);
+      return res.json({
+        docusignStatus: 'not_sent', status: task.status,
+        warning: 'DocuSign no encontró ese envío (probablemente se mandó antes de configurar bien la cuenta de producción) — se reinició para que puedas mandarlo de nuevo.'
+      });
+    }
     res.status(502).json({ error: err.message || 'Error al consultar el estado en DocuSign.' });
   }
 });

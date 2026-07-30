@@ -208,6 +208,22 @@ db.prepare(`
     )
 `).run();
 
+// Comprobantes de pago (a escrow y al notario) se agregaron a
+// data/scenario-docs.json como documentos de Propiedad, para todos los
+// escenarios — mismo backfill puramente aditivo que los de arriba, para las
+// operaciones que ya existían antes de este cambio.
+['Comprobante de pago a escrow (Proof of payment to escrow)', 'Comprobante de pago al notario (Proof of payment to notary)'].forEach(name => {
+  db.prepare(`
+    INSERT INTO documents (deal_id, deal_party_entity_id, name, created_at)
+    SELECT d.id, NULL, ?, datetime('now')
+    FROM deals d
+    WHERE NOT EXISTS (
+      SELECT 1 FROM documents doc
+      WHERE doc.deal_id = d.id AND doc.deal_party_entity_id IS NULL AND doc.name = ?
+    )
+  `).run(name, name);
+});
+
 // "Bank trust KYC and formats signed" se quitó de data/scenario-tasks.json —
 // ese expediente ya se maneja completo por el sistema real de KYC
 // (routes/kyc.js); este task de "subir a mano y firmar" en el tracker de

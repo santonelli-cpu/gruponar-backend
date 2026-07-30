@@ -385,6 +385,8 @@ const STRINGS = {
     confirmDeleteDeal: '¿Eliminar esta operación? Esta acción no se puede deshacer.',
     sellersAndBuyers: 'Vendedores y compradores', propertySection: 'Propiedad', docsChecklist: 'Checklist de documentos (KYC)',
     notaryClosingCostsSection: 'Gastos de cierre (notario)',
+    viewClosingCosts: 'Ver costos de cierre', closingCostsNotReady: 'Todavía no están listos los costos de cierre.',
+    paymentProofsLabel: 'Comprobantes de pago',
     kycFile: 'Expediente KYC (firma electrónica)', closingTracker: 'Tracker de cierre', inviteToThisDeal: 'Invitar a esta operación',
     contractPromise: 'Contrato de promesa',
     loadingEllipsis: 'cargando...', formLanguage: 'Idioma del formulario', spanish: 'Español', english: 'English',
@@ -572,6 +574,8 @@ const STRINGS = {
     confirmDeleteDeal: 'Delete this deal? This action cannot be undone.',
     sellersAndBuyers: 'Sellers and buyers', propertySection: 'Property', docsChecklist: 'Document checklist (KYC)',
     notaryClosingCostsSection: 'Closing costs (notary)',
+    viewClosingCosts: 'View closing costs', closingCostsNotReady: "Closing costs aren't ready yet.",
+    paymentProofsLabel: 'Payment proofs',
     kycFile: 'KYC file (e-signature)', closingTracker: 'Closing tracker', inviteToThisDeal: 'Invite to this deal',
     contractPromise: 'Purchase Agreement',
     loadingEllipsis: 'loading...', formLanguage: 'Form language', spanish: 'Español', english: 'English',
@@ -2528,7 +2532,7 @@ function buildAdminDealDetail(deal){
   tasksCard.appendChild(buildTaskList(deal));
   wrap.appendChild(tasksCard);
 
-  buildSignatureTasksSection(deal, wrap);
+  buildSignatureTasksSection(deal, wrap, true);
 
   const agentsTitle = document.createElement('div');
   agentsTitle.className = 'section-title'; agentsTitle.textContent = t('agentsInDeal');
@@ -3100,8 +3104,11 @@ function buildDocListForParty(deal, party, isStaffView){
 // cierre del notario vive aparte, ver buildNotaryClosingCostsSection abajo
 // — aquí se lo excluye para no mostrarlo dos veces.
 const NOTARY_CLOSING_DOC_NAME = 'Costos de cierre (recibo del notario)';
+const ESCROW_PAYMENT_PROOF_DOC_NAME = 'Comprobante de pago a escrow (Proof of payment to escrow)';
+const NOTARY_PAYMENT_PROOF_DOC_NAME = 'Comprobante de pago al notario (Proof of payment to notary)';
+const CLOSING_COSTS_SECTION_DOC_NAMES = [NOTARY_CLOSING_DOC_NAME, ESCROW_PAYMENT_PROOF_DOC_NAME, NOTARY_PAYMENT_PROOF_DOC_NAME];
 function buildPropertyDocsSection(deal, isStaffView){
-  const docs = deal.documents.filter(d => d.partyId === null && d.name !== NOTARY_CLOSING_DOC_NAME);
+  const docs = deal.documents.filter(d => d.partyId === null && !CLOSING_COSTS_SECTION_DOC_NAMES.includes(d.name));
   const box = document.createElement('div');
   box.style.marginBottom = '14px';
   const ul = document.createElement('ul');
@@ -3116,26 +3123,121 @@ function buildPropertyDocsSection(deal, isStaffView){
 
 // Costos de cierre del notario, en su propia sección — antes era un renglón
 // más dentro de "Propiedad" y tanto admin (para subirlo) como comprador
-// (para verlo) no lo encontraban ahí. Aquí es inconfundible: la cuenta a la
-// que se paga (nota configurable en Ajustes → solo se ve si ya se llenó) y
-// el documento en sí.
+// (para verlo) no lo encontraban ahí. La cotización del notario se ve como
+// un botón claro de "Ver costos de cierre" (no un checklist — es solo
+// consulta, admin la sube una vez); los comprobantes de pago (a escrow y al
+// notario) sí son requisitos de verdad que el comprador tiene que subir,
+// así que esos se ven como checklist normal, con su propio botón de
+// aprobar/rechazar y su "+" por si hay más de un comprobante.
 function buildNotaryClosingCostsSection(deal, isStaffView){
   const box = document.createElement('div');
-  const doc = deal.documents.find(d => d.partyId === null && d.name === NOTARY_CLOSING_DOC_NAME);
-  if(!doc) return box;
+  const quoteDoc = deal.documents.find(d => d.partyId === null && d.name === NOTARY_CLOSING_DOC_NAME);
+  if(!quoteDoc) return box;
+
   if(notaryPaymentNote === undefined){
     loadNotaryPaymentNote();
   } else if(notaryPaymentNote){
     const note = document.createElement('div');
     note.className = 'field-hint';
-    note.style.cssText = 'margin:0 0 8px; padding:8px 10px; border-radius:8px; background:var(--stone); white-space:pre-wrap;';
+    note.style.cssText = 'margin:0 0 12px; padding:8px 10px; border-radius:8px; background:var(--stone); white-space:pre-wrap;';
     note.innerHTML = `<b>${escapeHtml(t('notaryPaymentNoteLabel'))}:</b> ${escapeHtml(notaryPaymentNote)}`;
     box.appendChild(note);
   }
+
+  const quoteRow = document.createElement('div');
+  quoteRow.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; padding-bottom:14px; margin-bottom:14px; border-bottom:0.5px solid var(--line);';
+  const reviewBadgeHtml = quoteDoc.fileUrl
+    ? `<span class="review-badge ${quoteDoc.reviewStatus}" style="margin-left:8px;">${t(quoteDoc.reviewStatus === 'approved' ? 'reviewApproved' : quoteDoc.reviewStatus === 'rejected' ? 'reviewRejected' : 'reviewPending')}</span>`
+    : '';
+  quoteRow.innerHTML = `
+    <div style="display:flex; align-items:center; gap:12px;">
+      <div style="width:38px; height:38px; border-radius:10px; background:var(--gold-soft); color:#6B4E1E; display:flex; align-items:center; justify-content:center; flex-shrink:0;"><i class="ti ti-file-invoice" aria-hidden="true" style="font-size:18px;"></i></div>
+      <div>
+        <div style="font-weight:600; font-size:14px;">${escapeHtml(quoteDoc.name)}${reviewBadgeHtml}</div>
+        <div class="field-hint" style="margin:2px 0 0;">${quoteDoc.fileUrl ? escapeHtml(quoteDoc.originalName || '') : t('notUploaded')}</div>
+      </div>
+    </div>
+  `;
+  const quoteActions = document.createElement('div');
+  quoteActions.style.cssText = 'display:flex; gap:8px; flex-wrap:wrap;';
+  if(quoteDoc.fileUrl){
+    const viewLink = document.createElement('a');
+    viewLink.href = `/api/deals/${deal.id}/documents/${quoteDoc.id}/file`;
+    viewLink.target = '_blank';
+    viewLink.className = 'btn primary';
+    viewLink.innerHTML = `<i class="ti ti-eye" aria-hidden="true"></i> ${t('viewClosingCosts')}`;
+    quoteActions.appendChild(viewLink);
+  }
+  if(isStaffView){
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file'; fileInput.style.display = 'none'; fileInput.accept = '.pdf,.jpg,.jpeg,.png,.heic';
+    const uploadBtn = document.createElement('button');
+    uploadBtn.type = 'button'; uploadBtn.className = 'btn'; uploadBtn.style.fontSize = '11px';
+    uploadBtn.innerHTML = `<i class="ti ti-upload" aria-hidden="true"></i> ${quoteDoc.fileUrl ? t('replaceFile') : t('upload')}`;
+    uploadBtn.onclick = () => fileInput.click();
+    fileInput.onchange = async (e) => {
+      const file = e.target.files[0]; if(!file) return;
+      const original = uploadBtn.innerHTML;
+      uploadBtn.disabled = true; uploadBtn.innerHTML = `<i class="ti ti-loader-2" aria-hidden="true"></i> ${t('uploading')}`;
+      const fd = new FormData(); fd.append('file', file);
+      try{
+        await apiUpload(`/api/deals/${deal.id}/documents/${quoteDoc.id}/file`, fd);
+        await openDeal(deal.id);
+      }catch(err){ alert(err.message); uploadBtn.disabled = false; uploadBtn.innerHTML = original; }
+    };
+    quoteActions.appendChild(uploadBtn);
+    quoteActions.appendChild(fileInput);
+    const canReview = ['admin','lawyer'].includes(currentUser.role);
+    if(canReview && quoteDoc.fileUrl && quoteDoc.reviewStatus !== 'approved'){
+      const approveBtn = document.createElement('button');
+      approveBtn.className = 'btn success'; approveBtn.style.fontSize = '11px'; approveBtn.textContent = t('approveDocument');
+      approveBtn.onclick = async () => {
+        approveBtn.disabled = true;
+        try{ await apiFetch(`/api/deals/${deal.id}/documents/${quoteDoc.id}/review`, { method:'PATCH', body: JSON.stringify({ reviewStatus:'approved' }) }); await openDeal(deal.id); }
+        catch(e){ alert(e.message); approveBtn.disabled = false; }
+      };
+      quoteActions.appendChild(approveBtn);
+    }
+    if(canReview && quoteDoc.fileUrl && quoteDoc.reviewStatus !== 'rejected'){
+      const rejectBtn = document.createElement('button');
+      rejectBtn.className = 'btn danger'; rejectBtn.style.fontSize = '11px'; rejectBtn.textContent = t('rejectDocument');
+      rejectBtn.onclick = async () => {
+        const reviewNote = prompt(t('rejectReasonPrompt'), '');
+        if(reviewNote === null) return;
+        rejectBtn.disabled = true;
+        try{ await apiFetch(`/api/deals/${deal.id}/documents/${quoteDoc.id}/review`, { method:'PATCH', body: JSON.stringify({ reviewStatus:'rejected', reviewNote }) }); await openDeal(deal.id); }
+        catch(e){ alert(e.message); rejectBtn.disabled = false; }
+      };
+      quoteActions.appendChild(rejectBtn);
+    }
+  }
+  quoteRow.appendChild(quoteActions);
+  box.appendChild(quoteRow);
+  if(quoteDoc.reviewStatus === 'rejected' && quoteDoc.reviewNote){
+    const noteEl = document.createElement('div');
+    noteEl.className = 'doc-review-note'; noteEl.style.cssText = 'margin:-8px 0 12px;';
+    noteEl.innerHTML = `<b>${t('reviewRejectedNote')}:</b> ${escapeHtml(quoteDoc.reviewNote)}`;
+    box.appendChild(noteEl);
+  }
+  if(!quoteDoc.fileUrl && !isStaffView){
+    const hint = document.createElement('div');
+    hint.className = 'field-hint'; hint.style.cssText = 'margin:-8px 0 12px;';
+    hint.textContent = t('closingCostsNotReady');
+    box.appendChild(hint);
+  }
+
+  const proofsTitle = document.createElement('div');
+  proofsTitle.style.cssText = 'font-weight:500; font-size:12.5px; color:var(--ink-soft); margin-bottom:6px;';
+  proofsTitle.textContent = t('paymentProofsLabel');
+  box.appendChild(proofsTitle);
+  const proofDocs = deal.documents.filter(d => d.partyId === null && [ESCROW_PAYMENT_PROOF_DOC_NAME, NOTARY_PAYMENT_PROOF_DOC_NAME].includes(d.name));
   const ul = document.createElement('ul');
   ul.className = 'doc-list';
-  ul.appendChild(buildDocItemLi(deal, doc, isStaffView));
+  proofDocs.forEach(doc => ul.appendChild(buildDocItemLi(deal, doc, isStaffView)));
   box.appendChild(ul);
+  if(isStaffView){
+    box.appendChild(buildAddDocumentRow(deal, null));
+  }
   return box;
 }
 
@@ -3906,7 +4008,7 @@ function renderPortal(body){
   tcard.appendChild(buildTaskList(deal));
   body.appendChild(tcard);
 
-  buildSignatureTasksSection(deal, body);
+  buildSignatureTasksSection(deal, body, false);
 }
 
 // Documentos de cierre que requieren firma (escrow agreement, KYC del
@@ -3918,8 +4020,8 @@ function renderPortal(body){
 // Se usa tanto en el detalle de Operaciones (admin/abogado) como en Portal
 // (donde antes vivía esto en solitario, con permisos más laxos de los que
 // debía tener).
-function buildSignatureTasksSection(deal, body){
-  const canManage = ['admin','lawyer'].includes(currentUser.role);
+function buildSignatureTasksSection(deal, body, isStaffView){
+  const canManage = isStaffView && ['admin','lawyer'].includes(currentUser.role);
   const signTasks = deal.tasks.filter(task=>task.sign);
   if(!signTasks.length) return;
   const st = document.createElement('div'); st.className='section-title'; st.textContent=t('eSignature');
@@ -3934,20 +4036,37 @@ function buildSignatureTasksSection(deal, body){
     row.innerHTML = `<span style="font-size:13px;">${escapeHtml(task.en)}${task.en !== task.es ? ` <span class="task-es">(${escapeHtml(task.es)})</span>` : ''}${sideTag}<br><span class="field-hint" style="margin:0;">${t('documentColon')}: ${task.documentOriginalName ? escapeHtml(task.documentOriginalName) : t('notUploaded')} · ${t('docusignStatusColon')}: ${escapeHtml(statusLabel)}</span></span>`;
 
     const actions = document.createElement('div');
-    actions.style.cssText = 'display:flex; gap:8px; align-items:center;';
+    actions.style.cssText = 'display:flex; gap:8px; align-items:center; flex-wrap:wrap;';
+
+    if(task.documentOriginalName){
+      const viewLink = document.createElement('a');
+      viewLink.href = `/api/docusign/deals/${deal.id}/tasks/${task.id}/document`;
+      viewLink.target = '_blank';
+      viewLink.className = 'btn';
+      viewLink.style.fontSize = '11px';
+      viewLink.innerHTML = `<i class="ti ti-eye" aria-hidden="true"></i> ${t('viewDocument')}`;
+      actions.appendChild(viewLink);
+    }
 
     if(canManage){
       const fileInput = document.createElement('input');
-      fileInput.type = 'file'; fileInput.accept = '.pdf'; fileInput.style.cssText = 'font-size:11px; max-width:110px;';
-      fileInput.title = t('uploadSignedDocTitle');
+      fileInput.type = 'file'; fileInput.accept = '.pdf'; fileInput.style.display = 'none';
+      const uploadBtn = document.createElement('button');
+      uploadBtn.type = 'button'; uploadBtn.className = 'btn'; uploadBtn.style.fontSize = '11px';
+      uploadBtn.title = t('uploadSignedDocTitle');
+      uploadBtn.innerHTML = `<i class="ti ti-upload" aria-hidden="true"></i> ${task.documentOriginalName ? t('replaceFile') : t('upload')}`;
+      uploadBtn.onclick = () => fileInput.click();
       fileInput.onchange = async (e) => {
         const file = e.target.files[0]; if(!file) return;
+        const original = uploadBtn.innerHTML;
+        uploadBtn.disabled = true; uploadBtn.innerHTML = `<i class="ti ti-loader-2" aria-hidden="true"></i> ${t('uploading')}`;
         const fd = new FormData(); fd.append('file', file);
         try{
           await apiUpload(`/api/docusign/deals/${deal.id}/tasks/${task.id}/document`, fd);
           await openDeal(deal.id);
-        }catch(err){ alert(err.message); }
+        }catch(err){ alert(err.message); uploadBtn.disabled = false; uploadBtn.innerHTML = original; }
       };
+      actions.appendChild(uploadBtn);
       actions.appendChild(fileInput);
 
       // El botón de "generar desde plantilla" solo tiene sentido para la
@@ -3986,8 +4105,9 @@ function buildSignatureTasksSection(deal, body){
     checkBtn.style.fontSize = '11px';
     checkBtn.onclick = async () => {
       try{
-        await apiFetch(`/api/docusign/deals/${deal.id}/tasks/${task.id}/status`);
+        const result = await apiFetch(`/api/docusign/deals/${deal.id}/tasks/${task.id}/status`);
         await openDeal(deal.id);
+        if(result.warning) alert(result.warning);
       }catch(err){ alert(err.message); }
     };
     actions.appendChild(checkBtn);

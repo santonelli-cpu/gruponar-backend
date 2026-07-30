@@ -3,7 +3,9 @@
     "property": [
       "Escritura pública",
       "Predial",
-      "Costos de cierre (recibo del notario)"
+      "Costos de cierre (recibo del notario)",
+      "Comprobante de pago a escrow (Proof of payment to escrow)",
+      "Comprobante de pago al notario (Proof of payment to notary)"
     ],
     "seller_individual": [
       "CURP",
@@ -69,7 +71,9 @@
     "property": [
       "Escritura pública",
       "Predial",
-      "Costos de cierre (recibo del notario)"
+      "Costos de cierre (recibo del notario)",
+      "Comprobante de pago a escrow (Proof of payment to escrow)",
+      "Comprobante de pago al notario (Proof of payment to notary)"
     ],
     "seller_individual": [
       "CURP",
@@ -138,6 +142,8 @@
       "Escritura pública",
       "Recibo de predial",
       "Costos de cierre (recibo del notario)",
+      "Comprobante de pago a escrow (Proof of payment to escrow)",
+      "Comprobante de pago al notario (Proof of payment to notary)",
       "Carta de Instrucción a Fiduciario (Instruction Letter to Trustee)"
     ],
     "seller_individual": [
@@ -209,6 +215,8 @@
       "Escritura pública",
       "Recibo de predial",
       "Costos de cierre (recibo del notario)",
+      "Comprobante de pago a escrow (Proof of payment to escrow)",
+      "Comprobante de pago al notario (Proof of payment to notary)",
       "Carta de Instrucción a Fiduciario (Instruction Letter to Trustee)"
     ],
     "seller_individual": [
