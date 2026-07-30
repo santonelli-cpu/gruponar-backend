@@ -168,6 +168,12 @@ ensureColumn('deals', 'closed_at', 'closed_at TEXT');
 ensureColumn('deals', 'deleted_at', 'deleted_at TEXT');
 ensureColumn('deals', 'deleted_by', 'deleted_by INTEGER');
 
+// Texto libre donde admin/abogado interno redactan los actos jurídicos
+// exactos de la operación (lo que se lleva a la notaría) — no se deduce
+// solo del escenario porque una misma operación puede combinar más de un
+// acto o llevar condiciones particulares que hay que dejar por escrito.
+ensureColumn('deals', 'legal_acts', 'legal_acts TEXT');
+
 // La tarea "Cuenta de escrow aperturada" nunca traía requires_signature=1 en
 // data/scenario-tasks.json, así que la sección de "Firma electrónica" (donde
 // vive subir/generar el escrow agreement y mandarlo a firma) nunca se

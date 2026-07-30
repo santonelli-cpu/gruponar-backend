@@ -57,7 +57,8 @@ const updateDealSchema = z.object({
   currency: z.string().trim().max(10).optional(),
   startDate: z.string().trim().max(30).nullable().optional(),
   development: z.string().trim().max(100).optional(),
-  status: z.enum(['active', 'completed']).optional()
+  status: z.enum(['active', 'completed']).optional(),
+  legalActs: z.string().trim().max(5000).nullable().optional()
 }).strict();
 
 const addAgentSchema = z.object({
@@ -556,6 +557,17 @@ router.get('/:id', requireAuth, (req, res) => {
     ORDER BY u.name
   `).all(deal.id);
 
+  // El abogado interno que creó la operación tiene acceso vía
+  // deals.created_by (ver lib/access.js), sin necesitar una fila en
+  // deal_parties — pero para que la nueva sección unificada de "personas en
+  // esta operación" lo muestre (el usuario lo pidió explícitamente:
+  // "admin puede ver quién la creó"), se agrega como fila sintética
+  // (dealPartyId null) si todavía no está también en deal_parties.
+  if (deal.created_by && !agents.some(a => a.userId === deal.created_by)) {
+    const creator = db.prepare('SELECT id AS userId, name, email, agency, status, role FROM users WHERE id = ?').get(deal.created_by);
+    if (creator) agents.unshift({ ...creator, dealPartyId: null, representsSide: null, isCreator: true });
+  }
+
   const documents = db.prepare('SELECT * FROM documents WHERE deal_id = ?').all(deal.id);
   const tasks = db.prepare('SELECT * FROM tasks WHERE deal_id = ? ORDER BY sort_order').all(deal.id);
 
@@ -582,7 +594,10 @@ router.get('/:id', requireAuth, (req, res) => {
 // el body).
 router.patch('/:id', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, validateBody(updateDealSchema), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
-  const { escrowCompany, closingDate, dueDiligenceEndDate, property, price, furniturePrice, currency, startDate, development, status } = req.body;
+  const { escrowCompany, closingDate, dueDiligenceEndDate, property, price, furniturePrice, currency, startDate, development, status, legalActs } = req.body;
+  if (legalActs !== undefined && !['admin', 'lawyer'].includes(req.session.role)) {
+    return res.status(403).json({ error: 'Solo admin/abogado interno puede editar los actos jurídicos.' });
+  }
 
   if (status !== undefined) {
     db.prepare("UPDATE deals SET status = ?, closed_at = ? WHERE id = ?")
@@ -609,6 +624,7 @@ router.patch('/:id', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'),
   if (currency !== undefined) db.prepare('UPDATE deals SET currency = ? WHERE id = ?').run(currency || 'USD', req.params.id);
   if (startDate !== undefined) db.prepare('UPDATE deals SET start_date = ? WHERE id = ?').run(startDate || null, req.params.id);
   if (development !== undefined) db.prepare('UPDATE deals SET development = ? WHERE id = ?').run(development || 'punta_mita', req.params.id);
+  if (legalActs !== undefined) db.prepare('UPDATE deals SET legal_acts = ? WHERE id = ?').run(legalActs || null, req.params.id);
 
   const info = db.prepare('SELECT id FROM deals WHERE id = ?').get(req.params.id);
   if (!info) return res.status(404).json({ error: 'Operación no encontrada.' });
@@ -854,8 +870,9 @@ router.get('/:id/available-agents', requireRole('admin', 'agent', 'lawyer', 'ext
     SELECT id, name, email, agency, status, role FROM users
     WHERE role IN ('agent', 'external_lawyer', 'lawyer') AND status IN ('active', 'pending')
       AND id NOT IN (SELECT user_id FROM deal_parties WHERE deal_id = ? AND role_in_deal = 'agent')
+      AND id != COALESCE((SELECT created_by FROM deals WHERE id = ?), 0)
     ORDER BY status = 'pending', name
-  `).all(req.params.id);
+  `).all(req.params.id, req.params.id);
   res.json(agents);
 });
 

@@ -346,6 +346,19 @@ function roleDisplayLabel(role){
   if(role === 'buyer') return t('buyerLabel2');
   return role;
 }
+function personInitials(name){
+  return (name || '').trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
+}
+const ROLE_CHIP_STYLE = {
+  admin: 'background:var(--oxblood-soft); color:var(--oxblood);',
+  lawyer: 'background:var(--oxblood-soft); color:var(--oxblood);',
+  external_lawyer: 'background:var(--gold-soft); color:#6B4E1E;',
+  agent: 'background:var(--stone); color:var(--ink-soft); border:0.5px solid var(--line);'
+};
+function roleChipHtml(role){
+  const style = ROLE_CHIP_STYLE[role] || 'background:var(--stone); color:var(--ink-soft);';
+  return `<span class="badge" style="${style} margin:0; font-size:10.5px; white-space:nowrap;">${escapeHtml(roleDisplayLabel(role))}</span>`;
+}
 function SCENARIOS_LABEL(key){ return SCENARIOS_I18N[key][lang] || SCENARIOS_I18N[key].es; }
 // Compatibilidad con el resto del código, que ya usaba SCENARIOS[key].label
 // / .labelShort / .badgeClass / .sellerTypes / .buyerTypes en muchos
@@ -436,6 +449,7 @@ const STRINGS = {
     statActiveDeals: 'Operaciones activas', statDocsPending: 'Documentos pendientes', statTasksUnfinished: 'Tareas sin terminar', statAwaitingSignature: 'Esperando firma',
     awaitingSignature: 'Esperando firma', signature: 'Firma',
     pendingByDeal: 'Pendientes por operación', noPending: 'No hay documentos ni tareas pendientes. Al día.', toggleExpand: 'Desplegar/ocultar',
+    docsCountLabel: 'documentos', tasksCountLabel: 'tareas',
     viewDeal: 'Ver operación', stale: 'Atrasado',
     docLabel: 'Documento', taskLabel: 'Tarea', propertyLabel: 'Propiedad', sellerLabel: 'vendedor', buyerLabel: 'comprador',
     pendingApprovalTitle: 'Cuentas pendientes de aprobación', loading: 'Cargando...',
@@ -459,7 +473,11 @@ const STRINGS = {
     registerDirectHint: 'La persona puede cambiarla cuando quiera desde su cuenta una vez que inicie sesión con su correo y esta contraseña.',
     temporaryPassword: 'Contraseña temporal',
     removeFromDeal: 'Quitar de esta operación', addAgentTitle: 'Agregar agente a esta operación', addAgentHint: 'Elige un agente que ya tiene cuenta — no hace falta invitarlo de nuevo.',
-    noAvailableAgents: 'No hay agentes activos disponibles para agregar (o ya están todos en esta operación).', add: 'Agregar', agentsInDeal: 'Agentes en esta operación', noAgentsInDeal: 'Todavía no hay ningún agente agregado a esta operación.',
+    noAvailableAgents: 'No hay agentes activos disponibles para agregar (o ya están todos en esta operación).', add: 'Agregar', agentsInDeal: 'Personas en esta operación', noAgentsInDeal: 'Todavía no hay nadie agregado a esta operación.',
+    dealPeopleHint: 'Agentes, abogados internos y externos con acceso a esta operación.', sharePeopleAdd: 'Agregar personas', done: 'Listo',
+    sharePeopleTitle: 'Agregar personas', sharePeopleSearchPh: 'Buscar por nombre o correo…', sharePeopleAccessTitle: 'Personas con acceso',
+    sharePeopleInviteShow: '¿Todavía no tiene cuenta? Invitar por correo', sharePeopleInviteHide: 'Ocultar invitación por correo',
+    personCreatedDeal: 'creó esta operación',
     approve: 'Aprobar', inviteAgentLawyer: 'Invitar agente o abogado',
     inviteTeamHint: 'Genera un link para que un agente de venta o abogado/empleado interno cree su propia cuenta — a diferencia de "Crear cuenta" en el login, esta queda activa de inmediato (ya la estás aprobando tú al invitar).',
     role: 'Rol', name: 'Nombre', email: 'Correo', namePh: 'Nombre completo', emailPh: 'correo@ejemplo.com',
@@ -483,7 +501,8 @@ const STRINGS = {
     directTrustNamePh: 'Nombre del revocable trust',
     corpMx: 'Persona moral (MX)', llcForeign: 'LLC / entidad extranjera',
     newDealTitle: 'Nueva operación', scenarioType: 'Tipo de escenario', development: 'Desarrollo',
-    devPuntaMita: 'Punta Mita', devMandarina: 'Mandarina', devGeneral: 'Bahía de Banderas / otro',
+    devPuntaMita: 'Punta Mita', devMandarina: 'Mandarina', devGeneral: 'Bahía de Banderas',
+    devPuertoVallarta: 'Puerto Vallarta', devLasVaras: 'Las Varas', devCompostela: 'Compostela', devBocaTomatlan: 'Boca de Tomatlán',
     property: 'Propiedad', propertyPh: 'Villa 22, Kupuri, Punta de Mita',
     propertyPrice: 'Precio del inmueble', furniturePrice: 'Precio de muebles (opcional)', currency: 'Moneda',
     sellers: 'Vendedores', buyers: 'Compradores', addSeller: '+ Agregar vendedor', addBuyer: '+ Agregar comprador', remove: 'Quitar',
@@ -501,6 +520,7 @@ const STRINGS = {
     deleteDeal: 'Eliminar operación',
     confirmChangeEscrow: '¿Cambiar la escrow company a {company}? Si ya hay expedientes KYC guardados con la plantilla vieja, van a seguir con esa plantilla hasta que los reinicies desde su sección.',
     confirmDeleteDeal: '¿Eliminar esta operación? Se mueve a la Papelera — un admin la puede restaurar desde ahí si hace falta.',
+    legalActsTitle: 'Actos jurídicos', legalActsPh: 'Describe el/los acto(s) jurídico(s) exacto(s) de esta operación (lo que se lleva a la notaría)...', legalActsSaved: 'Guardado.',
     sellersAndBuyers: 'Vendedores y compradores', propertySection: 'Propiedad', docsChecklist: 'Checklist de documentos (KYC)',
     notaryClosingCostsSection: 'Gastos de cierre (notario)',
     viewClosingCosts: 'Ver costos de cierre', closingCostsNotReady: 'Todavía no están listos los costos de cierre.',
@@ -664,6 +684,7 @@ const STRINGS = {
     statActiveDeals: 'Active deals', statDocsPending: 'Pending documents', statTasksUnfinished: 'Unfinished tasks', statAwaitingSignature: 'Awaiting signature',
     awaitingSignature: 'Awaiting signature', signature: 'Signature',
     pendingByDeal: 'Pending by deal', noPending: 'No pending documents or tasks. All caught up.', toggleExpand: 'Expand/collapse',
+    docsCountLabel: 'documents', tasksCountLabel: 'tasks',
     viewDeal: 'View deal', stale: 'Overdue',
     docLabel: 'Document', taskLabel: 'Task', propertyLabel: 'Property', sellerLabel: 'seller', buyerLabel: 'buyer',
     pendingApprovalTitle: 'Accounts pending approval', loading: 'Loading...',
@@ -687,7 +708,11 @@ const STRINGS = {
     registerDirectHint: 'They can change it whenever they want from their account once they log in with their email and this password.',
     temporaryPassword: 'Temporary password',
     removeFromDeal: 'Remove from this deal', addAgentTitle: 'Add an agent to this deal', addAgentHint: 'Pick an agent who already has an account — no need to invite them again.',
-    noAvailableAgents: 'No active agents available to add (or they are all already on this deal).', add: 'Add', agentsInDeal: 'Agents on this deal', noAgentsInDeal: 'No agent has been added to this deal yet.',
+    noAvailableAgents: 'No active agents available to add (or they are all already on this deal).', add: 'Add', agentsInDeal: 'People on this deal', noAgentsInDeal: 'No one has been added to this deal yet.',
+    dealPeopleHint: 'Agents, internal lawyers and external lawyers with access to this deal.', sharePeopleAdd: 'Add people', done: 'Done',
+    sharePeopleTitle: 'Add people', sharePeopleSearchPh: 'Search by name or email…', sharePeopleAccessTitle: 'People with access',
+    sharePeopleInviteShow: "Don't have an account yet? Invite by email", sharePeopleInviteHide: 'Hide email invite',
+    personCreatedDeal: 'created this deal',
     approve: 'Approve', inviteAgentLawyer: 'Invite agent or lawyer',
     inviteTeamHint: 'Generate a link so a sales agent or lawyer/internal staff member can create their own account — unlike "Create account" on the login screen, this one is active right away (you\'re already approving it by inviting them).',
     role: 'Role', name: 'Name', email: 'Email', namePh: 'Full name', emailPh: 'email@example.com',
@@ -711,7 +736,8 @@ const STRINGS = {
     directTrustNamePh: 'Revocable trust name',
     corpMx: 'Legal entity (MX)', llcForeign: 'LLC / foreign entity',
     newDealTitle: 'New deal', scenarioType: 'Scenario type', development: 'Development',
-    devPuntaMita: 'Punta Mita', devMandarina: 'Mandarina', devGeneral: 'Bahía de Banderas / other',
+    devPuntaMita: 'Punta Mita', devMandarina: 'Mandarina', devGeneral: 'Bahía de Banderas',
+    devPuertoVallarta: 'Puerto Vallarta', devLasVaras: 'Las Varas', devCompostela: 'Compostela', devBocaTomatlan: 'Boca de Tomatlán',
     property: 'Property', propertyPh: 'Villa 22, Kupuri, Punta de Mita',
     propertyPrice: 'Property price', furniturePrice: 'Furniture price (optional)', currency: 'Currency',
     sellers: 'Sellers', buyers: 'Buyers', addSeller: '+ Add seller', addBuyer: '+ Add buyer', remove: 'Remove',
@@ -729,6 +755,7 @@ const STRINGS = {
     deleteDeal: 'Delete deal',
     confirmChangeEscrow: "Change the escrow company to {company}? If there are already saved KYC records with the old template, they'll keep using that template until you reset them from their own section.",
     confirmDeleteDeal: 'Delete this deal? It moves to Trash — an admin can restore it from there if needed.',
+    legalActsTitle: 'Legal acts', legalActsPh: 'Describe the exact legal act(s) for this deal (what goes to the notary)...', legalActsSaved: 'Saved.',
     sellersAndBuyers: 'Sellers and buyers', propertySection: 'Property', docsChecklist: 'Document checklist (KYC)',
     notaryClosingCostsSection: 'Closing costs (notary)',
     viewClosingCosts: 'View closing costs', closingCostsNotReady: "Closing costs aren't ready yet.",
@@ -987,7 +1014,7 @@ function adaptDealSummary(row){
     price: row.price, furniturePrice: row.furniture_price, currency: row.currency, startDate: row.start_date,
     escrowCompany: row.escrow_company || 'armour',
     closingDate: row.closing_date || '', dueDiligenceEndDate: row.due_diligence_end_date || '',
-    status: row.status || 'active', closedAt: row.closed_at || null,
+    status: row.status || 'active', closedAt: row.closed_at || null, legalActs: row.legal_acts || '',
     driveFolderId: row.drive_folder_id || null, driveFolderUrl: row.drive_folder_url || null,
     parties: (row.parties || []).map(adaptParty),
     agents: row.agents || [],
@@ -2001,7 +2028,7 @@ function buildDashboard(){
         <span style="display:flex; align-items:center; gap:8px;">
           <button class="icon-btn" id="toggle-${dealId}" style="width:24px; height:24px; flex-shrink:0;" title="${t('toggleExpand')}"><i class="ti ti-chevron-${isExpanded?'down':'right'}" aria-hidden="true"></i></button>
           <span style="font-weight:600; font-size:13.5px;">${escapeHtml(g.property)}</span>
-          <span class="field-hint" style="margin:0;">(${totalCount})</span>
+          <span class="field-hint" style="margin:0;">(${g.docs.length} ${t('docsCountLabel')} · ${g.tasks.length} ${t('tasksCountLabel')})</span>
         </span>
         <span class="field-hint" style="margin:0;">${t('viewDeal')} <i class="ti ti-arrow-right" aria-hidden="true"></i></span>
       `;
@@ -2015,6 +2042,16 @@ function buildDashboard(){
 
       if(!isExpanded){ wrap.appendChild(card); return; }
 
+      // Documentos y tareas separados con su propio sub-encabezado — antes
+      // era una sola lista corrida y una operación con 37 pendientes se
+      // veía como un solo número enorme en vez de, por ejemplo,
+      // "22 documentos" y "15 tareas" por separado.
+      if(g.docs.length){
+        const docsSub = document.createElement('div');
+        docsSub.style.cssText = 'font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; color:var(--ink-faint); margin-top:10px;';
+        docsSub.textContent = `${t('docsCountLabel')} (${g.docs.length})`;
+        card.appendChild(docsSub);
+      }
       g.docs.forEach(doc => {
         const row = document.createElement('div');
         row.style.cssText = 'display:flex; align-items:center; gap:10px; padding:6px 0; border-bottom:0.5px solid var(--line);';
@@ -2032,6 +2069,12 @@ function buildDashboard(){
         card.appendChild(row);
       });
 
+      if(g.tasks.length){
+        const tasksSub = document.createElement('div');
+        tasksSub.style.cssText = 'font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; color:var(--ink-faint); margin-top:10px;';
+        tasksSub.textContent = `${t('tasksCountLabel')} (${g.tasks.length})`;
+        card.appendChild(tasksSub);
+      }
       g.tasks.forEach(task => {
         const row = document.createElement('div');
         row.style.cssText = 'display:flex; align-items:center; gap:10px; padding:6px 0; border-bottom:0.5px solid var(--line);';
@@ -2645,11 +2688,7 @@ function buildNewDealForm(){
       </label>
     </div>
     <div class="form-row">
-      <label>${t('development')} <select id="nd-development">
-        <option value="punta_mita">${t('devPuntaMita')}</option>
-        <option value="mandarina">${t('devMandarina')}</option>
-        <option value="general">${t('devGeneral')}</option>
-      </select></label>
+      <label>${t('development')} <select id="nd-development">${developmentOptionsHtml('punta_mita')}</select></label>
       <label>${t('property')} <input type="text" id="nd-property" placeholder="${t('propertyPh')}"></label>
     </div>
     <div class="form-row">
@@ -2903,6 +2942,12 @@ function buildAdminDealDetail(deal){
     </div>
     <div class="parties-line">${sellerNamesHtml} <i class="ti ti-arrow-right" aria-hidden="true" style="color:var(--ink-faint); font-size:13px;"></i> ${buyerNamesHtml}</div>
     <div class="location-line"><i class="ti ti-map-pin" aria-hidden="true"></i> ${DEVELOPMENT_LABEL[deal.development||'punta_mita']}</div>
+    ${deal.agents && deal.agents.length ? `
+      <div class="location-line" style="margin-bottom:14px;">
+        <i class="ti ti-users" aria-hidden="true"></i>
+        ${deal.agents.map(a => `${escapeHtml(a.name)}${a.agency ? ` <span class="muted">(${escapeHtml(a.agency)})</span>` : ''}`).join(' · ')}
+      </div>
+    ` : ''}
 
     <div class="stat-row">
       <div class="stat"><span class="stat-label">${t('propertyLabelColon')}</span><span class="stat-value">${deal.currency||'USD'} ${Number(deal.price||0).toLocaleString()}${deal.furniturePrice ? ' + '+t('furnitureLabel')+' '+Number(deal.furniturePrice).toLocaleString() : ''}</span></div>
@@ -2958,11 +3003,7 @@ function buildAdminDealDetail(deal){
       <div style="font-weight:500; font-size:13px; margin-bottom:8px;">${t('editDealTitle')}</div>
       <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:8px;">
         <label style="display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--ink-soft);">${t('property')} <input type="text" id="ed-property" value="${escapeHtml(deal.property)}"></label>
-        <label style="display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--ink-soft);">${t('development')} <select id="ed-development">
-          <option value="punta_mita" ${(deal.development||'punta_mita')==='punta_mita'?'selected':''}>${t('devPuntaMita')}</option>
-          <option value="mandarina" ${deal.development==='mandarina'?'selected':''}>${t('devMandarina')}</option>
-          <option value="general" ${deal.development==='general'?'selected':''}>${t('devGeneral')}</option>
-        </select></label>
+        <label style="display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--ink-soft);">${t('development')} <select id="ed-development">${developmentOptionsHtml(deal.development)}</select></label>
         <label style="display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--ink-soft);">${t('propertyPrice')} <input type="number" step="0.01" min="0" id="ed-price" value="${deal.price||0}"></label>
         <label style="display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--ink-soft);">${t('furnitureLabel')} <input type="number" step="0.01" min="0" id="ed-furniture" value="${deal.furniturePrice||0}"></label>
         <label style="display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--ink-soft);">${t('currency')} <input type="text" id="ed-currency" value="${escapeHtml(deal.currency||'USD')}" maxlength="3" style="text-transform:uppercase;"></label>
@@ -3037,6 +3078,35 @@ function buildAdminDealDetail(deal){
     }catch(e){ alert(e.message); }
   };
 
+  // Actos jurídicos — texto libre que redacta admin/abogado interno con el
+  // acto exacto de esta operación (lo que se lleva a la notaría). Se
+  // guarda solo, sin botón, al salir del textarea (mismo patrón que las
+  // fechas de arriba) — nunca se muestra vacío a comprador/vendedor.
+  if(['admin','lawyer'].includes(currentUser.role) || (deal.legalActs && deal.legalActs.trim())){
+    const legalActsCard = document.createElement('div'); legalActsCard.className = 'card';
+    const canEditLegalActs = ['admin','lawyer'].includes(currentUser.role);
+    legalActsCard.innerHTML = `
+      <div class="section-title" style="margin-top:0;">${t('legalActsTitle')}</div>
+      ${canEditLegalActs
+        ? `<textarea id="legal-acts-input" rows="3" placeholder="${t('legalActsPh')}" style="width:100%;">${escapeHtml(deal.legalActs || '')}</textarea>
+           <div class="field-hint" id="legal-acts-saved" style="margin:4px 0 0; opacity:0;">${t('legalActsSaved')}</div>`
+        : `<div style="font-size:13px; white-space:pre-wrap;">${escapeHtml(deal.legalActs)}</div>`}
+    `;
+    wrap.appendChild(legalActsCard);
+    const legalActsInput = legalActsCard.querySelector('#legal-acts-input');
+    if(legalActsInput) legalActsInput.onblur = async (e) => {
+      const next = e.target.value.trim();
+      if(next === (deal.legalActs || '')) return;
+      try{
+        await apiFetch('/api/deals/' + deal.id, { method:'PATCH', body: JSON.stringify({ legalActs: next || null }) });
+        deal.legalActs = next;
+        const savedHint = legalActsCard.querySelector('#legal-acts-saved');
+        savedHint.style.transition = 'none'; savedHint.style.opacity = '1';
+        requestAnimationFrame(() => { savedHint.style.transition = 'opacity 1.5s'; savedHint.style.opacity = '0'; });
+      }catch(err){ alert(err.message); }
+    };
+  }
+
   const partiesTitle = document.createElement('div');
   partiesTitle.className = 'section-title'; partiesTitle.textContent = t('sellersAndBuyers');
   wrap.appendChild(partiesTitle);
@@ -3086,11 +3156,6 @@ function buildAdminDealDetail(deal){
   agentsTitle.className = 'section-title'; agentsTitle.textContent = t('agentsInDeal');
   wrap.appendChild(agentsTitle);
   wrap.appendChild(buildDealAgentsSection(deal));
-
-  const inviteTitle = document.createElement('div');
-  inviteTitle.className = 'section-title'; inviteTitle.textContent = t('inviteToThisDeal');
-  wrap.appendChild(inviteTitle);
-  wrap.appendChild(buildInviteForm(deal));
 
   const contractTitle = document.createElement('div');
   contractTitle.className = 'section-title'; contractTitle.textContent = t('contractPromise');
@@ -3877,13 +3942,25 @@ function buildTaskList(deal, canManage){
 // (no depende de esto) — antes estos labels traían un "(machote X)" pegado
 // que ya no correspondía a nada real y solo confundía.
 const DEVELOPMENT_LABEL_I18N = {
-  punta_mita: { es: 'Punta Mita', en: 'Punta Mita' },
   mandarina: { es: 'Mandarina', en: 'Mandarina' },
-  general: { es: 'Bahía de Banderas / otro', en: 'Bahía de Banderas / other' }
+  punta_mita: { es: 'Punta Mita', en: 'Punta Mita' },
+  puerto_vallarta: { es: 'Puerto Vallarta', en: 'Puerto Vallarta' },
+  general: { es: 'Bahía de Banderas', en: 'Bahía de Banderas' },
+  las_varas: { es: 'Las Varas', en: 'Las Varas' },
+  compostela: { es: 'Compostela', en: 'Compostela' },
+  boca_tomatlan: { es: 'Boca de Tomatlán', en: 'Boca de Tomatlán' }
 };
 const DEVELOPMENT_LABEL = new Proxy(DEVELOPMENT_LABEL_I18N, {
   get(target, key){ const e = target[key]; return e ? (e[lang] || e.es) : undefined; }
 });
+// Lista de <option> compartida entre el form de nueva operación y el de
+// editar — un solo lugar para el orden/valores, en vez de mantener el
+// mismo <select> escrito dos veces.
+function developmentOptionsHtml(selected){
+  const order = ['mandarina', 'punta_mita', 'puerto_vallarta', 'general', 'las_varas', 'compostela', 'boca_tomatlan'];
+  const keyToI18n = { mandarina: 'devMandarina', punta_mita: 'devPuntaMita', puerto_vallarta: 'devPuertoVallarta', general: 'devGeneral', las_varas: 'devLasVaras', compostela: 'devCompostela', boca_tomatlan: 'devBocaTomatlan' };
+  return order.map(key => `<option value="${key}" ${(selected||'punta_mita')===key?'selected':''}>${t(keyToI18n[key])}</option>`).join('');
+}
 
 // Solo para agentes/abogados externos — un comprador/vendedor se da de
 // alta/liga directo desde su propia tarjeta en "Sellers and buyers"
@@ -4019,103 +4096,239 @@ function buildInviteForm(deal){
   return card;
 }
 
-// Agentes ya ligados a esta operación + dropdown para agregar uno que YA
-// tiene cuenta (sin pasar por invitación/contraseña) — complementa
-// buildInviteForm, que sigue siendo el camino para un agente nuevo que
-// todavía no tiene cuenta en la plataforma.
+// Fila de una sola persona (agente / abogado interno / abogado externo)
+// ligada a la operación — compartida entre la tarjeta principal y el modal
+// de "Compartir". `opts.removable` muestra el botón de quitar; una fila
+// "isCreator" (el abogado que creó la operación, con acceso vía
+// deals.created_by, ver GET /api/deals/:id) nunca es removible desde aquí
+// porque no tiene fila propia en deal_parties que borrar.
+function buildPersonRow(dealId, a, opts){
+  opts = opts || {};
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex; align-items:center; gap:12px; padding:8px 2px;' + (opts.bordered !== false ? ' border-bottom:0.5px solid var(--line);' : '');
+  const isAgentLike = ['agent', 'external_lawyer'].includes(a.role);
+  row.innerHTML = `
+    <span class="session-avatar" style="width:36px; height:36px; font-size:12px; flex-shrink:0;">${escapeHtml(personInitials(a.name))}</span>
+    <span style="flex:1; min-width:0;">
+      <div style="font-size:13px; font-weight:500; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+        <span style="overflow:hidden; text-overflow:ellipsis;">${escapeHtml(a.name)}</span>
+        ${roleChipHtml(a.role)}
+        ${a.status==='pending' ? `<span class="badge" style="background:var(--oxblood-soft); color:var(--oxblood); margin:0; font-size:10px;">${t('pendingApproval')}</span>` : ''}
+        ${a.isCreator ? `<span class="field-hint" style="margin:0;">· ${t('personCreatedDeal')}</span>` : ''}
+      </div>
+      <div class="field-hint" style="margin:1px 0 0;">${escapeHtml(a.email)}${a.agency ? ' · ' + escapeHtml(a.agency) : ''}</div>
+    </span>
+  `;
+  const controls = document.createElement('span');
+  controls.style.cssText = 'display:flex; align-items:center; gap:6px; flex-shrink:0;';
+  if(isAgentLike){
+    const sel = document.createElement('select');
+    sel.style.cssText = 'font-size:11.5px; padding:2px 6px;';
+    sel.innerHTML = `
+      <option value="" ${!a.representsSide?'selected':''}>${t('representsUnset')}</option>
+      <option value="seller" ${a.representsSide==='seller'?'selected':''}>${t('representsSeller')}</option>
+      <option value="buyer" ${a.representsSide==='buyer'?'selected':''}>${t('representsBuyer')}</option>
+    `;
+    sel.onchange = async () => {
+      try{
+        await apiFetch(`/api/deals/${dealId}/agents/${a.userId}`, { method:'PATCH', body: JSON.stringify({ representsSide: sel.value || null }) });
+        clearKycCacheForDeal(dealId);
+        await openDeal(dealId);
+        if(opts.onChange) opts.onChange();
+      }catch(err){ alert(err.message); sel.value = a.representsSide || ''; }
+    };
+    controls.appendChild(sel);
+  }
+  if(opts.removable && a.dealPartyId !== null && a.dealPartyId !== undefined){
+    const rmBtn = document.createElement('button');
+    rmBtn.className = 'btn'; rmBtn.title = t('removeFromDeal');
+    rmBtn.style.cssText = 'font-size:12px; padding:4px 8px; line-height:1;';
+    rmBtn.innerHTML = `<i class="ti ti-x" aria-hidden="true"></i>`;
+    rmBtn.onclick = async () => {
+      try{
+        await apiFetch(`/api/deals/${dealId}/agents/${a.userId}`, { method:'DELETE' });
+        delete availableAgentsCache[dealId];
+        clearKycCacheForDeal(dealId);
+        await openDeal(dealId);
+        if(opts.onChange) opts.onChange();
+      }catch(e){ alert(e.message); }
+    };
+    controls.appendChild(rmBtn);
+  }
+  row.appendChild(controls);
+  return row;
+}
+
+// Sección unificada de personas en la operación (agentes, abogados internos
+// y externos en un solo lugar, con distinción por chip de rol en vez de
+// permisos tipo "editor/viewer") — agregar gente pasa por un modal estilo
+// Google Drive (buscar por nombre, agregar al toque) en vez de un dropdown
+// gigante, ver openAddPeopleModal.
 function buildDealAgentsSection(deal){
   const card = document.createElement('div');
   card.className = 'card';
 
+  const header = document.createElement('div');
+  header.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;' + (deal.agents && deal.agents.length ? ' margin-bottom:6px;' : '');
+  header.innerHTML = `<div class="field-hint" style="margin:0;">${t('dealPeopleHint')}</div>`;
+  const shareBtn = document.createElement('button');
+  shareBtn.className = 'btn primary';
+  shareBtn.style.cssText = 'font-size:12px; display:flex; align-items:center; gap:6px; flex-shrink:0;';
+  shareBtn.innerHTML = `<i class="ti ti-user-plus" aria-hidden="true"></i> ${t('sharePeopleAdd')}`;
+  shareBtn.onclick = () => openAddPeopleModal(deal.id);
+  header.appendChild(shareBtn);
+  card.appendChild(header);
+
   if(!deal.agents || !deal.agents.length){
     const hint = document.createElement('div');
-    hint.className = 'field-hint'; hint.style.margin = '0 0 10px';
+    hint.className = 'field-hint'; hint.style.margin = '10px 0 0';
     hint.textContent = t('noAgentsInDeal');
     card.appendChild(hint);
   } else {
-    deal.agents.forEach(a => {
-      const row = document.createElement('div');
-      row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:0.5px solid var(--line); gap:10px; flex-wrap:wrap;';
-      row.innerHTML = `
-        <span style="font-size:13px;">${escapeHtml(a.name)} <span class="field-hint" style="margin:0;">— ${escapeHtml(a.email)} · ${escapeHtml(roleDisplayLabel(a.role))}${a.agency ? ' · ' + escapeHtml(a.agency) : ''}</span>${a.status==='pending' ? ` <span class="badge" style="background:var(--oxblood-soft); color:var(--oxblood); font-size:10px;">${t('pendingApproval')}</span>` : ''}</span>
-        <span style="display:flex; align-items:center; gap:8px;">
-          <select data-represents style="font-size:11.5px; padding:2px 6px;">
-            <option value="" ${!a.representsSide?'selected':''}>${t('representsUnset')}</option>
-            <option value="seller" ${a.representsSide==='seller'?'selected':''}>${t('representsSeller')}</option>
-            <option value="buyer" ${a.representsSide==='buyer'?'selected':''}>${t('representsBuyer')}</option>
-          </select>
-        </span>
-      `;
-      const rmBtn = document.createElement('button');
-      rmBtn.className = 'btn'; rmBtn.style.fontSize = '11px'; rmBtn.textContent = t('removeFromDeal');
-      rmBtn.onclick = async () => {
-        try{
-          await apiFetch(`/api/deals/${deal.id}/agents/${a.userId}`, { method:'DELETE' });
-          delete availableAgentsCache[deal.id];
-          clearKycCacheForDeal(deal.id);
-          await openDeal(deal.id);
-        }catch(e){ alert(e.message); }
-      };
-      row.querySelector('span:last-child').appendChild(rmBtn);
-      row.querySelector('[data-represents]').onchange = async (e) => {
-        try{
-          await apiFetch(`/api/deals/${deal.id}/agents/${a.userId}`, { method:'PATCH', body: JSON.stringify({ representsSide: e.target.value || null }) });
-          clearKycCacheForDeal(deal.id);
-          await openDeal(deal.id);
-        }catch(err){ alert(err.message); e.target.value = a.representsSide || ''; }
-      };
-      card.appendChild(row);
-    });
-  }
-
-  const addTitle = document.createElement('div');
-  addTitle.style.cssText = 'font-weight:500; font-size:12.5px; margin-top:10px;';
-  addTitle.textContent = t('addAgentTitle');
-  card.appendChild(addTitle);
-  const addHint = document.createElement('div');
-  addHint.className = 'field-hint'; addHint.style.margin = '0 0 8px';
-  addHint.textContent = t('addAgentHint');
-  card.appendChild(addHint);
-
-  const avail = availableAgentsCache[deal.id];
-  if(avail === undefined){
-    loadAvailableAgents(deal.id);
-    const hint = document.createElement('div'); hint.className = 'field-hint'; hint.style.margin = '0'; hint.textContent = t('loading');
-    card.appendChild(hint);
-  } else if(avail.error){
-    const hint = document.createElement('div'); hint.className = 'field-hint'; hint.style.margin = '0'; hint.textContent = avail.error;
-    card.appendChild(hint);
-  } else if(!avail.length){
-    const hint = document.createElement('div'); hint.className = 'field-hint'; hint.style.margin = '0'; hint.textContent = t('noAvailableAgents');
-    card.appendChild(hint);
-  } else {
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;';
-    row.innerHTML = `
-      <select id="add-agent-select">
-        ${avail.map(a => `<option value="${a.id}">${escapeHtml(a.name)} — ${escapeHtml(roleDisplayLabel(a.role))}${a.agency ? ' · ' + escapeHtml(a.agency) : ''}${a.status==='pending' ? ' ('+t('pendingApproval')+')' : ''}</option>`).join('')}
-      </select>
-      <select id="add-agent-represents">
-        <option value="">${t('representsUnset')}</option>
-        <option value="seller">${t('representsSeller')}</option>
-        <option value="buyer">${t('representsBuyer')}</option>
-      </select>
-      <button class="btn primary" id="add-agent-btn" style="font-size:12px;">${t('add')}</button>
-    `;
-    card.appendChild(row);
-    row.querySelector('#add-agent-btn').onclick = async () => {
-      const userId = Number(row.querySelector('#add-agent-select').value);
-      const representsSide = row.querySelector('#add-agent-represents').value || null;
-      try{
-        await apiFetch(`/api/deals/${deal.id}/agents`, { method:'POST', body: JSON.stringify({ userId, representsSide }) });
-        delete availableAgentsCache[deal.id];
-        clearKycCacheForDeal(deal.id);
-        await openDeal(deal.id);
-      }catch(e){ alert(e.message); }
-    };
+    deal.agents.forEach((a, i) => card.appendChild(buildPersonRow(deal.id, a, { removable: true, bordered: i < deal.agents.length - 1 })));
   }
 
   return card;
+}
+
+// Modal estilo "Compartir" de Google Drive: buscar entre agentes/abogados
+// que YA tienen cuenta (filtro en cliente sobre availableAgentsCache, sin
+// endpoint nuevo) y agregarlos al toque; además, un link secundario para
+// invitar a alguien que todavía no tiene cuenta (reusa buildInviteForm).
+// Se monta fuera de #body (como openKycSigningModal) para sobrevivir a los
+// render() que dispara cada alta/baja vía openDeal.
+function openAddPeopleModal(dealId){
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(33,22,19,0.55); display:flex; align-items:center; justify-content:center; z-index:1000; padding:20px;';
+  document.body.appendChild(overlay);
+  overlay.onclick = (e) => { if(e.target === overlay) close(); };
+
+  let query = '';
+  let showInvite = false;
+
+  function close(){ overlay.remove(); }
+
+  function renderModal(){
+    const deal = deals.find(d => d.id === dealId);
+    if(!deal){ close(); return; }
+    if(availableAgentsCache[dealId] === undefined) loadAvailableAgents(dealId);
+    const avail = availableAgentsCache[dealId];
+
+    const q = query.trim().toLowerCase();
+    const results = (q && Array.isArray(avail)) ? avail.filter(a =>
+      a.name.toLowerCase().includes(q) || (a.email && a.email.toLowerCase().includes(q))
+    ).slice(0, 8) : [];
+
+    overlay.innerHTML = '';
+    const modal = document.createElement('div');
+    modal.style.cssText = 'background:var(--stone-card); border-radius:14px; width:min(480px,94vw); max-height:min(640px,88vh); display:flex; flex-direction:column; overflow:hidden; box-shadow:0 12px 40px rgba(33,22,19,0.3);';
+    modal.onclick = (e) => e.stopPropagation();
+    modal.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:0.5px solid var(--line); flex-shrink:0;">
+        <div class="section-title" style="margin:0;">${t('sharePeopleTitle')}</div>
+        <button class="btn primary" id="people-modal-done" style="font-size:12px;">${t('done')}</button>
+      </div>
+      <div style="padding:14px 18px 4px; flex-shrink:0;">
+        <input type="text" id="people-search-input" placeholder="${t('sharePeopleSearchPh')}" autocomplete="off" style="width:100%; box-sizing:border-box;">
+      </div>
+      <div id="people-search-results" style="padding:0 10px; flex-shrink:0;"></div>
+      <div id="people-invite-toggle-wrap" style="padding:6px 18px; flex-shrink:0;"></div>
+      <div style="padding:10px 18px 4px; font-size:11px; font-weight:600; letter-spacing:.02em; text-transform:uppercase; color:var(--ink-faint); flex-shrink:0;">${t('sharePeopleAccessTitle')}</div>
+      <div id="people-access-list" style="padding:0 18px 16px; overflow-y:auto; flex:1;"></div>
+    `;
+    overlay.appendChild(modal);
+
+    modal.querySelector('#people-modal-done').onclick = close;
+
+    const searchInput = modal.querySelector('#people-search-input');
+    searchInput.value = query;
+    searchInput.oninput = (e) => {
+      query = e.target.value;
+      const cursor = e.target.selectionStart;
+      renderModal();
+      // renderModal() reconstruye todo el contenido del modal (incluido este
+      // input) — sin esto, el foco y la posición del cursor se pierden en
+      // cada tecla mientras buscas (mismo patrón que #clients-search). Se
+      // busca por `overlay` (persiste entre renders) y no por `modal` (se
+      // recrea en cada renderModal(), la referencia de este closure queda
+      // obsoleta apenas overlay.innerHTML se limpia arriba).
+      const el = overlay.querySelector('#people-search-input');
+      if(el){ el.focus(); el.setSelectionRange(cursor, cursor); }
+    };
+    searchInput.focus();
+    searchInput.setSelectionRange(query.length, query.length);
+
+    const resultsEl = modal.querySelector('#people-search-results');
+    if(avail === undefined){
+      resultsEl.innerHTML = q ? `<div class="field-hint" style="margin:6px 4px;">${t('loading')}</div>` : '';
+    } else if(avail.error){
+      resultsEl.innerHTML = `<div class="field-hint" style="margin:6px 4px;">${escapeHtml(avail.error)}</div>`;
+    } else if(q && results.length){
+      results.forEach(a => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; align-items:center; gap:10px; padding:7px 8px; cursor:pointer; border-radius:8px;';
+        row.onmouseenter = () => row.style.background = 'var(--stone)';
+        row.onmouseleave = () => row.style.background = '';
+        row.innerHTML = `
+          <span class="session-avatar" style="width:32px; height:32px; font-size:11px; flex-shrink:0;">${escapeHtml(personInitials(a.name))}</span>
+          <span style="flex:1; min-width:0;">
+            <div style="font-size:13px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(a.name)}</div>
+            <div class="field-hint" style="margin:0;">${escapeHtml(a.email)}</div>
+          </span>
+          ${roleChipHtml(a.role)}
+        `;
+        row.onclick = async () => {
+          try{
+            await apiFetch(`/api/deals/${dealId}/agents`, { method:'POST', body: JSON.stringify({ userId: a.id, representsSide: null }) });
+            delete availableAgentsCache[dealId];
+            clearKycCacheForDeal(dealId);
+            query = '';
+            await openDeal(dealId);
+            renderModal();
+          }catch(e){ alert(e.message); }
+        };
+        resultsEl.appendChild(row);
+      });
+    } else if(q){
+      resultsEl.innerHTML = `<div class="field-hint" style="margin:6px 4px;">${t('noAvailableAgents')}</div>`;
+    } else {
+      resultsEl.innerHTML = '';
+    }
+
+    const inviteWrap = modal.querySelector('#people-invite-toggle-wrap');
+    if(showInvite){
+      const toggle = document.createElement('button');
+      toggle.className = 'btn'; toggle.style.fontSize = '11.5px'; toggle.style.marginBottom = '8px';
+      toggle.textContent = t('sharePeopleInviteHide');
+      toggle.onclick = () => { showInvite = false; renderModal(); };
+      inviteWrap.appendChild(toggle);
+      inviteWrap.appendChild(buildInviteForm(deal));
+    } else {
+      const toggle = document.createElement('button');
+      toggle.className = 'btn'; toggle.style.fontSize = '11.5px';
+      toggle.innerHTML = `<i class="ti ti-mail" aria-hidden="true"></i> ${t('sharePeopleInviteShow')}`;
+      toggle.onclick = () => { showInvite = true; renderModal(); };
+      inviteWrap.appendChild(toggle);
+    }
+
+    const accessList = modal.querySelector('#people-access-list');
+    if(!deal.agents || !deal.agents.length){
+      accessList.innerHTML = `<div class="field-hint" style="margin:4px 0;">${t('noAgentsInDeal')}</div>`;
+    } else {
+      deal.agents.forEach((a, i) => accessList.appendChild(buildPersonRow(dealId, a, {
+        removable: true, bordered: i < deal.agents.length - 1, onChange: renderModal
+      })));
+    }
+  }
+
+  renderModal();
+
+  const onKeydown = (e) => { if(e.key === 'Escape') close(); };
+  window.addEventListener('keydown', onKeydown);
+  const observer = new MutationObserver(() => {
+    if(!document.body.contains(overlay)){ window.removeEventListener('keydown', onKeydown); observer.disconnect(); }
+  });
+  observer.observe(document.body, { childList: true });
 }
 
 const CONTRACT_STATUS_LABEL = KYC_STATUS_LABEL;
