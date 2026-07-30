@@ -31,6 +31,16 @@
       <input type="password" id="password2" placeholder="Confirma tu contraseña" autocomplete="new-password">
       <button class="btn primary" id="submit" style="width:100%;">Crear cuenta y entrar</button>
     </div>
+    <div id="totp-form" style="display:none;">
+      <p class="gate-sub" id="totp-intro" style="margin-top:0;"></p>
+      <div id="totp-qr-wrap" style="display:none; text-align:center; margin-bottom:12px;">
+        <img id="totp-qr" style="width:180px; height:180px;" alt="QR">
+        <div class="field-hint" id="totp-manual-label" style="margin-top:6px;"></div>
+        <code id="totp-secret" style="font-size:13px; letter-spacing:1px;"></code>
+      </div>
+      <input type="text" id="totp-code" inputmode="numeric" autocomplete="one-time-code" placeholder="000000" style="text-align:center; font-size:20px; letter-spacing:4px;">
+      <button class="btn primary" id="totp-submit" style="width:100%; margin-top:10px;">Verificar</button>
+    </div>
   </div>
 </div>
 <script>
@@ -45,7 +55,12 @@
       submit: 'Crear cuenta y entrar',
       errPasswordLength: 'La contraseña debe tener al menos 8 caracteres.',
       errPasswordMismatch: 'Las contraseñas no coinciden.', errChooseAgency: 'Elige tu agencia.',
-      roleBuyer: 'comprador(a)', roleSeller: 'vendedor(a)', roleAgent: 'agente', roleLawyer: 'abogado(a) / empleado(a) interno'
+      roleBuyer: 'comprador(a)', roleSeller: 'vendedor(a)', roleAgent: 'agente', roleLawyer: 'abogado(a) / empleado(a) interno',
+      totpTitle: 'Verifica tu identidad',
+      totpIntroSetup: 'Escanea este código con Google Authenticator, Authy o una app similar, y pon el código de 6 dígitos que te muestre.',
+      totpIntroVerify: 'Pon el código de 6 dígitos de tu app de autenticación.',
+      totpManualLabel: 'O escríbelo a mano en tu app:',
+      totpCodePh: '000000', totpSubmit: 'Verificar', totpErrCode: 'Falta el código.'
     },
     en: {
       createAccount: 'Create your account', loadingInvite: 'Loading invitation…',
@@ -57,7 +72,12 @@
       submit: 'Create account and log in',
       errPasswordLength: 'The password must be at least 8 characters.',
       errPasswordMismatch: "Passwords don't match.", errChooseAgency: 'Choose your agency.',
-      roleBuyer: 'buyer', roleSeller: 'seller', roleAgent: 'agent', roleLawyer: 'lawyer / internal staff'
+      roleBuyer: 'buyer', roleSeller: 'seller', roleAgent: 'agent', roleLawyer: 'lawyer / internal staff',
+      totpTitle: 'Verify your identity',
+      totpIntroSetup: 'Scan this code with Google Authenticator, Authy, or a similar app, then enter the 6-digit code it shows you.',
+      totpIntroVerify: 'Enter the 6-digit code from your authenticator app.',
+      totpManualLabel: 'Or type it in by hand in your app:',
+      totpCodePh: '000000', totpSubmit: 'Verify', totpErrCode: 'Missing code.'
     }
   };
   let lang = localStorage.getItem('nar_lang') || 'es';
@@ -144,12 +164,49 @@
     const agencyOther = agencyOtherEl.value.trim();
     if (inviteRole === 'agent' && (!agency || (agency==='Otro' && !agencyOther))) { errorEl.textContent = t('errChooseAgency'); return; }
     try {
-      await apiFetch('/api/invites/' + token + '/accept', { method:'POST', body: JSON.stringify({ password, agency, agencyOther }) });
+      const result = await apiFetch('/api/invites/' + token + '/accept', { method:'POST', body: JSON.stringify({ password, agency, agencyOther }) });
+      showTotpStep(result);
+    } catch(e) {
+      errorEl.textContent = e.message;
+    }
+  };
+
+  // La cuenta ya quedó creada/ligada, pero según POST /invites/:token/accept
+  // (routes/invites.js -> beginTotpChallenge) todavía falta el segundo
+  // factor antes de que haya sesión de verdad — ver routes/auth.js.
+  function showTotpStep(result){
+    formEl.style.display = 'none';
+    subEl.textContent = '';
+    titleEl.textContent = t('totpTitle');
+    const totpForm = document.getElementById('totp-form');
+    const qrWrap = document.getElementById('totp-qr-wrap');
+    document.getElementById('totp-intro').textContent = result.setup ? t('totpIntroSetup') : t('totpIntroVerify');
+    if (result.setup) {
+      qrWrap.style.display = 'block';
+      document.getElementById('totp-qr').src = result.qrCode;
+      document.getElementById('totp-manual-label').textContent = t('totpManualLabel');
+      document.getElementById('totp-secret').textContent = result.secret;
+    } else {
+      qrWrap.style.display = 'none';
+    }
+    document.getElementById('totp-code').placeholder = t('totpCodePh');
+    document.getElementById('totp-submit').textContent = t('totpSubmit');
+    totpForm.style.display = 'block';
+    document.getElementById('totp-code').focus();
+  }
+
+  document.getElementById('totp-submit').onclick = async () => {
+    errorEl.textContent = '';
+    const code = document.getElementById('totp-code').value.trim();
+    if (!code) { errorEl.textContent = t('totpErrCode'); return; }
+    try {
+      await apiFetch('/api/auth/totp', { method:'POST', body: JSON.stringify({ code }) });
       window.location.href = '/';
     } catch(e) {
       errorEl.textContent = e.message;
     }
   };
+  document.getElementById('totp-code').onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('totp-submit').click(); };
 
   applyLang();
   init();

@@ -98,6 +98,14 @@ ensureColumn('users', 'agency', 'agency TEXT');
 // sin campo propio de captura todavía, admin lo llena a mano o se rellena
 // solo desde el KYC (answers.mobilePhone) si ya lo dieron ahí.
 ensureColumn('users', 'phone', 'phone TEXT');
+// Segundo factor (TOTP, Google Authenticator/Authy/etc.) — obligatorio para
+// todos los roles. totp_secret se genera y se guarda desde el primer login
+// después de este cambio (sin invalidar la contraseña ya puesta), pero
+// totp_enabled se queda en 0 hasta que esa persona confirme un código real
+// generado por su app, para no bloquear a nadie con un secreto que nunca
+// llegó a escanear.
+ensureColumn('users', 'totp_secret', 'totp_secret TEXT');
+ensureColumn('users', 'totp_enabled', 'totp_enabled INTEGER NOT NULL DEFAULT 0');
 
 // Qué escrow company usa la operación — determina qué plantilla KYC/escrow
 // se ofrece (Armour o TLA). Sin CHECK aquí, igual que el resto de columnas

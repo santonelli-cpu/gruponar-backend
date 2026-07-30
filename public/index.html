@@ -377,6 +377,12 @@ const STRINGS = {
     loginTitle: 'Iniciar sesión', loginSub: 'Ingresa con tu correo y contraseña.',
     loginEmailPh: 'correo@ejemplo.com', loginPasswordPh: 'Contraseña', loginSubmit: 'Entrar', loginSubmitting: 'Entrando...',
     loginNoAccount: '¿Eres agente o abogado y no tienes cuenta?', loginCreateAccount: 'Crear cuenta',
+    totpTitle: 'Verifica tu identidad',
+    totpIntroSetup: 'Escanea este código con Google Authenticator, Authy o una app similar, y pon el código de 6 dígitos que te muestre.',
+    totpIntroVerify: 'Pon el código de 6 dígitos de tu app de autenticación.',
+    totpManualLabel: 'O escríbelo a mano en tu app:',
+    totpCodeLabel: 'Código de verificación', totpCodePh: '000000', totpSubmit: 'Verificar',
+    totpErrCode: 'Falta el código.',
     forgotPasswordLink: '¿Olvidaste tu contraseña?', forgotPasswordTitle: 'Restablece tu contraseña',
     forgotPasswordSub: 'Escribe el correo de tu cuenta y te mandamos un link para poner una nueva contraseña.',
     forgotPasswordSubmit: 'Enviar link', backToLogin: 'Volver a iniciar sesión',
@@ -425,6 +431,9 @@ const STRINGS = {
     uploadSignedContract: 'Subir ya firmado', uploadSignedContractTitle: 'Si el contrato se redactó/firmó fuera del portal, súbelo aquí ya firmado en vez de generarlo/enviarlo a firma.',
     editDeal: 'Editar', editDealTitle: 'Editar datos de la operación', saveChanges: 'Guardar cambios', cancel: 'Cancelar',
     editAgency: 'Editar agencia', setAgency: 'Poner agencia',
+    reset2fa: 'Restablecer 2FA', reset2faTitle: 'Borra el segundo factor de esta cuenta — en su próximo login le pedirá armarlo de nuevo (nuevo QR).',
+    reset2faConfirm: '¿Restablecer el segundo factor de {name}? Va a necesitar escanear un QR nuevo en su próximo login.',
+    reset2faDone: 'Listo — en su próximo login le va a pedir armar el 2FA de nuevo.',
     registerDirect: 'Dar de alta directo', registerDirectTitle: 'Crea la cuenta de una vez con una contraseña temporal, en vez de mandar un link de invitación por correo.',
     registerDirectDone: 'Cuenta creada y se le mandó un correo de bienvenida para que entre y ponga su propia contraseña. Si prefieres compartírsela tú directamente (teléfono, WhatsApp, en persona), aquí está la temporal:',
     registerDirectHint: 'La persona puede cambiarla cuando quiera desde su cuenta una vez que inicie sesión con su correo y esta contraseña.',
@@ -582,6 +591,12 @@ const STRINGS = {
     loginTitle: 'Log in', loginSub: 'Enter your email and password.',
     loginEmailPh: 'email@example.com', loginPasswordPh: 'Password', loginSubmit: 'Log in', loginSubmitting: 'Logging in...',
     loginNoAccount: 'Are you an agent or lawyer without an account?', loginCreateAccount: 'Create account',
+    totpTitle: 'Verify your identity',
+    totpIntroSetup: 'Scan this code with Google Authenticator, Authy, or a similar app, then enter the 6-digit code it shows you.',
+    totpIntroVerify: 'Enter the 6-digit code from your authenticator app.',
+    totpManualLabel: 'Or type it in by hand in your app:',
+    totpCodeLabel: 'Verification code', totpCodePh: '000000', totpSubmit: 'Verify',
+    totpErrCode: 'Missing code.',
     forgotPasswordLink: 'Forgot your password?', forgotPasswordTitle: 'Reset your password',
     forgotPasswordSub: "Enter your account's email and we'll send you a link to set a new password.",
     forgotPasswordSubmit: 'Send link', backToLogin: 'Back to login',
@@ -630,6 +645,9 @@ const STRINGS = {
     uploadSignedContract: 'Upload signed', uploadSignedContractTitle: 'If the contract was drafted/signed outside the portal, upload it here already signed instead of generating/sending it for signature.',
     editDeal: 'Edit', editDealTitle: 'Edit deal details', saveChanges: 'Save changes', cancel: 'Cancel',
     editAgency: 'Edit agency', setAgency: 'Set agency',
+    reset2fa: 'Reset 2FA', reset2faTitle: "Clears this account's second factor — their next login will ask them to set it up again (new QR).",
+    reset2faConfirm: "Reset {name}'s two-factor authentication? They'll need to scan a new QR code on their next login.",
+    reset2faDone: "Done — they'll be asked to set up 2FA again on their next login.",
     registerDirect: 'Register directly', registerDirectTitle: 'Create the account right away with a temporary password, instead of sending an email invite link.',
     registerDirectDone: "Account created and a welcome email was sent so they can log in and set their own password. If you'd rather share it yourself (phone, WhatsApp, in person), here's the temporary one:",
     registerDirectHint: 'They can change it whenever they want from their account once they log in with their email and this password.',
@@ -827,6 +845,14 @@ let registerLoading = false;
 let registerSuccess = '';
 let forgotLoading = false;
 let forgotMessage = '';
+// Segundo factor obligatorio (ver POST /api/auth/login y /api/auth/totp) —
+// pendingTotp queda null hasta que la contraseña ya se validó; entonces
+// guarda si hace falta mostrar el QR (cuenta sin 2FA todavía) o solo el
+// campo del código (cuenta que ya lo tenía activado).
+let pendingTotp = null; // { setup, qrCode, secret }
+let totpCode = '';
+let totpError = '';
+let totpLoading = false;
 
 
 async function apiFetch(path, options={}){
@@ -1329,6 +1355,7 @@ function wirePasswordToggle(wrap, inputId, toggleId){
 function renderLogin(body){
   if(authView === 'register'){ renderRegister(body); return; }
   if(authView === 'forgot'){ renderForgotPassword(body); return; }
+  if(authView === 'totp'){ renderTotp(body); return; }
 
   const wrap = buildGateShell(`
     <p class="gate-eyebrow-small">${t('gateWelcomeBack')}</p>
@@ -1354,12 +1381,19 @@ function renderLogin(body){
     if(!email || !password){ loginError = t('loginErrFields'); render(); return; }
     loginLoading = true; loginError=''; render();
     try{
-      const user = await apiFetch('/api/auth/login', {method:'POST', body: JSON.stringify({email, password})});
-      currentUser = user;
+      const result = await apiFetch('/api/auth/login', {method:'POST', body: JSON.stringify({email, password})});
+      loginLoading = false;
+      if(result.twoFactor){
+        pendingTotp = { setup: result.setup, qrCode: result.qrCode, secret: result.secret };
+        totpCode = ''; totpError = '';
+        authView = 'totp';
+        render();
+        return;
+      }
+      currentUser = result;
       authenticated = true;
       registerSuccess = '';
-      mainTab = (user.role === 'buyer' || user.role === 'seller') ? 'portal' : 'admin';
-      loginLoading = false;
+      mainTab = (result.role === 'buyer' || result.role === 'seller') ? 'portal' : 'admin';
       await loadData();
     }catch(e){
       loginLoading = false;
@@ -1372,6 +1406,60 @@ function renderLogin(body){
   wrap.querySelector('#go-register').onclick = (e) => { e.preventDefault(); authView='register'; loginError=''; render(); };
   wrap.querySelector('#go-forgot').onclick = (e) => { e.preventDefault(); authView='forgot'; loginError=''; forgotMessage=''; render(); };
   wirePasswordToggle(wrap, 'login-password', 'login-pw-toggle');
+}
+
+// Segundo paso obligatorio del login (ver POST /api/auth/login y
+// /api/auth/totp en routes/auth.js) — pendingTotp.setup distingue entre
+// "todavía no tiene 2FA, aquí está el QR para armarlo" y "ya lo tiene, solo
+// pide el código". La cuenta y la contraseña ya quedaron validadas en este
+// punto; lo único que falta es confirmar el código de la app.
+function renderTotp(body){
+  if(!pendingTotp){ authView='login'; render(); return; }
+  const wrap = buildGateShell(`
+    <div class="gate-title">${t('totpTitle')}</div>
+    <div class="gate-sub">${pendingTotp.setup ? t('totpIntroSetup') : t('totpIntroVerify')}</div>
+    <div class="gate-error">${escapeHtml(totpError)}</div>
+    ${pendingTotp.setup ? `
+      <div style="text-align:center; margin-bottom:14px;">
+        <img src="${pendingTotp.qrCode}" style="width:180px; height:180px;" alt="QR">
+        <div class="field-hint" style="margin-top:6px;">${t('totpManualLabel')}</div>
+        <code style="font-size:13px; letter-spacing:1px;">${escapeHtml(pendingTotp.secret)}</code>
+      </div>
+    ` : ''}
+    <label class="gate-field-label" for="totp-code">${t('totpCodeLabel')}</label>
+    <input type="text" id="totp-code" inputmode="numeric" autocomplete="one-time-code" placeholder="${t('totpCodePh')}" style="text-align:center; font-size:20px; letter-spacing:4px;" value="${escapeHtml(totpCode)}">
+    <button class="btn primary" id="totp-submit" style="margin-top:14px;" ${totpLoading ? 'disabled' : ''}>${totpLoading ? t('loginSubmitting') : t('totpSubmit')}</button>
+    <div class="field-hint" style="text-align:center; margin-top:16px;"><a href="#" id="totp-back">${t('backToLogin')}</a></div>
+  `);
+  body.appendChild(wrap);
+  const codeInput = wrap.querySelector('#totp-code');
+  codeInput.focus();
+  const submit = async () => {
+    const code = codeInput.value.trim();
+    if(!code){ totpError = t('totpErrCode'); render(); return; }
+    totpLoading = true; totpError=''; render();
+    try{
+      const user = await apiFetch('/api/auth/totp', { method:'POST', body: JSON.stringify({ code }) });
+      pendingTotp = null;
+      currentUser = user;
+      authenticated = true;
+      mainTab = (user.role === 'buyer' || user.role === 'seller') ? 'portal' : 'admin';
+      totpLoading = false;
+      await loadData();
+    }catch(e){
+      totpLoading = false;
+      totpError = e.message;
+      render();
+    }
+  };
+  wrap.querySelector('#totp-submit').onclick = submit;
+  codeInput.onkeydown = (e) => { if(e.key==='Enter') submit(); };
+  wrap.querySelector('#totp-back').onclick = async (e) => {
+    e.preventDefault();
+    pendingTotp = null; totpError=''; totpCode='';
+    try{ await apiFetch('/api/auth/logout', { method:'POST' }); }catch(err){}
+    authView='login'; render();
+  };
 }
 
 function renderForgotPassword(body){
@@ -1850,6 +1938,24 @@ function buildTeamSection(){
         row.appendChild(editBtn);
         row.appendChild(editWrap);
       }
+
+      // Para cuando alguien pierde el teléfono donde tenía la app de 2FA
+      // (o cambió de equipo) — sin esto no hay forma de que vuelva a entrar,
+      // el código que genera su app vieja ya no sirve para nada.
+      const reset2faBtn = document.createElement('button');
+      reset2faBtn.className = 'btn'; reset2faBtn.style.cssText = 'font-size:11px; padding:3px 10px; align-self:flex-start;';
+      reset2faBtn.textContent = t('reset2fa');
+      reset2faBtn.title = t('reset2faTitle');
+      reset2faBtn.onclick = async () => {
+        if(!confirm(t('reset2faConfirm', { name: u.name }))) return;
+        reset2faBtn.disabled = true;
+        try{
+          await apiFetch(`/api/users/${u.id}/reset-2fa`, { method:'POST' });
+          alert(t('reset2faDone'));
+        }catch(e){ alert(e.message); }
+        reset2faBtn.disabled = false;
+      };
+      row.appendChild(reset2faBtn);
       activeCard.appendChild(row);
     });
   }
@@ -1987,7 +2093,7 @@ function buildClientsSection(){
   const table = document.createElement('table');
   table.className = 'data-table';
   table.innerHTML = `<thead><tr>
-    <th>${t('nameLabel')}</th><th>${t('emailLabel')}</th><th>${t('phonePh')}</th><th>${t('roleLabel')}</th><th>${t('dealSingular')}</th>
+    <th>${t('nameLabel')}</th><th>${t('emailLabel')}</th><th>${t('phonePh')}</th><th>${t('roleLabel')}</th><th>${t('dealSingular')}</th><th></th>
   </tr></thead>`;
   const tbody = document.createElement('tbody');
   filtered.forEach(c => {
@@ -2000,7 +2106,22 @@ function buildClientsSection(){
       <td></td>
       <td><span class="role-badge ${c.role}">${roleLabel}</span></td>
       <td>${dealsLabel}</td>
+      <td></td>
     `;
+    const actionsCell = tr.children[5];
+    const reset2faBtn = document.createElement('button');
+    reset2faBtn.className = 'btn'; reset2faBtn.style.fontSize = '11px'; reset2faBtn.textContent = t('reset2fa');
+    reset2faBtn.title = t('reset2faTitle');
+    reset2faBtn.onclick = async () => {
+      if(!confirm(t('reset2faConfirm', { name: c.name }))) return;
+      reset2faBtn.disabled = true;
+      try{
+        await apiFetch(`/api/users/${c.id}/reset-2fa`, { method:'POST' });
+        alert(t('reset2faDone'));
+      }catch(e){ alert(e.message); }
+      reset2faBtn.disabled = false;
+    };
+    actionsCell.appendChild(reset2faBtn);
     const phoneCell = tr.children[2];
     const phoneInput = document.createElement('input');
     phoneInput.type = 'text'; phoneInput.value = c.phone || ''; phoneInput.placeholder = t('phonePh');

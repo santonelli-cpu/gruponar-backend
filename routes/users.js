@@ -49,6 +49,17 @@ router.patch('/:id/approve', requireRole('admin'), (req, res) => {
   res.json({ ok: true });
 });
 
+// POST /api/users/:id/reset-2fa — para cuando alguien pierde el teléfono
+// donde tenía la app de autenticación (o cambió de equipo). Borra el
+// secreto guardado; en su siguiente login, POST /auth/login vuelve a tratar
+// la cuenta como si nunca hubiera tenido 2FA (nuevo QR, sin pedir el código
+// viejo que ya no puede generar).
+router.post('/:id/reset-2fa', requireRole('admin'), (req, res) => {
+  const info = db.prepare("UPDATE users SET totp_enabled = 0, totp_secret = NULL WHERE id = ?").run(req.params.id);
+  if (!info.changes) return res.status(404).json({ error: 'Usuario no encontrado.' });
+  res.json({ ok: true });
+});
+
 // PATCH /api/users/:id/agency — la agencia normalmente la elige el agente al
 // registrarse/aceptar su invitación, pero no había forma de corregirla
 // después (ej. si se equivocó, cambió de agencia, o quedó en NULL porque se

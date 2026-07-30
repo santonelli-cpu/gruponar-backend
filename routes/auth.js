@@ -1,6 +1,8 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
+const { authenticator } = require('otplib');
+const qrcode = require('qrcode');
 const db = require('../db');
 const { createRateLimiter } = require('../lib/rateLimit');
 const mailer = require('../lib/email');
@@ -9,6 +11,15 @@ const router = express.Router();
 
 const rateLimitRegister = createRateLimiter({ windowMs: 15 * 60 * 1000, maxAttempts: 10 });
 const rateLimitForgotPassword = createRateLimiter({ windowMs: 15 * 60 * 1000, maxAttempts: 10 });
+// Sin esto, /login no tenía ningún límite — alguien podía probar
+// contraseñas sin parar contra cualquier correo conocido. Por IP, no por
+// cuenta, igual que los otros rateLimit* de este archivo: más simple y no
+// depende de si el correo existe o no.
+const rateLimitLogin = createRateLimiter({ windowMs: 15 * 60 * 1000, maxAttempts: 10 });
+// Un código TOTP son 6 dígitos (1,000,000 combinaciones) válidos 30s — sin
+// límite, alguien que ya se robó la contraseña podría automatizar probarlos
+// todos en minutos. Más estricto que los de arriba a propósito.
+const rateLimitTotp = createRateLimiter({ windowMs: 15 * 60 * 1000, maxAttempts: 8 });
 const PASSWORD_RESET_TTL_HOURS = 1;
 
 // Agencias con las que trabaja Grupo Nar — un agente que no es de ninguna de
@@ -72,8 +83,38 @@ router.post('/register', rateLimitRegister, (req, res) => {
   }
 });
 
-// POST /api/auth/login  { email, password }
-router.post('/login', (req, res) => {
+// Deja pendingUserId listo en la sesión y responde el reto de 2FA que le
+// toca a esta cuenta — nunca abre sesión de una vez. La usan tanto /login
+// como POST /invites/:token/accept (routes/invites.js): cualquier forma de
+// "quedar identificado" en esta app pasa por aquí antes de tener sesión de
+// verdad, no solo el login normal con correo/contraseña.
+function beginTotpChallenge(req, res, user) {
+  req.session.pendingUserId = user.id;
+  delete req.session.userId;
+
+  if (user.totp_enabled && user.totp_secret) {
+    logAccess(user.id, 'login_password_ok_awaiting_totp', req);
+    return res.json({ twoFactor: true, setup: false });
+  }
+
+  // Primera vez (cuenta recién creada, o se le reseteó el 2FA) — nuevo
+  // secreto, sin activar todavía hasta que confirme un código real en
+  // POST /totp.
+  const secret = authenticator.generateSecret();
+  db.prepare('UPDATE users SET totp_secret = ? WHERE id = ?').run(secret, user.id);
+  const otpauth = authenticator.keyuri(user.email, 'Grupo Nar', secret);
+  qrcode.toDataURL(otpauth, (err, qrDataUrl) => {
+    if (err) return res.status(500).json({ error: 'No se pudo generar el código QR.' });
+    logAccess(user.id, 'login_password_ok_awaiting_totp_setup', req);
+    res.json({ twoFactor: true, setup: true, qrCode: qrDataUrl, secret });
+  });
+}
+
+// POST /api/auth/login  { email, password } — segundo paso obligatorio con
+// TOTP para TODOS los roles (ver POST /totp abajo). Una contraseña correcta
+// nunca abre sesión por sí sola: solo deja a req.session.pendingUserId
+// listo para que /totp la confirme.
+router.post('/login', rateLimitLogin, (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: 'Falta correo o contraseña.' });
 
@@ -90,6 +131,35 @@ router.post('/login', (req, res) => {
     return res.status(403).json({ error: 'Tu cuenta está pendiente de aprobación por un administrador.' });
   }
 
+  beginTotpChallenge(req, res, user);
+});
+
+// POST /api/auth/totp  { code } — segundo paso del login de arriba. Requiere
+// haber pasado ya la contraseña (pendingUserId en la sesión); confirma el
+// código de 6 dígitos contra el secreto guardado y recién ahí abre la
+// sesión de verdad. Si la cuenta seguía sin 2FA activado, este es el
+// momento en que queda activado para siempre (ya demostró que sí escaneó
+// el QR y tiene la app configurada).
+router.post('/totp', rateLimitTotp, (req, res) => {
+  const pendingUserId = req.session.pendingUserId;
+  if (!pendingUserId) return res.status(401).json({ error: 'Tu sesión de login expiró, entra tu correo y contraseña de nuevo.' });
+  const { code } = req.body || {};
+  if (!code) return res.status(400).json({ error: 'Falta el código.' });
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(pendingUserId);
+  if (!user || !user.totp_secret) return res.status(401).json({ error: 'Tu sesión de login expiró, entra tu correo y contraseña de nuevo.' });
+
+  let valid = false;
+  try { valid = authenticator.check(String(code).trim(), user.totp_secret); } catch (e) { valid = false; }
+  if (!valid) {
+    logAccess(user.id, 'totp_failed', req);
+    return res.status(401).json({ error: 'Código incorrecto. Revisa la hora de tu teléfono e intenta de nuevo.' });
+  }
+
+  if (!user.totp_enabled) {
+    db.prepare('UPDATE users SET totp_enabled = 1 WHERE id = ?').run(user.id);
+  }
+  delete req.session.pendingUserId;
   req.session.userId = user.id;
   req.session.role = user.role;
   logAccess(user.id, 'login_success', req);
@@ -176,4 +246,4 @@ function requireRole(...roles) {
   };
 }
 
-module.exports = { router, requireAuth, requireRole, resolveAgency, KNOWN_AGENCIES };
+module.exports = { router, requireAuth, requireRole, resolveAgency, KNOWN_AGENCIES, beginTotpChallenge };

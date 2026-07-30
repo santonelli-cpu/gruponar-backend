@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
 const cors = require('cors');
+const helmet = require('helmet');
 const sqlite3 = require('sqlite3');
 const SQLiteStore = require('connect-sqlite3')(session);
 const path = require('path');
@@ -20,6 +21,12 @@ const { runAutomaticReminders } = require('./lib/reminders');
 const { checkAndSendPredialReminders } = require('./lib/predialReminder');
 
 const app = express();
+// Headers de seguridad estándar (X-Content-Type-Options, X-Frame-Options,
+// Strict-Transport-Security, etc.) — CSP se deja apagada a propósito: todo
+// el frontend es un solo public/index.html con <script>/<style> inline, y
+// la política por default de helmet bloquearía eso (haría falta moverlo a
+// archivos externos con nonce para poder prender CSP de verdad).
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json());
 
 // Si tu frontend vive en otro origen (ej. lo sigues abriendo como artifact
