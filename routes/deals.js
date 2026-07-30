@@ -202,14 +202,28 @@ function insertPartyWithDocs(dealId, scenario, side, sortOrder, p) {
 // una parte (better-sqlite3 no soporta transacciones anidadas). Deja que el
 // comprador/vendedor pueda firmar documentos sin tener que registrarse él
 // mismo: el agente/admin comparte la contraseña temporal por el canal que
-// prefiera (teléfono, WhatsApp, en persona).
+// prefiera (teléfono, WhatsApp, en persona), y además se le manda un correo
+// de bienvenida con un link para poner su propia contraseña (ver
+// sendPartyWelcomeEmail) — así no depende de que alguien le pase la
+// temporal a mano si prefiere entrar por su cuenta.
+//
+// Si el correo ya es de una cuenta de cliente existente (puede ser de otra
+// operación — el mismo comprador/vendedor con otra propiedad), se LIGA esa
+// cuenta a esta parte en vez de fallar. Solo se bloquea si el correo es de
+// una cuenta de equipo (admin/agente/abogado), que no debería quedar ligada
+// como comprador/vendedor.
 function registerPartyUserRaw(dealId, party, name, email) {
   const normalizedEmail = email.toLowerCase().trim();
-  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
+  const existing = db.prepare('SELECT id, role FROM users WHERE email = ?').get(normalizedEmail);
   if (existing) {
-    const err = new Error('Ya existe una cuenta con ese correo — liga esa cuenta en vez de crear una nueva (por ahora no hay botón para esto, avísame si lo necesitas).');
-    err.status = 409;
-    throw err;
+    if (!['buyer', 'seller'].includes(existing.role)) {
+      const err = new Error('Ya existe una cuenta de equipo (no de cliente) con ese correo — no se puede ligar como comprador/vendedor.');
+      err.status = 409;
+      throw err;
+    }
+    db.prepare('INSERT INTO deal_parties (deal_id, user_id, role_in_deal, deal_party_entity_id) VALUES (?,?,?,?)')
+      .run(dealId, existing.id, party.side, party.id);
+    return { userId: existing.id, temporaryPassword: null, linkedExisting: true };
   }
   const password = crypto.randomBytes(6).toString('base64url');
   const hash = bcrypt.hashSync(password, 12);
@@ -217,7 +231,29 @@ function registerPartyUserRaw(dealId, party, name, email) {
     .run(name.trim(), normalizedEmail, hash, party.side);
   db.prepare('INSERT INTO deal_parties (deal_id, user_id, role_in_deal, deal_party_entity_id) VALUES (?,?,?,?)')
     .run(dealId, info.lastInsertRowid, party.side, party.id);
-  return { userId: info.lastInsertRowid, temporaryPassword: password };
+  return { userId: info.lastInsertRowid, temporaryPassword: password, linkedExisting: false };
+}
+
+// Correo de bienvenida a un comprador/vendedor recién dado de alta directo
+// (nunca a uno que ya tenía cuenta — linkedExisting=true solo se liga a la
+// operación nueva, no necesita "bienvenida" otra vez). Reusa el mismo copy
+// que la invitación por correo (mismo call-to-action: entrar y poner tu
+// contraseña) — el link es de restablecer contraseña porque la cuenta y su
+// contraseña temporal ya existen, a diferencia de la invitación de verdad.
+// Nunca lanza — un correo que falla no debe tumbar el alta de la parte.
+async function sendPartyWelcomeEmail(req, dealProperty, name, email, side) {
+  if (!mailer.isConfigured()) return;
+  try {
+    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase().trim());
+    if (!user) return;
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 7 * 86400000).toISOString();
+    db.prepare('INSERT INTO password_resets (token, user_id, expires_at) VALUES (?,?,?)').run(token, user.id, expiresAt);
+    const url = `${req.protocol}://${req.get('host')}/reset-password.html?token=${token}`;
+    await mailer.sendInviteEmail({ to: email, name, roleInDeal: side, dealProperty, url });
+  } catch (err) {
+    console.error('[welcome-email] no se pudo mandar a', email, '-', err.message);
+  }
 }
 
 // Subqueries de conteo para poder mostrar % de avance en la lista sin tener
@@ -303,8 +339,8 @@ router.post('/', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (re
           if (p.email && p.email.trim()) {
             try {
               const newParty = db.prepare('SELECT * FROM deal_party_entities WHERE id = ?').get(partyId);
-              const { temporaryPassword } = registerPartyUserRaw(id, newParty, p.name, p.email);
-              partyResults.push({ partyName: p.name, email: p.email.toLowerCase().trim(), temporaryPassword });
+              const { temporaryPassword, linkedExisting } = registerPartyUserRaw(id, newParty, p.name, p.email);
+              partyResults.push({ partyName: p.name, email: p.email.toLowerCase().trim(), temporaryPassword, linkedExisting, side });
             } catch (err) {
               partyResults.push({ partyName: p.name, email: p.email, error: err.message });
             }
@@ -327,6 +363,9 @@ router.post('/', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (re
 
     res.status(201).json({ id: result.id, partyResults: result.partyResults });
     tryCreateDriveFolder(req, result.id, property);
+    result.partyResults
+      .filter(r => !r.error && !r.linkedExisting)
+      .forEach(r => sendPartyWelcomeEmail(req, property, r.partyName, r.email, r.side));
   } catch (err) {
     res.status(500).json({ error: err.message || 'Error al crear la operación.' });
   }
@@ -452,17 +491,20 @@ router.post('/:id/parties', requireRole('admin', 'agent', 'lawyer', 'external_la
 
   // Correo opcional: da de alta la cuenta de una vez, para poder mandar a
   // firmar documentos sin que la parte tenga que registrarse ella misma.
-  let temporaryPassword, emailError;
+  let temporaryPassword, emailError, linkedExisting;
   if (p.email && p.email.trim()) {
     try {
       const newParty = db.prepare('SELECT * FROM deal_party_entities WHERE id = ?').get(partyId);
-      ({ temporaryPassword } = db.transaction(() => registerPartyUserRaw(req.params.id, newParty, p.name, p.email))());
+      ({ temporaryPassword, linkedExisting } = db.transaction(() => registerPartyUserRaw(req.params.id, newParty, p.name, p.email))());
     } catch (err) {
       emailError = err.message;
     }
   }
 
   res.status(201).json({ id: partyId, temporaryPassword, emailError });
+  if (p.email && p.email.trim() && !emailError && !linkedExisting) {
+    sendPartyWelcomeEmail(req, deal.property, p.name, p.email, p.side);
+  }
 });
 
 // PATCH /api/deals/:id/parties/:partyId — editar nombre/estructura de una
@@ -582,6 +624,8 @@ router.post('/:id/parties/:partyId/fix-entity-checklist', requireRole('admin', '
 // depender de que revisen su correo y le den clic al link.
 router.post('/:id/parties/:partyId/register-user', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id);
+  if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
   const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
   if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
 
@@ -592,8 +636,9 @@ router.post('/:id/parties/:partyId/register-user', requireRole('admin', 'agent',
   if (!name || !email) return res.status(400).json({ error: 'Falta el nombre o el correo.' });
 
   try {
-    const { userId, temporaryPassword } = db.transaction(() => registerPartyUserRaw(req.params.id, party, name, email))();
-    res.status(201).json({ id: userId, name: name.trim(), email: email.toLowerCase().trim(), temporaryPassword });
+    const { userId, temporaryPassword, linkedExisting } = db.transaction(() => registerPartyUserRaw(req.params.id, party, name, email))();
+    res.status(201).json({ id: userId, name: name.trim(), email: email.toLowerCase().trim(), temporaryPassword, linkedExisting });
+    if (!linkedExisting) sendPartyWelcomeEmail(req, deal.property, name, email, party.side);
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
   }

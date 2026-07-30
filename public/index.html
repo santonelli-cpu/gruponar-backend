@@ -299,7 +299,8 @@ const STRINGS = {
     editDeal: 'Editar', editDealTitle: 'Editar datos de la operación', saveChanges: 'Guardar cambios', cancel: 'Cancelar',
     editAgency: 'Editar agencia', setAgency: 'Poner agencia',
     registerDirect: 'Dar de alta directo', registerDirectTitle: 'Crea la cuenta de una vez con una contraseña temporal, en vez de mandar un link de invitación por correo.',
-    registerDirectDone: 'Cuenta creada — no se manda ningún correo automático. Comparte esta contraseña con la persona por el canal que prefieras (teléfono, WhatsApp, en persona).',
+    registerDirectDone: 'Cuenta creada y se le mandó un correo de bienvenida para que entre y ponga su propia contraseña. Si prefieres compartírsela tú directamente (teléfono, WhatsApp, en persona), aquí está la temporal:',
+    registerLinkedExistingDone: 'Ya existía una cuenta con ese correo (probablemente de otra operación) — se ligó a esta parte. No hace falta contraseña nueva ni correo de bienvenida.',
     registerDirectHint: 'La persona puede cambiarla cuando quiera desde su cuenta una vez que inicie sesión con su correo y esta contraseña.',
     temporaryPassword: 'Contraseña temporal',
     removeFromDeal: 'Quitar de esta operación', addAgentTitle: 'Agregar agente a esta operación', addAgentHint: 'Elige un agente que ya tiene cuenta — no hace falta invitarlo de nuevo.',
@@ -485,7 +486,8 @@ const STRINGS = {
     editDeal: 'Edit', editDealTitle: 'Edit deal details', saveChanges: 'Save changes', cancel: 'Cancel',
     editAgency: 'Edit agency', setAgency: 'Set agency',
     registerDirect: 'Register directly', registerDirectTitle: 'Create the account right away with a temporary password, instead of sending an email invite link.',
-    registerDirectDone: "Account created — no automatic email is sent. Share this password with the person however you prefer (phone, WhatsApp, in person).",
+    registerDirectDone: "Account created and a welcome email was sent so they can log in and set their own password. If you'd rather share it yourself (phone, WhatsApp, in person), here's the temporary one:",
+    registerLinkedExistingDone: 'An account with that email already existed (likely from another deal) — it was linked to this party. No new password or welcome email needed.',
     registerDirectHint: 'They can change it whenever they want from their account once they log in with their email and this password.',
     temporaryPassword: 'Temporary password',
     removeFromDeal: 'Remove from this deal', addAgentTitle: 'Add an agent to this deal', addAgentHint: 'Pick an agent who already has an account — no need to invite them again.',
@@ -3173,8 +3175,8 @@ function buildInviteForm(deal){
       </div>
     </div>
     <div id="inv-direct-result" style="display:none;">
-      <div class="field-hint" style="margin:0 0 6px; color:var(--jade);">${t('registerDirectDone')}</div>
-      <div class="form-row">
+      <div class="field-hint" id="inv-direct-result-label" style="margin:0 0 6px; color:var(--jade);">${t('registerDirectDone')}</div>
+      <div class="form-row" id="inv-direct-password-row">
         <label style="flex:1;">${t('temporaryPassword')}
           <input type="text" id="inv-direct-password" readonly>
         </label>
@@ -3253,7 +3255,7 @@ function buildInviteForm(deal){
     errEl.textContent = '';
     if (!name || !email) { errEl.textContent = t('errNameOrEmail'); return; }
     try {
-      let temporaryPassword;
+      let temporaryPassword, linkedExisting = false;
       if(['agent', 'external_lawyer'].includes(target)){
         const agency = target === 'agent' ? agencySelect.value : '';
         const agencyOther = target === 'agent' ? agencyOtherInput.value.trim() : '';
@@ -3264,11 +3266,13 @@ function buildInviteForm(deal){
         }));
       } else {
         const party = unlinked.find(p => 'party:'+p.id === target);
-        ({ temporaryPassword } = await apiFetch(`/api/deals/${deal.id}/parties/${party.id}/register-user`, {
+        ({ temporaryPassword, linkedExisting } = await apiFetch(`/api/deals/${deal.id}/parties/${party.id}/register-user`, {
           method: 'POST', body: JSON.stringify({ name, email })
         }));
       }
-      card.querySelector('#inv-direct-password').value = temporaryPassword;
+      card.querySelector('#inv-direct-result-label').textContent = linkedExisting ? t('registerLinkedExistingDone') : t('registerDirectDone');
+      card.querySelector('#inv-direct-password-row').style.display = linkedExisting ? 'none' : '';
+      card.querySelector('#inv-direct-password').value = temporaryPassword || '';
       card.querySelector('#inv-direct-result').style.display = 'block';
       await openDeal(deal.id);
     } catch(e) {
