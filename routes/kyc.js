@@ -372,11 +372,13 @@ async function sendKycEnvelope(deal, party, submission, template) {
     emailSubject: `Firma requerida: ${template.definition.label || 'Expediente KYC'} — ${deal.property}`,
     documents: [{ documentBase64, name: 'Expediente KYC.pdf', fileExtension: 'pdf', documentId: '1' }],
     recipients: {
+      // Sin clientUserId, DocuSign manda el correo de firma directo (igual
+      // que si se enviara desde su propia página) — no hace falta que el
+      // firmante tenga ni use una cuenta del portal para firmar.
       signers: [{
         email: signer.email,
         name: signer.name,
         recipientId: '1',
-        clientUserId: String(signer.userId),
         tabs: {
           signHereTabs: [{ anchorString: template.signatureAnchor, anchorUnits: 'pixels', anchorXOffset: '0', anchorYOffset: '-20', optional: 'false' }]
         }
@@ -496,40 +498,6 @@ router.post('/deals/:id/kyc/:partyId/send-for-signature', requireRole('admin', '
     res.json({ ok: true, envelopeId });
   } catch (err) {
     res.status(502).json({ error: err.message || 'Error al enviar el expediente a firma.' });
-  }
-});
-
-// POST /api/deals/:id/kyc/:partyId/signing-url — el firmante en sesión pide
-// su propia URL de firma embebida.
-router.post('/deals/:id/kyc/:partyId/signing-url', requireAuth, async (req, res) => {
-  const { id, partyId } = req.params;
-  if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
-  if (myDealPartyEntityId(req, id) !== Number(partyId)) {
-    return res.status(403).json({ error: 'Solo puedes firmar tu propio expediente.' });
-  }
-
-  const kind = req.query.kind === 'lpr' ? 'lpr' : 'escrow';
-  const submission = getLatestSubmission(partyId, kind);
-  if (!submission || !submission.docusign_envelope_id) return res.status(400).json({ error: 'Este expediente todavía no se ha enviado a firma.' });
-
-  const me = db.prepare('SELECT name, email FROM users WHERE id = ?').get(req.session.userId);
-
-  try {
-    const apiClient = await docusignClient.getAuthorizedApiClient();
-    const envelopesApi = new docusign.EnvelopesApi(apiClient);
-    const baseUrl = `${req.protocol}://${req.get('host')}`;
-    const result = await envelopesApi.createRecipientView(process.env.DOCUSIGN_ACCOUNT_ID, submission.docusign_envelope_id, {
-      recipientViewRequest: {
-        returnUrl: `${baseUrl}/sign-return.html?dealId=${id}&kycPartyId=${partyId}`,
-        authenticationMethod: 'none',
-        email: me.email,
-        userName: me.name,
-        clientUserId: String(req.session.userId)
-      }
-    });
-    res.json({ url: result.url });
-  } catch (err) {
-    res.status(502).json({ error: err.message || 'Error al generar la URL de firma.' });
   }
 });
 

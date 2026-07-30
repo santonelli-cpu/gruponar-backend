@@ -333,6 +333,20 @@ router.post('/deals/:id/contract/send-for-signature', requireRole('admin', 'lawy
   if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
   if (deal.contract_status !== 'generated') return res.status(400).json({ error: 'Genera el contrato antes de enviarlo a firma.' });
 
+  // El contrato lo firman TODAS las partes (cada comprador y cada vendedor),
+  // no solo los que ya tengan cuenta — si a alguna le falta, se bloquea el
+  // envío en vez de mandar el sobre incompleto sin que nadie lo note.
+  const missingParties = db.prepare(`
+    SELECT name FROM deal_party_entities
+    WHERE deal_id = ? AND side IN ('buyer','seller')
+      AND id NOT IN (SELECT deal_party_entity_id FROM deal_parties WHERE deal_party_entity_id IS NOT NULL)
+  `).all(id);
+  if (missingParties.length) {
+    return res.status(400).json({
+      error: `Falta darles cuenta a: ${missingParties.map(p => p.name).join(', ')} — no pueden firmar sin una. Agrégales un correo (en su parte o en "Invitar") antes de mandar a firma.`
+    });
+  }
+
   const signers = withSideIndex(loadSigners(id));
   if (!signers.length) return res.status(400).json({ error: 'Esta operación no tiene comprador ni vendedor con cuenta ligada todavía.' });
 
@@ -353,12 +367,14 @@ router.post('/deals/:id/contract/send-for-signature', requireRole('admin', 'lawy
       emailSubject: `Firma requerida: Contrato de Promesa — ${deal.property}`,
       documents: [{ documentBase64, name: 'Contrato de Promesa.pdf', fileExtension: 'pdf', documentId: '1' }],
       recipients: {
+        // Sin clientUserId, DocuSign manda el correo de firma directo a cada
+        // parte (igual que enviarlo desde su propia página) — no depende de
+        // que tengan ni usen una cuenta del portal para firmar.
         signers: signers.map((p, i) => ({
           email: p.email,
           name: p.name,
           recipientId: String(i + 1),
           routingOrder: p.roleInDeal === 'buyer' ? '1' : '2',
-          clientUserId: String(p.userId),
           tabs: {
             signHereTabs: [{
               anchorString: anchorForSigner(p.roleInDeal, p.sideIndex),
@@ -389,38 +405,6 @@ router.post('/deals/:id/contract/send-for-signature', requireRole('admin', 'lawy
     res.status(502).json({ error: err.message || 'Error al enviar el contrato a firma.' });
   } finally {
     if (localPdfPath) fs.rmSync(localPdfPath, { force: true });
-  }
-});
-
-// POST /api/deals/:id/contract/signing-url — el firmante EN SESIÓN pide su
-// propia URL de firma embebida.
-router.post('/deals/:id/contract/signing-url', requireAuth, async (req, res) => {
-  const { id } = req.params;
-  if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
-  const myRole = myRoleInDeal(req, id);
-  if (!['buyer', 'seller'].includes(myRole)) return res.status(403).json({ error: 'Solo el comprador o vendedor pueden firmar.' });
-
-  const deal = loadDeal(id);
-  if (!deal || !deal.contract_docusign_envelope_id) return res.status(400).json({ error: 'Este contrato todavía no se ha enviado a firma.' });
-
-  const me = db.prepare('SELECT name, email FROM users WHERE id = ?').get(req.session.userId);
-
-  try {
-    const apiClient = await docusignClient.getAuthorizedApiClient();
-    const envelopesApi = new docusign.EnvelopesApi(apiClient);
-    const baseUrl = `${req.protocol}://${req.get('host')}`;
-    const result = await envelopesApi.createRecipientView(process.env.DOCUSIGN_ACCOUNT_ID, deal.contract_docusign_envelope_id, {
-      recipientViewRequest: {
-        returnUrl: `${baseUrl}/sign-return.html?dealId=${id}&contract=1`,
-        authenticationMethod: 'none',
-        email: me.email,
-        userName: me.name,
-        clientUserId: String(req.session.userId)
-      }
-    });
-    res.json({ url: result.url });
-  } catch (err) {
-    res.status(502).json({ error: err.message || 'Error al generar la URL de firma.' });
   }
 });
 

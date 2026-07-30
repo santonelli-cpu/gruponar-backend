@@ -5,7 +5,7 @@ const multer = require('multer');
 const docusign = require('docusign-esign');
 const db = require('../db');
 const { requireAuth, requireRole } = require('./auth');
-const { canAccessDeal, myRoleInDeal } = require('../lib/access');
+const { canAccessDeal } = require('../lib/access');
 const { dealDir, genFilename } = require('../lib/storage');
 const gcsStorage = require('../lib/gcsStorage');
 const driveClient = require('../lib/googleDriveClient');
@@ -143,8 +143,9 @@ router.post('/deals/:id/tasks/:taskId/generate-escrow-document', requireRole('ad
 });
 
 // POST /api/deals/:id/tasks/:taskId/send-for-signature — arma el sobre en
-// DocuSign con firma embebida para comprador y vendedor. Solo admin/abogado
-// interno mandan a firma estos documentos de cierre.
+// DocuSign (comprador y vendedor firman por correo, sin pasar por el
+// portal). Solo admin/abogado interno mandan a firma estos documentos de
+// cierre (escrow agreement, KYC del fiduciario, etc.).
 router.post('/deals/:id/tasks/:taskId/send-for-signature', requireRole('admin', 'lawyer'), async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const task = getTask(req.params.id, req.params.taskId);
@@ -158,6 +159,20 @@ router.post('/deals/:id/tasks/:taskId/send-for-signature', requireRole('admin', 
   }
   if (!task.document_url) {
     return res.status(400).json({ error: 'Sube el documento a firmar de esta tarea primero.' });
+  }
+
+  // El escrow agreement (y cualquier otro documento de cierre) lo firman
+  // TODAS las partes, no solo las que ya tengan cuenta — si a alguna le
+  // falta, se bloquea el envío en vez de mandar el sobre incompleto.
+  const missingParties = db.prepare(`
+    SELECT name FROM deal_party_entities
+    WHERE deal_id = ? AND side IN ('buyer','seller')
+      AND id NOT IN (SELECT deal_party_entity_id FROM deal_parties WHERE deal_party_entity_id IS NOT NULL)
+  `).all(req.params.id);
+  if (missingParties.length) {
+    return res.status(400).json({
+      error: `Falta darles cuenta a: ${missingParties.map(p => p.name).join(', ')} — no pueden firmar sin una. Agrégales un correo (en su parte o en "Invitar") antes de mandar a firma.`
+    });
   }
 
   const signers = withSideIndex(getSigners(req.params.id));
@@ -185,10 +200,9 @@ router.post('/deals/:id/tasks/:taskId/send-for-signature', requireRole('admin', 
           // que vendedor(es) ('2'). Si el sobre solo tiene un firmante (ej.
           // KYC), todos comparten el mismo routingOrder y no cambia nada.
           routingOrder: p.roleInDeal === 'buyer' ? '1' : '2',
-          // clientUserId (cualquier string no vacío) es lo que le dice a
-          // DocuSign que este firmante usa firma EMBEBIDA (nuestro iframe)
-          // en vez de mandarle un correo — omitirlo rompe todo el flujo.
-          clientUserId: String(p.userId),
+          // Sin clientUserId, DocuSign manda el correo de firma directo a
+          // cada parte (igual que enviarlo desde su propia página) — no
+          // depende de que tengan ni usen una cuenta del portal.
           tabs: {
             // Anchor por lado + índice dentro del lado — con un solo
             // comprador/vendedor coincide con el anchor de siempre
@@ -212,40 +226,6 @@ router.post('/deals/:id/tasks/:taskId/send-for-signature', requireRole('admin', 
     res.json({ ok: true, envelopeId: result.envelopeId });
   } catch (err) {
     res.status(502).json({ error: err.message || 'Error al enviar a firma con DocuSign.' });
-  }
-});
-
-// POST /api/deals/:id/tasks/:taskId/signing-url — el firmante EN SESIÓN pide
-// su propia URL de firma embebida (nunca la de otra persona).
-router.post('/deals/:id/tasks/:taskId/signing-url', requireAuth, async (req, res) => {
-  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
-  const task = getTask(req.params.id, req.params.taskId);
-  if (!task) return res.status(404).json({ error: 'Tarea no encontrada.' });
-  if (!task.docusign_envelope_id) return res.status(400).json({ error: 'Esta tarea todavía no se ha enviado a firma.' });
-
-  const role = myRoleInDeal(req, req.params.id);
-  if (!['buyer', 'seller'].includes(role)) {
-    return res.status(403).json({ error: 'Solo el comprador o vendedor de esta operación pueden firmar.' });
-  }
-
-  const me = db.prepare('SELECT name, email FROM users WHERE id = ?').get(req.session.userId);
-
-  try {
-    const apiClient = await docusignClient.getAuthorizedApiClient();
-    const envelopesApi = new docusign.EnvelopesApi(apiClient);
-    const baseUrl = `${req.protocol}://${req.get('host')}`;
-    const result = await envelopesApi.createRecipientView(process.env.DOCUSIGN_ACCOUNT_ID, task.docusign_envelope_id, {
-      recipientViewRequest: {
-        returnUrl: `${baseUrl}/sign-return.html?dealId=${req.params.id}&taskId=${req.params.taskId}`,
-        authenticationMethod: 'none',
-        email: me.email,
-        userName: me.name,
-        clientUserId: String(req.session.userId)
-      }
-    });
-    res.json({ url: result.url });
-  } catch (err) {
-    res.status(502).json({ error: err.message || 'Error al generar la URL de firma.' });
   }
 });
 

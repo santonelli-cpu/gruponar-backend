@@ -301,12 +301,11 @@ const STRINGS = {
     sendForSignature: 'Enviar a firma', resetFile: 'Reiniciar expediente',
     resetFileTitle: 'Empieza de cero — útil si se llenó con la plantilla o idioma equivocado (ej. cambiaste la escrow company).',
     confirmResetFile: '¿Reiniciar este expediente? Se pierden las respuestas guardadas y el documento generado (si hay uno).',
-    signNow: 'Firmar ahora', optional: '(opcional)',
+    optional: '(opcional)',
     sellerLabel2: 'Vendedor', buyerLabel2: 'Comprador',
     saveDraft: 'Guardar borrador', saveGenerateSend: 'Guardar, generar y enviar a firma', close: 'Cerrar',
     alertGeneratedSent: 'Documento generado y enviado a firma automáticamente.',
     alertAutoSendFailed: 'El documento se generó, pero no se pudo enviar a firma automáticamente: {error}\nPuedes reintentar con el botón "Enviar a firma".',
-    kycSignModalTitle: 'Firma del expediente KYC',
     viewFile: 'Ver archivo', attachDocument: 'Adjuntar documento', deleteFile: 'Borrar', deleteFileConfirm: '¿Borrar el archivo subido para "{name}"? Vuelve a quedar pendiente.',
     removeChecklistItemTitle: 'Quitar este requisito del checklist', removeChecklistItemConfirm: '¿Quitar "{name}" del checklist por completo? Si ya tenía un archivo subido, también se borra.',
     newChecklistItemPh: 'Nombre del documento nuevo...', addChecklistItem: 'Agregar',
@@ -343,7 +342,6 @@ const STRINGS = {
     noFieldsExample: 'Entre <b>{{VENDEDOR_NOMBRE}}</b> y <b>{{COMPRADOR_NOMBRE}}</b>, por un precio de <b>{{PRECIO_LETRA}}</b>...',
     noFieldsHint2: 'Guarda el Word y súbelo de nuevo como machote (puedes borrar este con el botón ⋯ de la lista si ya no lo necesitas). Mientras tanto, igual puedes generar el documento tal cual está, sin campos dinámicos.',
     generateDownloadDocx: 'Generar y descargar .docx', viewPdf: 'Ver PDF',
-    contractSignModalTitle: 'Firma del contrato de promesa',
     portalPreviewBanner: 'Vista previa del portal de cliente — así lo ve un comprador o vendedor real.',
     selectEllipsis: 'Selecciona...',
     selectDealToView: 'Selecciona una operación para ver tu expediente.',
@@ -356,7 +354,8 @@ const STRINGS = {
     eSignHintClient: 'Cuando tu coordinador envíe un documento a firma, aparecerá aquí para que lo firmes en línea.',
     docusignNotSent: 'Sin enviar', docusignSent: 'Enviado', docusignDelivered: 'Entregado', docusignCompleted: 'Firmado', docusignDeclined: 'Rechazado', docusignVoided: 'Anulado',
     documentColon: 'Documento', notUploaded: 'sin subir', docusignStatusColon: 'Estado DocuSign',
-    generateEscrow: 'Generar escrow (Armour)', signed: 'Firmado', checkStatus: 'Verificar estado',
+    generateEscrow: 'Generar escrow (Armour)', checkStatus: 'Verificar estado',
+    checkEmailToSign: 'Revisa tu correo — DocuSign te mandó un link para firmar.',
     uploadSignedDocTitle: 'Subir el documento ya recibido/firmado para esta tarea (PDF)',
     escrowFormHint: 'Genera el escrow agreement de Armour Secure con vendedor/comprador ya llenados desde esta operación — el resto lo capturas aquí.',
     placeDate: 'Lugar y fecha', placeDatePh: 'Puerto Vallarta, Jalisco, 29 de julio de 2026',
@@ -365,7 +364,6 @@ const STRINGS = {
     depositAmount: 'Monto del depósito', depositAmountPh: 'USD $310,000.00',
     fees: 'Comisiones', feesPh: 'USD $1,500.00 a cargo del comprador',
     noticeAddress: 'Domicilio para notificaciones', generateDocument: 'Generar documento',
-    signatureModalTitle: 'Firma electrónica',
     replaceFile: 'Reemplazar', uploading: 'Subiendo...',
     upcomingClosings: 'Cierres próximos', daysToCloseSingular: '{days} día para cierre', daysToClosePlural: '{days} días para cierre',
     closingToday: 'Cierra hoy', closingOverdue: 'Cierre atrasado',
@@ -471,12 +469,11 @@ const STRINGS = {
     sendForSignature: 'Send for signature', resetFile: 'Reset file',
     resetFileTitle: "Start from scratch — useful if it was filled with the wrong template or language (e.g. you changed the escrow company).",
     confirmResetFile: 'Reset this file? Saved answers and the generated document (if any) will be lost.',
-    signNow: 'Sign now', optional: '(optional)',
+    optional: '(optional)',
     sellerLabel2: 'Seller', buyerLabel2: 'Buyer',
     saveDraft: 'Save draft', saveGenerateSend: 'Save, generate and send for signature', close: 'Close',
     alertGeneratedSent: 'Document generated and sent for signature automatically.',
     alertAutoSendFailed: "The document was generated, but couldn't be sent for signature automatically: {error}\nYou can retry with the \"Send for signature\" button.",
-    kycSignModalTitle: 'KYC file signature',
     viewFile: 'View file', attachDocument: 'Attach document', deleteFile: 'Delete', deleteFileConfirm: 'Delete the uploaded file for "{name}"? It goes back to pending.',
     removeChecklistItemTitle: 'Remove this requirement from the checklist', removeChecklistItemConfirm: 'Remove "{name}" from the checklist entirely? If it had an uploaded file, that goes too.',
     newChecklistItemPh: 'New document name...', addChecklistItem: 'Add',
@@ -513,7 +510,6 @@ const STRINGS = {
     noFieldsExample: 'Between <b>{{SELLER_NAME}}</b> and <b>{{BUYER_NAME}}</b>, for a price of <b>{{PRICE_WORDS}}</b>...',
     noFieldsHint2: "Save the Word file and upload it again as a template (you can delete this one with the ⋯ button on the list if you don't need it anymore). Meanwhile, you can still generate the document as-is, with no dynamic fields.",
     generateDownloadDocx: 'Generate and download .docx', viewPdf: 'View PDF',
-    contractSignModalTitle: 'Promise contract signature',
     portalPreviewBanner: "Client portal preview — this is what a real buyer or seller sees.",
     selectEllipsis: 'Select...',
     selectDealToView: 'Select a deal to view your file.',
@@ -526,7 +522,8 @@ const STRINGS = {
     eSignHintClient: "When your coordinator sends a document for signature, it'll show up here for you to sign online.",
     docusignNotSent: 'Not sent', docusignSent: 'Sent', docusignDelivered: 'Delivered', docusignCompleted: 'Signed', docusignDeclined: 'Declined', docusignVoided: 'Voided',
     documentColon: 'Document', notUploaded: 'not uploaded', docusignStatusColon: 'DocuSign status',
-    generateEscrow: 'Generate escrow (Armour)', signed: 'Signed', checkStatus: 'Check status',
+    generateEscrow: 'Generate escrow (Armour)', checkStatus: 'Check status',
+    checkEmailToSign: 'Check your email — DocuSign sent you a link to sign.',
     uploadSignedDocTitle: 'Upload the already received/signed document for this task (PDF)',
     escrowFormHint: "Generate Armour Secure's escrow agreement with seller/buyer already filled in from this deal — you capture the rest here.",
     placeDate: 'Place and date', placeDatePh: 'Puerto Vallarta, Jalisco, July 29, 2026',
@@ -535,7 +532,6 @@ const STRINGS = {
     depositAmount: 'Deposit amount', depositAmountPh: 'USD $310,000.00',
     fees: 'Fees', feesPh: "USD $1,500.00, buyer's expense",
     noticeAddress: 'Notice address', generateDocument: 'Generate document',
-    signatureModalTitle: 'E-signature',
     replaceFile: 'Replace', uploading: 'Uploading...',
     upcomingClosings: 'Upcoming closings', daysToCloseSingular: '{days} day to close', daysToClosePlural: '{days} days to close',
     closingToday: 'Closes today', closingOverdue: 'Closing overdue',
@@ -2132,16 +2128,10 @@ function buildKycSection(deal, party, isStaffView, kind){
   }
 
   if(!isStaffView && data.status === 'sent'){
-    const signBtn = document.createElement('button');
-    signBtn.className = 'btn gold';
-    signBtn.textContent = t('signNow');
-    signBtn.onclick = async () => {
-      try{
-        const { url } = await apiFetch(`/api/deals/${deal.id}/kyc/${role}/signing-url${kindQs}`, { method:'POST' });
-        openKycSigningModal(url, deal.id, role, kind);
-      }catch(e){ alert(e.message); }
-    };
-    actions.appendChild(signBtn);
+    const sentHint = document.createElement('span');
+    sentHint.className = 'field-hint'; sentHint.style.cssText = 'margin:0; display:flex; align-items:center;';
+    sentHint.textContent = t('checkEmailToSign');
+    actions.appendChild(sentHint);
   }
 
   if(isStaffView){
@@ -2260,14 +2250,7 @@ function buildKycForm(deal, role, data, isStaffView, kind){
       const result = await apiFetch(`/api/deals/${deal.id}/kyc/${role}/generate${kindQs}`, { method:'POST' });
       kycFormOpenFor = null;
       await loadKyc(deal.id, role, undefined, kind);
-      if(result.sentForSignature && !isStaffView){
-        // Quien acaba de llenar el formulario es quien firma — se abre la
-        // firma de una vez, sin que tenga que ir a buscar "Firmar ahora".
-        try{
-          const { url } = await apiFetch(`/api/deals/${deal.id}/kyc/${role}/signing-url${kindQs}`, { method:'POST' });
-          openKycSigningModal(url, deal.id, role, kind);
-        }catch(e){ /* si falla, se queda en la sección con el botón "Firmar ahora" como respaldo */ }
-      } else if(result.sentForSignature){
+      if(result.sentForSignature){
         alert(t('alertGeneratedSent'));
       } else if(result.autoSendError){
         alert(t('alertAutoSendFailed', { error: result.autoSendError }));
@@ -2281,35 +2264,6 @@ function buildKycForm(deal, role, data, isStaffView, kind){
   wrap.appendChild(actions);
 
   return wrap;
-}
-
-function openKycSigningModal(url, dealId, role, kind){
-  const overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(33,22,19,0.55); display:flex; align-items:center; justify-content:center; z-index:1000;';
-  overlay.innerHTML = `
-    <div style="background:#fff; border-radius:14px; width:min(900px,92vw); height:min(720px,88vh); display:flex; flex-direction:column; overflow:hidden;">
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 16px; border-bottom:0.5px solid var(--line);">
-        <div class="section-title" style="margin:0;">${t('kycSignModalTitle')}</div>
-        <button class="btn" id="kyc-sign-modal-close">${t('close')}</button>
-      </div>
-      <iframe src="${url}" style="flex:1; border:0;"></iframe>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-  overlay.querySelector('#kyc-sign-modal-close').onclick = () => overlay.remove();
-
-  const onMessage = async (e) => {
-    if(e.origin !== window.location.origin) return;
-    if(!e.data || e.data.type !== 'docusign-return') return;
-    window.removeEventListener('message', onMessage);
-    overlay.remove();
-    try{
-      const kindQs = kind === 'lpr' ? '?kind=lpr' : '';
-      await apiFetch(`/api/deals/${dealId}/kyc/${role}/status${kindQs}`);
-      await loadKyc(dealId, role, undefined, kind);
-    }catch(err){ alert(err.message); }
-  };
-  window.addEventListener('message', onMessage);
 }
 
 function buildDocItemLi(deal, doc){
@@ -2909,16 +2863,10 @@ function buildContractSection(deal, isStaffView){
       actions.appendChild(hint);
     }
     if(data.status === 'sent'){
-      const signBtn = document.createElement('button');
-      signBtn.className = 'btn gold';
-      signBtn.textContent = t('signNow');
-      signBtn.onclick = async () => {
-        try{
-          const { url } = await apiFetch(`/api/deals/${deal.id}/contract/signing-url`, { method:'POST' });
-          openContractSigningModal(url, deal.id);
-        }catch(e){ alert(e.message); }
-      };
-      actions.appendChild(signBtn);
+      const sentHint = document.createElement('span');
+      sentHint.className = 'field-hint'; sentHint.style.cssText = 'margin:0; display:flex; align-items:center;';
+      sentHint.textContent = t('checkEmailToSign');
+      actions.appendChild(sentHint);
     }
     box.appendChild(actions);
     return box;
@@ -3199,34 +3147,6 @@ function buildContractSection(deal, isStaffView){
   return box;
 }
 
-function openContractSigningModal(url, dealId){
-  const overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(33,22,19,0.55); display:flex; align-items:center; justify-content:center; z-index:1000;';
-  overlay.innerHTML = `
-    <div style="background:#fff; border-radius:14px; width:min(900px,92vw); height:min(720px,88vh); display:flex; flex-direction:column; overflow:hidden;">
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 16px; border-bottom:0.5px solid var(--line);">
-        <div class="section-title" style="margin:0;">${t('contractSignModalTitle')}</div>
-        <button class="btn" id="contract-sign-modal-close">${t('close')}</button>
-      </div>
-      <iframe src="${url}" style="flex:1; border:0;"></iframe>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-  overlay.querySelector('#contract-sign-modal-close').onclick = () => overlay.remove();
-
-  const onMessage = async (e) => {
-    if(e.origin !== window.location.origin) return;
-    if(!e.data || e.data.type !== 'docusign-return') return;
-    window.removeEventListener('message', onMessage);
-    overlay.remove();
-    try{
-      await apiFetch(`/api/deals/${dealId}/contract/status`);
-      await loadContract(dealId);
-    }catch(err){ alert(err.message); }
-  };
-  window.addEventListener('message', onMessage);
-}
-
 // ---------- PORTAL ----------
 function renderPortal(body){
   // Solo admin/agente/abogado pueden "ver como" cualquier persona — es una
@@ -3412,18 +3332,11 @@ function buildSignatureTasksSection(deal, body){
         }catch(err){ alert(err.message); }
       };
       actions.appendChild(sendBtn);
-    } else {
-      const signBtn = document.createElement('button');
-      signBtn.className = 'btn gold';
-      signBtn.textContent = task.status==='done' ? t('signed') : t('signNow');
-      signBtn.disabled = task.status==='done' || task.docusignStatus==='not_sent';
-      signBtn.onclick = async () => {
-        try{
-          const { url } = await apiFetch(`/api/docusign/deals/${deal.id}/tasks/${task.id}/signing-url`, { method:'POST' });
-          openSigningModal(url, deal.id, task.id);
-        }catch(err){ alert(err.message); }
-      };
-      actions.appendChild(signBtn);
+    } else if(task.status !== 'done' && task.docusignStatus !== 'not_sent'){
+      const sentHint = document.createElement('span');
+      sentHint.className = 'field-hint'; sentHint.style.cssText = 'margin:0; display:flex; align-items:center;';
+      sentHint.textContent = t('checkEmailToSign');
+      actions.appendChild(sentHint);
     }
 
     const checkBtn = document.createElement('button');
@@ -3483,34 +3396,6 @@ function buildEscrowForm(deal, task){
 }
 
 // --- Modal de firma embebida (DocuSign) ---
-function openSigningModal(url, dealId, taskId){
-  const overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(33,22,19,0.55); display:flex; align-items:center; justify-content:center; z-index:1000;';
-  overlay.innerHTML = `
-    <div style="background:#fff; border-radius:14px; width:min(900px,92vw); height:min(720px,88vh); display:flex; flex-direction:column; overflow:hidden;">
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 16px; border-bottom:0.5px solid var(--line);">
-        <div class="section-title" style="margin:0;">${t('signatureModalTitle')}</div>
-        <button class="btn" id="sign-modal-close">${t('close')}</button>
-      </div>
-      <iframe src="${url}" style="flex:1; border:0;"></iframe>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-  overlay.querySelector('#sign-modal-close').onclick = () => overlay.remove();
-
-  const onMessage = async (e) => {
-    if(e.origin !== window.location.origin) return;
-    if(!e.data || e.data.type !== 'docusign-return') return;
-    window.removeEventListener('message', onMessage);
-    overlay.remove();
-    try{
-      await apiFetch(`/api/docusign/deals/${dealId}/tasks/${taskId}/status`);
-      await openDeal(dealId);
-    }catch(err){ alert(err.message); }
-  };
-  window.addEventListener('message', onMessage);
-}
-
 loadData();
 </script>
 </body>
