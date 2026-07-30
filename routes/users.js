@@ -19,7 +19,7 @@ function tempPassword(){
 // (no por el mismo correo que usarías para mandar el link, idealmente).
 router.post('/', requireRole('admin'), (req, res) => {
   const { name, email, role } = req.body || {};
-  if (!name || !email || !['admin', 'agent', 'lawyer', 'buyer', 'seller'].includes(role)) {
+  if (!name || !email || !['admin', 'agent', 'lawyer', 'external_lawyer', 'buyer', 'seller'].includes(role)) {
     return res.status(400).json({ error: 'Datos inválidos.' });
   }
   const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase().trim());

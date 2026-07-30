@@ -73,10 +73,12 @@ function withSideIndex(signers) {
   return signers.map(s => ({ ...s, sideIndex: counters[s.roleInDeal]++ }));
 }
 
-// POST /api/deals/:id/tasks/:taskId/document — admin/agente/abogado sube el
-// contrato/documento que hay que firmar para esta tarea (distinto del
-// checklist KYC de /api/deals, que vive en la tabla documents).
-router.post('/deals/:id/tasks/:taskId/document', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+// POST /api/deals/:id/tasks/:taskId/document — sube el documento que hay
+// que firmar para esta tarea (distinto del checklist KYC de /api/deals, que
+// vive en la tabla documents). Solo admin/abogado interno: son documentos
+// de cierre (escrow agreement, KYC del fiduciario) que agente/abogado
+// externo no deben poder subir/reemplazar por su cuenta.
+router.post('/deals/:id/tasks/:taskId/document', requireRole('admin', 'lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const task = getTask(req.params.id, req.params.taskId);
   if (!task) return res.status(404).json({ error: 'Tarea no encontrada.' });
@@ -101,8 +103,9 @@ router.post('/deals/:id/tasks/:taskId/document', requireRole('admin', 'agent', '
 // escrow agreement de Armour Secure ya llenado (vendedor/comprador salen de
 // la operación; el resto lo captura quien llama) y lo deja como el
 // documento de esta tarea, listo para enviar a firma con el mismo flujo de
-// arriba (comprador firma primero, luego vendedor).
-router.post('/deals/:id/tasks/:taskId/generate-escrow-document', requireRole('admin', 'agent', 'lawyer'), async (req, res) => {
+// arriba (comprador firma primero, luego vendedor). Solo admin/abogado
+// interno pueden llenar y generar este documento.
+router.post('/deals/:id/tasks/:taskId/generate-escrow-document', requireRole('admin', 'lawyer'), async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const task = getTask(req.params.id, req.params.taskId);
   if (!task) return res.status(404).json({ error: 'Tarea no encontrada.' });
@@ -140,8 +143,9 @@ router.post('/deals/:id/tasks/:taskId/generate-escrow-document', requireRole('ad
 });
 
 // POST /api/deals/:id/tasks/:taskId/send-for-signature — arma el sobre en
-// DocuSign con firma embebida para comprador y vendedor.
-router.post('/deals/:id/tasks/:taskId/send-for-signature', requireRole('admin', 'agent', 'lawyer'), async (req, res) => {
+// DocuSign con firma embebida para comprador y vendedor. Solo admin/abogado
+// interno mandan a firma estos documentos de cierre.
+router.post('/deals/:id/tasks/:taskId/send-for-signature', requireRole('admin', 'lawyer'), async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const task = getTask(req.params.id, req.params.taskId);
   if (!task) return res.status(404).json({ error: 'Tarea no encontrada.' });

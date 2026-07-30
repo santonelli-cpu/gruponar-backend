@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const db = require('../db');
 const { requireAuth, requireRole, resolveAgency } = require('./auth');
 const { genFilename } = require('../lib/storage');
-const { canAccessDeal, myRoleInDeal, myDealPartyEntityId, myRepresentsSide, UNRESTRICTED_ROLES } = require('../lib/access');
+const { canAccessDeal, myRoleInDeal, myDealPartyEntityId, myRepresentsSide, UNRESTRICTED_ROLES, AGENT_LIKE_ROLES } = require('../lib/access');
 
 // Comprador/vendedor solo puede tocar documentos de su propia parte; un
 // agente que ya eligió a qué lado representa solo los de ese lado; los de
@@ -16,7 +16,7 @@ function canTouchDoc(req, dealId, doc) {
   if (doc.deal_party_entity_id === null) return true;
   const role = myRoleInDeal(req, dealId);
   if (['admin', 'lawyer'].includes(role)) return true;
-  if (role === 'agent') {
+  if (AGENT_LIKE_ROLES.includes(role)) {
     const side = myRepresentsSide(req, dealId);
     if (!side) return true;
     const party = db.prepare('SELECT side FROM deal_party_entities WHERE id = ?').get(doc.deal_party_entity_id);
@@ -196,6 +196,30 @@ function insertPartyWithDocs(dealId, scenario, side, sortOrder, p) {
   return partyId;
 }
 
+// Da de alta la cuenta de un comprador/vendedor y la liga a su parte, sin
+// envolver en su propia transacción — para poder usarse suelta
+// (register-user) o DENTRO de la transacción de crear la operación/agregar
+// una parte (better-sqlite3 no soporta transacciones anidadas). Deja que el
+// comprador/vendedor pueda firmar documentos sin tener que registrarse él
+// mismo: el agente/admin comparte la contraseña temporal por el canal que
+// prefiera (teléfono, WhatsApp, en persona).
+function registerPartyUserRaw(dealId, party, name, email) {
+  const normalizedEmail = email.toLowerCase().trim();
+  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
+  if (existing) {
+    const err = new Error('Ya existe una cuenta con ese correo — liga esa cuenta en vez de crear una nueva (por ahora no hay botón para esto, avísame si lo necesitas).');
+    err.status = 409;
+    throw err;
+  }
+  const password = crypto.randomBytes(6).toString('base64url');
+  const hash = bcrypt.hashSync(password, 12);
+  const info = db.prepare("INSERT INTO users (name, email, password_hash, role, status) VALUES (?,?,?,?,'active')")
+    .run(name.trim(), normalizedEmail, hash, party.side);
+  db.prepare('INSERT INTO deal_parties (deal_id, user_id, role_in_deal, deal_party_entity_id) VALUES (?,?,?,?)')
+    .run(dealId, info.lastInsertRowid, party.side, party.id);
+  return { userId: info.lastInsertRowid, temporaryPassword: password };
+}
+
 // Subqueries de conteo para poder mostrar % de avance en la lista sin tener
 // que pedir el detalle completo (documentos+tareas) de cada operación.
 const COUNTS_SQL = `,
@@ -236,7 +260,7 @@ router.get('/', requireAuth, (req, res) => {
 });
 
 // POST /api/deals — admin/agente/abogado crean operaciones.
-router.post('/', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+router.post('/', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
   const { scenario, development, property, price, furniturePrice, currency, startDate, parties, escrowCompany } = req.body || {};
   if (!scenario || !property || !Array.isArray(parties)) {
     return res.status(400).json({ error: 'Faltan campos requeridos.' });
@@ -258,7 +282,7 @@ router.post('/', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
   }
 
   try {
-    const dealId = db.transaction(() => {
+    const result = db.transaction(() => {
       const dealInfo = db.prepare(`
         INSERT INTO deals (scenario, development, property, price, furniture_price, currency, start_date, escrow_company, created_by)
         VALUES (?,?,?,?,?,?,?,?,?)
@@ -267,25 +291,42 @@ router.post('/', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
       const id = dealInfo.lastInsertRowid;
 
       insertPropertyDocs(id, scenario);
+      const partyResults = [];
       ['seller', 'buyer'].forEach(side => {
-        parties.filter(p => p.side === side).forEach((p, idx) => insertPartyWithDocs(id, scenario, side, idx, p));
+        parties.filter(p => p.side === side).forEach((p, idx) => {
+          const partyId = insertPartyWithDocs(id, scenario, side, idx, p);
+          // Correo opcional: da de alta la cuenta de una vez, para que se le
+          // pueda mandar a firmar documentos aunque nunca se registre él
+          // mismo (típico cuando el agente maneja todo por su cliente). Si
+          // falla (ej. correo repetido), no se revierte la parte — solo
+          // queda sin cuenta ligada, se puede invitar/registrar después.
+          if (p.email && p.email.trim()) {
+            try {
+              const newParty = db.prepare('SELECT * FROM deal_party_entities WHERE id = ?').get(partyId);
+              const { temporaryPassword } = registerPartyUserRaw(id, newParty, p.name, p.email);
+              partyResults.push({ partyName: p.name, email: p.email.toLowerCase().trim(), temporaryPassword });
+            } catch (err) {
+              partyResults.push({ partyName: p.name, email: p.email, error: err.message });
+            }
+          }
+        });
       });
 
       const tasks = SCENARIO_TASKS[scenario];
-      const insertTask = db.prepare("INSERT INTO tasks (deal_id, label_en, label_es, requires_signature, sort_order, created_at) VALUES (?,?,?,?,?,datetime('now'))");
-      tasks.forEach((t, i) => insertTask.run(id, t.en, t.es, t.sign ? 1 : 0, i));
+      const insertTask = db.prepare("INSERT INTO tasks (deal_id, label_en, label_es, requires_signature, doc_type, sort_order, created_at) VALUES (?,?,?,?,?,?,datetime('now'))");
+      tasks.forEach((t, i) => insertTask.run(id, t.en, t.es, t.sign ? 1 : 0, t.docType || 'manual', i));
 
       // Un agente ya no ve todas las operaciones (solo admin/lawyer) — se
       // liga automáticamente a la que acaba de crear.
-      if (req.session.role === 'agent') {
+      if (AGENT_LIKE_ROLES.includes(req.session.role)) {
         db.prepare('INSERT OR IGNORE INTO deal_parties (deal_id, user_id, role_in_deal) VALUES (?,?,?)')
           .run(id, req.session.userId, 'agent');
       }
-      return id;
+      return { id, partyResults };
     })();
 
-    res.status(201).json({ id: dealId });
-    tryCreateDriveFolder(req, dealId, property);
+    res.status(201).json({ id: result.id, partyResults: result.partyResults });
+    tryCreateDriveFolder(req, result.id, property);
   } catch (err) {
     res.status(500).json({ error: err.message || 'Error al crear la operación.' });
   }
@@ -323,7 +364,7 @@ router.get('/:id', requireAuth, (req, res) => {
   });
 
   const agents = db.prepare(`
-    SELECT dp.id AS dealPartyId, u.id AS userId, u.name, u.email, u.agency, u.status, dp.represents_side AS representsSide
+    SELECT dp.id AS dealPartyId, u.id AS userId, u.name, u.email, u.agency, u.status, u.role, dp.represents_side AS representsSide
     FROM deal_parties dp JOIN users u ON u.id = dp.user_id
     WHERE dp.deal_id = ? AND dp.role_in_deal = 'agent'
     ORDER BY u.name
@@ -353,7 +394,7 @@ router.get('/:id', requireAuth, (req, res) => {
 // (cierre, fin de due diligence) de una operación ya creada. Ambos grupos
 // de campos son independientes entre sí (solo se actualiza lo que venga en
 // el body).
-router.patch('/:id', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+router.patch('/:id', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const { escrowCompany, closingDate, dueDiligenceEndDate, property, price, furniturePrice, currency, startDate, development, status } = req.body || {};
 
@@ -394,7 +435,7 @@ router.patch('/:id', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
 
 // POST /api/deals/:id/parties — agrega una parte nueva (vendedor/comprador
 // adicional) a una operación ya creada, con su propio checklist.
-router.post('/:id/parties', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+router.post('/:id/parties', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id);
   if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
@@ -408,13 +449,26 @@ router.post('/:id/parties', requireRole('admin', 'agent', 'lawyer'), (req, res) 
   if (count >= MAX_PARTIES_PER_SIDE) return res.status(400).json({ error: `Máximo ${MAX_PARTIES_PER_SIDE} personas por lado.` });
 
   const partyId = insertPartyWithDocs(req.params.id, deal.scenario, p.side, count, p);
-  res.status(201).json({ id: partyId });
+
+  // Correo opcional: da de alta la cuenta de una vez, para poder mandar a
+  // firmar documentos sin que la parte tenga que registrarse ella misma.
+  let temporaryPassword, emailError;
+  if (p.email && p.email.trim()) {
+    try {
+      const newParty = db.prepare('SELECT * FROM deal_party_entities WHERE id = ?').get(partyId);
+      ({ temporaryPassword } = db.transaction(() => registerPartyUserRaw(req.params.id, newParty, p.name, p.email))());
+    } catch (err) {
+      emailError = err.message;
+    }
+  }
+
+  res.status(201).json({ id: partyId, temporaryPassword, emailError });
 });
 
 // PATCH /api/deals/:id/parties/:partyId — editar nombre/estructura de una
 // parte existente (ej. completar la estructura de propiedad de una
 // operación migrada, o corregir un dato).
-router.patch('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+router.patch('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
   if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
@@ -465,7 +519,7 @@ function rebuildChecklistForParty(deal, partyId, p) {
 // POST /api/deals/:id/parties/:partyId/rebuild-checklist — recalcula el
 // checklist de una parte con su estructura de propiedad actual (ya guardada
 // en la base), agregando lo que falte.
-router.post('/:id/parties/:partyId/rebuild-checklist', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+router.post('/:id/parties/:partyId/rebuild-checklist', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
   if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
@@ -493,7 +547,7 @@ router.post('/:id/parties/:partyId/rebuild-checklist', requireRole('admin', 'age
 // Nunca borra un documento que ya tenga archivo subido (status='done') — se
 // devuelve en "flagged" para que el admin lo revise a mano (puede que en
 // realidad sea de un socio y haya que reasignarlo, no perderlo).
-router.post('/:id/parties/:partyId/fix-entity-checklist', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+router.post('/:id/parties/:partyId/fix-entity-checklist', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
   if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
@@ -526,7 +580,7 @@ router.post('/:id/parties/:partyId/fix-entity-checklist', requireRole('admin', '
 // una vez, con una contraseña temporal que tú le compartes por el canal que
 // prefieras (teléfono, WhatsApp, en persona) — útil cuando no quieres
 // depender de que revisen su correo y le den clic al link.
-router.post('/:id/parties/:partyId/register-user', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+router.post('/:id/parties/:partyId/register-user', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
   if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
@@ -536,31 +590,18 @@ router.post('/:id/parties/:partyId/register-user', requireRole('admin', 'agent',
 
   const { name, email } = req.body || {};
   if (!name || !email) return res.status(400).json({ error: 'Falta el nombre o el correo.' });
-  const normalizedEmail = email.toLowerCase().trim();
 
-  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
-  if (existing) {
-    return res.status(409).json({ error: 'Ya existe una cuenta con ese correo — liga esa cuenta en vez de crear una nueva (por ahora no hay botón para esto, avísame si lo necesitas).' });
+  try {
+    const { userId, temporaryPassword } = db.transaction(() => registerPartyUserRaw(req.params.id, party, name, email))();
+    res.status(201).json({ id: userId, name: name.trim(), email: email.toLowerCase().trim(), temporaryPassword });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
   }
-
-  const password = crypto.randomBytes(6).toString('base64url');
-  const hash = bcrypt.hashSync(password, 12);
-
-  const linkTx = db.transaction(() => {
-    const info = db.prepare('INSERT INTO users (name, email, password_hash, role, status) VALUES (?,?,?,?,\'active\')')
-      .run(name.trim(), normalizedEmail, hash, party.side);
-    db.prepare('INSERT INTO deal_parties (deal_id, user_id, role_in_deal, deal_party_entity_id) VALUES (?,?,?,?)')
-      .run(req.params.id, info.lastInsertRowid, party.side, party.id);
-    return info.lastInsertRowid;
-  });
-
-  const userId = linkTx();
-  res.status(201).json({ id: userId, name: name.trim(), email: normalizedEmail, temporaryPassword: password });
 });
 
 // DELETE /api/deals/:id/parties/:partyId — quitar una parte agregada de más
 // (bloqueado si ya tiene trabajo real hecho, para no perderlo).
-router.delete('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+router.delete('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
   if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
@@ -582,7 +623,7 @@ router.delete('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer'), 
 // la persona ligada a esta parte listando sus documentos pendientes. Los
 // documentos de Propiedad (deal_party_entity_id NULL) se incluyen solo si
 // esta parte es del lado vendedor, que es quien realísticamente los provee.
-router.post('/:id/parties/:partyId/remind', requireRole('admin', 'agent', 'lawyer'), async (req, res) => {
+router.post('/:id/parties/:partyId/remind', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
   if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
@@ -621,11 +662,11 @@ router.post('/:id/parties/:partyId/remind', requireRole('admin', 'agent', 'lawye
 // desde ya) — status se manda para que la UI lo marque como "pendiente".
 // Los abogados no aparecen acá: ya ven todas las operaciones
 // (UNRESTRICTED_ROLES en lib/access.js), no hace falta ligarlos por deal.
-router.get('/:id/available-agents', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+router.get('/:id/available-agents', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const agents = db.prepare(`
-    SELECT id, name, email, agency, status FROM users
-    WHERE role = 'agent' AND status IN ('active', 'pending')
+    SELECT id, name, email, agency, status, role FROM users
+    WHERE role IN ('agent', 'external_lawyer') AND status IN ('active', 'pending')
       AND id NOT IN (SELECT user_id FROM deal_parties WHERE deal_id = ? AND role_in_deal = 'agent')
     ORDER BY status = 'pending', name
   `).all(req.params.id);
@@ -638,14 +679,14 @@ router.get('/:id/available-agents', requireRole('admin', 'agent', 'lawyer'), (re
 // registró antes en la plataforma. Se permite aunque su cuenta siga
 // 'pending' de aprobación (queda asignado desde ya; solo puede iniciar
 // sesión una vez que un admin lo apruebe, esa regla no cambia).
-router.post('/:id/agents', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+router.post('/:id/agents', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const { userId, representsSide } = req.body || {};
   if (representsSide !== undefined && representsSide !== null && !['buyer', 'seller'].includes(representsSide)) {
     return res.status(400).json({ error: 'representsSide debe ser buyer o seller.' });
   }
-  const user = db.prepare("SELECT * FROM users WHERE id = ? AND role = 'agent' AND status IN ('active', 'pending')").get(userId);
-  if (!user) return res.status(400).json({ error: 'Ese usuario no existe o no es un agente.' });
+  const user = db.prepare("SELECT * FROM users WHERE id = ? AND role IN ('agent', 'external_lawyer') AND status IN ('active', 'pending')").get(userId);
+  if (!user) return res.status(400).json({ error: 'Ese usuario no existe o no es un agente/abogado externo.' });
   const already = db.prepare('SELECT 1 FROM deal_parties WHERE deal_id = ? AND user_id = ?').get(req.params.id, userId);
   if (already) return res.status(409).json({ error: 'Ese agente ya está en esta operación.' });
   db.prepare("INSERT INTO deal_parties (deal_id, user_id, role_in_deal, represents_side) VALUES (?,?,'agent',?)").run(req.params.id, userId, representsSide || null);
@@ -666,15 +707,21 @@ router.post('/:id/agents', requireRole('admin', 'agent', 'lawyer'), (req, res) =
 // lo da de alta ya activo (no pasa por aprobación, quien lo está agregando
 // ya es staff) y lo liga a esta operación de una vez, con una contraseña
 // temporal que se comparte por el canal que prefieras.
-router.post('/:id/agents/register', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+router.post('/:id/agents/register', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
-  const { name, email, agency, agencyOther, representsSide } = req.body || {};
+  const { name, email, role, agency, agencyOther, representsSide } = req.body || {};
   if (!name || !email) return res.status(400).json({ error: 'Falta el nombre o el correo.' });
+  const collaboratorRole = role === 'external_lawyer' ? 'external_lawyer' : 'agent';
   if (representsSide !== undefined && representsSide !== null && !['buyer', 'seller'].includes(representsSide)) {
     return res.status(400).json({ error: 'representsSide debe ser buyer o seller.' });
   }
-  const resolvedAgency = resolveAgency(agency, agencyOther);
-  if (!resolvedAgency) return res.status(400).json({ error: 'Elige la agencia del agente (o escribe cuál si no está en la lista).' });
+  // La agencia (LPR Luxury, etc.) solo aplica a agentes de venta — un
+  // abogado externo no tiene una, es de su propio despacho.
+  let resolvedAgency = null;
+  if (collaboratorRole === 'agent') {
+    resolvedAgency = resolveAgency(agency, agencyOther);
+    if (!resolvedAgency) return res.status(400).json({ error: 'Elige la agencia del agente (o escribe cuál si no está en la lista).' });
+  }
 
   const normalizedEmail = email.toLowerCase().trim();
   const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
@@ -687,19 +734,22 @@ router.post('/:id/agents/register', requireRole('admin', 'agent', 'lawyer'), (re
 
   const registerTx = db.transaction(() => {
     const info = db.prepare("INSERT INTO users (name, email, password_hash, role, status, agency) VALUES (?,?,?,?,'active',?)")
-      .run(name.trim(), normalizedEmail, hash, 'agent', resolvedAgency);
+      .run(name.trim(), normalizedEmail, hash, collaboratorRole, resolvedAgency);
+    // role_in_deal se queda como 'agent' funcionalmente para ambos — lo que
+    // distingue a un abogado externo de un agente es users.role, no su
+    // función dentro de la operación (facilitador, no parte transaccional).
     db.prepare("INSERT INTO deal_parties (deal_id, user_id, role_in_deal, represents_side) VALUES (?,?,'agent',?)")
       .run(req.params.id, info.lastInsertRowid, representsSide || null);
     return info.lastInsertRowid;
   });
 
   const userId = registerTx();
-  res.status(201).json({ id: userId, name: name.trim(), email: normalizedEmail, agency: resolvedAgency, temporaryPassword: password });
+  res.status(201).json({ id: userId, name: name.trim(), email: normalizedEmail, role: collaboratorRole, agency: resolvedAgency, temporaryPassword: password });
 });
 
 // PATCH /api/deals/:id/agents/:userId — cambia a quién representa un agente
 // ya agregado (ej. se les olvidó elegirlo, o cambió de cliente).
-router.patch('/:id/agents/:userId', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+router.patch('/:id/agents/:userId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const { representsSide } = req.body || {};
   if (representsSide !== null && !['buyer', 'seller'].includes(representsSide)) {
@@ -714,7 +764,7 @@ router.patch('/:id/agents/:userId', requireRole('admin', 'agent', 'lawyer'), (re
 // DELETE /api/deals/:id/agents/:userId — quita a un agente de la operación
 // (no de la plataforma, solo deja de verla). Restringido a role_in_deal
 // 'agent' para no poder usar esta ruta contra un comprador/vendedor ligado.
-router.delete('/:id/agents/:userId', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+router.delete('/:id/agents/:userId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const info = db.prepare("DELETE FROM deal_parties WHERE deal_id = ? AND user_id = ? AND role_in_deal = 'agent'").run(req.params.id, req.params.userId);
   if (!info.changes) return res.status(404).json({ error: 'Ese agente no está en esta operación.' });
@@ -724,7 +774,7 @@ router.delete('/:id/agents/:userId', requireRole('admin', 'agent', 'lawyer'), (r
 // POST /api/deals/:id/drive-folder — crea (o reintenta crear) la estructura
 // de carpetas en Drive para una operación que no la tiene todavía (ej. se
 // creó antes de conectar Drive, o la primera vez falló).
-router.post('/:id/drive-folder', requireRole('admin', 'agent', 'lawyer'), async (req, res) => {
+router.post('/:id/drive-folder', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   if (!driveClient.isConfigured()) return res.status(501).json({ error: 'Google Drive no está configurado todavía.' });
   if (!driveClient.isConnected()) return res.status(501).json({ error: 'Google Drive no está conectado — ve a Equipo → Integraciones.' });
@@ -745,7 +795,7 @@ router.post('/:id/drive-folder', requireRole('admin', 'agent', 'lawyer'), async 
 // algo especial que la lista fija no contempla. Solo staff: agregar
 // requisitos al checklist es curaduría, no algo que un comprador/vendedor
 // haga sobre sí mismo. Sin dealPartyEntityId es un documento de Propiedad.
-router.post('/:id/documents', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+router.post('/:id/documents', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const { name, dealPartyEntityId, subLabel } = req.body || {};
   if (!name || !name.trim()) return res.status(400).json({ error: 'Falta el nombre del documento.' });
@@ -754,7 +804,7 @@ router.post('/:id/documents', requireRole('admin', 'agent', 'lawyer'), (req, res
   if (dealPartyEntityId !== undefined && dealPartyEntityId !== null) {
     const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(dealPartyEntityId, req.params.id);
     if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
-    if (req.session.role === 'agent') {
+    if (AGENT_LIKE_ROLES.includes(req.session.role)) {
       const side = myRepresentsSide(req, req.params.id);
       if (side && party.side !== side) return res.status(403).json({ error: 'No puedes agregar documentos del otro lado.' });
     }
@@ -770,11 +820,11 @@ router.post('/:id/documents', requireRole('admin', 'agent', 'lawyer'), (req, res
 // POR COMPLETO (no solo el archivo que tuviera subido — ver DELETE .../file
 // arriba para eso) — para cuando algo de la lista fija no aplica a esta
 // operación. Solo staff, mismo motivo que agregar.
-router.delete('/:id/documents/:docId', requireRole('admin', 'agent', 'lawyer'), async (req, res) => {
+router.delete('/:id/documents/:docId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deal_id = ?').get(req.params.docId, req.params.id);
   if (!doc) return res.status(404).json({ error: 'Documento no encontrado.' });
-  if (req.session.role === 'agent' && doc.deal_party_entity_id !== null) {
+  if (AGENT_LIKE_ROLES.includes(req.session.role) && doc.deal_party_entity_id !== null) {
     const side = myRepresentsSide(req, req.params.id);
     if (side) {
       const party = db.prepare('SELECT side FROM deal_party_entities WHERE id = ?').get(doc.deal_party_entity_id);
@@ -892,7 +942,7 @@ router.patch('/:id/tasks/:taskId', requireAuth, (req, res) => {
 });
 
 // DELETE /api/deals/:id — admin/abogado cualquiera; agente solo las suyas.
-router.delete('/:id', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+router.delete('/:id', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const info = db.prepare('DELETE FROM deals WHERE id = ?').run(req.params.id);
   if (!info.changes) return res.status(404).json({ error: 'Operación no encontrada.' });

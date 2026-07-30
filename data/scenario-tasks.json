@@ -7,7 +7,8 @@
     {
       "en": "Escrow account opened (optional)",
       "es": "Cuenta de escrow aperturada",
-      "sign": true
+      "sign": true,
+      "docType": "escrow"
     },
     {
       "en": "Documents received and KYC filled",
@@ -58,7 +59,8 @@
     {
       "en": "Escrow account opened (optional)",
       "es": "Cuenta de escrow aperturada",
-      "sign": true
+      "sign": true,
+      "docType": "escrow"
     },
     {
       "en": "Documents received and KYC filled",
@@ -91,7 +93,8 @@
     {
       "en": "Bank trust KYC and formats signed",
       "es": "KYC y formatos del fiduciario firmados",
-      "sign": true
+      "sign": true,
+      "docType": "manual"
     },
     {
       "en": "Certificate of no dues of property tax",
@@ -126,7 +129,8 @@
     {
       "en": "Escrow account opened (optional)",
       "es": "Cuenta de escrow aperturada",
-      "sign": true
+      "sign": true,
+      "docType": "escrow"
     },
     {
       "en": "Documents received and KYC filled",
@@ -159,7 +163,8 @@
     {
       "en": "Bank trust KYC and formats signed",
       "es": "KYC y formatos del fiduciario firmados",
-      "sign": true
+      "sign": true,
+      "docType": "manual"
     },
     {
       "en": "Certificate of no dues of property tax",
@@ -194,7 +199,8 @@
     {
       "en": "Escrow account opened (optional)",
       "es": "Cuenta de escrow aperturada",
-      "sign": true
+      "sign": true,
+      "docType": "escrow"
     },
     {
       "en": "Documents received and KYC filled",
@@ -227,7 +233,8 @@
     {
       "en": "Bank trust KYC and formats signed",
       "es": "KYC y formatos del fiduciario firmados",
-      "sign": true
+      "sign": true,
+      "docType": "manual"
     },
     {
       "en": "Certificate of no dues of property tax",

@@ -167,6 +167,7 @@ function roleDisplayLabel(role){
   if(role === 'admin') return t('roleLabelAdmin');
   if(role === 'agent') return t('registerRoleAgent');
   if(role === 'lawyer') return t('registerRoleLawyer');
+  if(role === 'external_lawyer') return t('registerRoleExternalLawyer');
   if(role === 'seller') return t('sellerLabel2');
   if(role === 'buyer') return t('buyerLabel2');
   return role;
@@ -210,9 +211,9 @@ const STRINGS = {
     forgotPasswordSub: 'Escribe el correo de tu cuenta y te mandamos un link para poner una nueva contraseña.',
     forgotPasswordSubmit: 'Enviar link', backToLogin: 'Volver a iniciar sesión',
     forgotPasswordSent: 'Si ese correo tiene una cuenta, te mandamos un link para restablecer tu contraseña.',
-    registerTitle: 'Crear cuenta', registerSub: 'Para agentes de venta y abogados/empleados internos. Tu cuenta queda pendiente de aprobación de un administrador.',
+    registerTitle: 'Crear cuenta', registerSub: 'Para agentes de venta, abogados externos, y abogados/empleados internos. Tu cuenta queda pendiente de aprobación de un administrador.',
     registerNamePh: 'Nombre completo', registerEmailPh: 'correo@ejemplo.com', registerPasswordPh: 'Contraseña (mínimo 8 caracteres)',
-    registerRoleAgent: 'Agente de venta', registerRoleLawyer: 'Abogado / empleado interno', roleLabelAdmin: 'Administrador',
+    registerRoleAgent: 'Agente de venta', registerRoleLawyer: 'Abogado / empleado interno', registerRoleExternalLawyer: 'Abogado externo', roleLabelAdmin: 'Administrador',
     registerAgencyPlaceholderSelect: 'Selecciona tu agencia...', registerAgencyOther: 'Otro', registerAgencyOtherPh: '¿Cuál agencia?',
     registerSubmit: 'Crear cuenta', registerSubmitting: 'Creando...', registerHaveAccount: 'Ya tengo cuenta, iniciar sesión',
     registerErrFields: 'Completa todos los campos.', registerErrAgency: 'Elige tu agencia.',
@@ -261,6 +262,12 @@ const STRINGS = {
     generateInvite: 'Generar invitación', inviteLinkLabel: 'Link de invitación (cópialo y compártelo)', copy: 'Copiar',
     errNameOrEmail: 'Falta nombre o correo.',
     partyNamePh: 'Nombre completo o razón social', type: 'Tipo',
+    partyEmailLabel: 'Correo (opcional)', partyEmailPh: 'correo@ejemplo.com',
+    partyEmailHint: 'Si lo pones, se da de alta su cuenta de una vez (contraseña temporal para compartir tú) — así se le puede mandar a firmar aunque no se registre por su cuenta.',
+    partyRegisteredAlert: 'Cuenta creada. Contraseña temporal: {password}\n\nCompártela con esta persona por el canal que prefieras.',
+    partyRegisterFailedAlert: 'La parte se agregó bien, pero no se pudo dar de alta su cuenta: {error}',
+    partyRegisteredLine: '{name} ({email}) — contraseña temporal: {password}',
+    partyRegisterFailedLine: '{name} — no se pudo dar de alta su cuenta: {error}',
     ownershipStructure: 'Estructura de propiedad',
     modeDirectOwners: '1-2 socios/accionistas directos', modeParentEntity: 'Otra entidad es dueña', modeDirectTrust: 'Un revocable trust es dueño directo',
     directOwners: 'Socios/accionistas directos (1-2)', owner1Ph: 'Nombre del socio 1', owner2Ph: 'Nombre del socio 2 (opcional)',
@@ -317,7 +324,7 @@ const STRINGS = {
     ddPendingBanner: 'Due diligence termina el {date}.',
     requiresSignature: 'Requiere firma',
     inviteHint: 'Genera un link para que una persona específica de esta operación (o un agente) cree su propia cuenta.',
-    personToInvite: 'Persona a invitar', agentThisDeal: 'Agente (esta operación)',
+    personToInvite: 'Persona a invitar', agentThisDeal: 'Agente (esta operación)', externalLawyerThisDeal: 'Abogado externo (esta operación)',
     inviteLinkCopyShare: 'Link de invitación (cópialo y compártelo)',
     inviteEmailSent: 'Correo de invitación enviado a {email}.',
     inviteEmailFailed: 'No se pudo mandar el correo automático ({error}) — comparte el link manualmente.',
@@ -350,6 +357,7 @@ const STRINGS = {
     docusignNotSent: 'Sin enviar', docusignSent: 'Enviado', docusignDelivered: 'Entregado', docusignCompleted: 'Firmado', docusignDeclined: 'Rechazado', docusignVoided: 'Anulado',
     documentColon: 'Documento', notUploaded: 'sin subir', docusignStatusColon: 'Estado DocuSign',
     generateEscrow: 'Generar escrow (Armour)', signed: 'Firmado', checkStatus: 'Verificar estado',
+    uploadSignedDocTitle: 'Subir el documento ya recibido/firmado para esta tarea (PDF)',
     escrowFormHint: 'Genera el escrow agreement de Armour Secure con vendedor/comprador ya llenados desde esta operación — el resto lo capturas aquí.',
     placeDate: 'Lugar y fecha', placeDatePh: 'Puerto Vallarta, Jalisco, 29 de julio de 2026',
     expirationDate: 'Fecha de terminación', expirationDatePh: '31 de diciembre de 2026',
@@ -373,9 +381,9 @@ const STRINGS = {
     forgotPasswordSub: "Enter your account's email and we'll send you a link to set a new password.",
     forgotPasswordSubmit: 'Send link', backToLogin: 'Back to login',
     forgotPasswordSent: 'If that email has an account, we sent a link to reset the password.',
-    registerTitle: 'Create account', registerSub: 'For sales agents and lawyers/internal staff. Your account stays pending until an administrator approves it.',
+    registerTitle: 'Create account', registerSub: 'For sales agents, external lawyers, and lawyers/internal staff. Your account stays pending until an administrator approves it.',
     registerNamePh: 'Full name', registerEmailPh: 'email@example.com', registerPasswordPh: 'Password (minimum 8 characters)',
-    registerRoleAgent: 'Sales agent', registerRoleLawyer: 'Lawyer / internal staff', roleLabelAdmin: 'Administrator',
+    registerRoleAgent: 'Sales agent', registerRoleLawyer: 'Lawyer / internal staff', registerRoleExternalLawyer: 'External lawyer', roleLabelAdmin: 'Administrator',
     registerAgencyPlaceholderSelect: 'Select your agency...', registerAgencyOther: 'Other', registerAgencyOtherPh: 'Which agency?',
     registerSubmit: 'Create account', registerSubmitting: 'Creating...', registerHaveAccount: 'I already have an account, log in',
     registerErrFields: 'Fill out all fields.', registerErrAgency: 'Choose your agency.',
@@ -424,6 +432,12 @@ const STRINGS = {
     generateInvite: 'Generate invitation', inviteLinkLabel: 'Invitation link (copy and share it)', copy: 'Copy',
     errNameOrEmail: 'Missing name or email.',
     partyNamePh: 'Full name or company name', type: 'Type',
+    partyEmailLabel: 'Email (optional)', partyEmailPh: 'email@example.com',
+    partyEmailHint: 'If you fill this in, their account is created right away (a temp password for you to share) — so you can send them documents to sign even if they never register on their own.',
+    partyRegisteredAlert: 'Account created. Temporary password: {password}\n\nShare it with this person through whatever channel you prefer.',
+    partyRegisterFailedAlert: 'The party was added fine, but their account could not be created: {error}',
+    partyRegisteredLine: '{name} ({email}) — temporary password: {password}',
+    partyRegisterFailedLine: '{name} — could not create their account: {error}',
     ownershipStructure: 'Ownership structure',
     modeDirectOwners: '1-2 direct partners/shareholders', modeParentEntity: 'Another entity owns it', modeDirectTrust: 'A revocable trust is the direct owner',
     directOwners: 'Direct partners/shareholders (1-2)', owner1Ph: 'Partner 1 name', owner2Ph: 'Partner 2 name (optional)',
@@ -480,7 +494,7 @@ const STRINGS = {
     ddPendingBanner: 'Due diligence ends on {date}.',
     requiresSignature: 'Requires signature',
     inviteHint: 'Generate a link so a specific person in this deal (or an agent) can create their own account.',
-    personToInvite: 'Person to invite', agentThisDeal: 'Agent (this deal)',
+    personToInvite: 'Person to invite', agentThisDeal: 'Agent (this deal)', externalLawyerThisDeal: 'External lawyer (this deal)',
     inviteLinkCopyShare: 'Invitation link (copy and share it)',
     inviteEmailSent: 'Invitation email sent to {email}.',
     inviteEmailFailed: "Couldn't send the automatic email ({error}) — share the link manually.",
@@ -513,6 +527,7 @@ const STRINGS = {
     docusignNotSent: 'Not sent', docusignSent: 'Sent', docusignDelivered: 'Delivered', docusignCompleted: 'Signed', docusignDeclined: 'Declined', docusignVoided: 'Voided',
     documentColon: 'Document', notUploaded: 'not uploaded', docusignStatusColon: 'DocuSign status',
     generateEscrow: 'Generate escrow (Armour)', signed: 'Signed', checkStatus: 'Check status',
+    uploadSignedDocTitle: 'Upload the already received/signed document for this task (PDF)',
     escrowFormHint: "Generate Armour Secure's escrow agreement with seller/buyer already filled in from this deal — you capture the rest here.",
     placeDate: 'Place and date', placeDatePh: 'Puerto Vallarta, Jalisco, July 29, 2026',
     expirationDate: 'Expiration date', expirationDatePh: 'December 31, 2026',
@@ -625,6 +640,7 @@ const SUB_CHECKS_BY_DOC = {
 function adaptTask(t){
   return {
     id: t.id, en: t.label_en, es: t.label_es, status: t.status, sign: !!t.requires_signature,
+    docType: t.doc_type || 'manual',
     docusignStatus: t.docusign_status, documentOriginalName: t.document_original_name
   };
 }
@@ -677,12 +693,12 @@ async function loadData(){
     const rows = await apiFetch('/api/deals');
     deals = rows.map(adaptDealSummary);
   }catch(e){ deals = []; }
-  if(['admin','agent','lawyer'].includes(currentUser.role)) loadDashboard();
+  if(['admin','agent','lawyer','external_lawyer'].includes(currentUser.role)) loadDashboard();
   if(currentUser.role === 'admin') loadPendingUsers();
   // Link directo a una operación (ej. desde el correo de "te agregamos a
   // esta operación") — ?dealId=123 en la URL la abre de una vez.
   const linkedDealId = Number(new URLSearchParams(window.location.search).get('dealId'));
-  if(linkedDealId && ['admin','agent','lawyer'].includes(currentUser.role)){
+  if(linkedDealId && ['admin','agent','lawyer','external_lawyer'].includes(currentUser.role)){
     mainTab = 'admin'; adminView = 'list'; activeDealId = linkedDealId;
     openDeal(linkedDealId);
   }
@@ -699,7 +715,7 @@ async function loadPendingUsers(){
   try{
     const all = await apiFetch('/api/users');
     pendingUsers = all.filter(u => u.status === 'pending');
-    activeTeamMembers = all.filter(u => u.status === 'active' && ['agent','lawyer'].includes(u.role));
+    activeTeamMembers = all.filter(u => u.status === 'active' && ['agent','lawyer','external_lawyer'].includes(u.role));
   }catch(e){ pendingUsers = null; activeTeamMembers = null; }
   render();
 }
@@ -794,7 +810,7 @@ function render(){
   document.querySelectorAll('#mainTabs .tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===mainTab));
   // Admin/agente ven ambas pestañas; comprador/vendedor solo el portal.
   const adminTabBtn = document.querySelector('#mainTabs [data-tab="admin"]');
-  if(adminTabBtn) adminTabBtn.style.display = ['admin','agent','lawyer'].includes(currentUser.role) ? '' : 'none';
+  if(adminTabBtn) adminTabBtn.style.display = ['admin','agent','lawyer','external_lawyer'].includes(currentUser.role) ? '' : 'none';
   if(mainTab === 'admin') renderAdmin(body);
   else renderPortal(body);
 }
@@ -890,6 +906,7 @@ function renderRegister(body){
       <input type="password" id="reg-password" placeholder="${t('registerPasswordPh')}" autocomplete="new-password">
       <select id="reg-role" style="width:100%; margin-bottom:10px;">
         <option value="agent">${t('registerRoleAgent')}</option>
+        <option value="external_lawyer">${t('registerRoleExternalLawyer')}</option>
         <option value="lawyer">${t('registerRoleLawyer')}</option>
       </select>
       <select id="reg-agency" style="width:100%; margin-bottom:10px;">
@@ -1237,7 +1254,7 @@ function buildTeamSection(){
     pendingUsers.forEach(u => {
       const row = document.createElement('div');
       row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:0.5px solid var(--line); gap:10px;';
-      row.innerHTML = `<span style="font-size:13px;">${escapeHtml(u.name)} <span class="field-hint" style="margin:0;">— ${escapeHtml(u.email)} · ${u.role}${u.agency ? ' · ' + escapeHtml(u.agency) : ''}</span></span>`;
+      row.innerHTML = `<span style="font-size:13px;">${escapeHtml(u.name)} <span class="field-hint" style="margin:0;">— ${escapeHtml(u.email)} · ${escapeHtml(roleDisplayLabel(u.role))}${u.agency ? ' · ' + escapeHtml(u.agency) : ''}</span></span>`;
       const approveBtn = document.createElement('button');
       approveBtn.className = 'btn primary'; approveBtn.textContent = t('approve');
       approveBtn.onclick = async () => {
@@ -1264,7 +1281,7 @@ function buildTeamSection(){
     activeTeamMembers.forEach(u => {
       const row = document.createElement('div');
       row.style.cssText = 'display:flex; flex-direction:column; gap:6px; padding:8px 0; border-bottom:0.5px solid var(--line);';
-      const roleLabel = u.role === 'agent' ? t('registerRoleAgent') : t('registerRoleLawyer');
+      const roleLabel = roleDisplayLabel(u.role);
       const top = document.createElement('div');
       top.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;';
       top.innerHTML = `<span style="font-size:13px;">${escapeHtml(u.name)} <span class="field-hint" style="margin:0;">— ${escapeHtml(u.email)} · ${roleLabel}${u.agency ? ' · ' + escapeHtml(u.agency) : ''}</span></span>`;
@@ -1322,6 +1339,7 @@ function buildTeamSection(){
     <div class="form-row">
       <label>${t('role')} <select id="team-inv-role">
         <option value="agent">${t('registerRoleAgent')}</option>
+        <option value="external_lawyer">${t('registerRoleExternalLawyer')}</option>
         <option value="lawyer">${t('registerRoleLawyer')}</option>
       </select></label>
       <label>${t('name')} <input type="text" id="team-inv-name" placeholder="${t('namePh')}"></label>
@@ -1466,7 +1484,9 @@ function buildPartyFieldsBlock(allowedTypes, existing){
     <div class="form-row">
       <label>${t('name')} <input type="text" class="pf-name" placeholder="${t('partyNamePh')}"></label>
       <label>${t('type')} <select class="pf-type">${typeOptions}</select></label>
+      <label>${t('partyEmailLabel')} <input type="email" class="pf-email" placeholder="${t('partyEmailPh')}"></label>
     </div>
+    <div class="field-hint" style="margin-top:-6px;">${t('partyEmailHint')}</div>
     <div class="pf-ownership" style="display:none;">
       <label>${t('ownershipStructure')} <select class="pf-mode">
         <option value="direct_owners">${t('modeDirectOwners')}</option>
@@ -1533,7 +1553,9 @@ function buildPartyFieldsBlock(allowedTypes, existing){
   box.collectParty = function(side){
     const partyType = typeSel.value;
     const name = box.querySelector('.pf-name').value.trim();
+    const email = box.querySelector('.pf-email').value.trim();
     const p = { side, partyType, name };
+    if(email) p.email = email;
     if(partyType !== 'individual'){
       p.ownershipMode = modeSel.value;
       if(modeSel.value === 'direct_owners'){
@@ -1664,7 +1686,13 @@ function buildNewDealForm(){
       escrowCompany: card.querySelector('#nd-escrow-company').value
     };
     try{
-      const { id } = await apiFetch('/api/deals', { method:'POST', body: JSON.stringify(body) });
+      const { id, partyResults } = await apiFetch('/api/deals', { method:'POST', body: JSON.stringify(body) });
+      if(partyResults && partyResults.length){
+        const lines = partyResults.map(r => r.temporaryPassword
+          ? t('partyRegisteredLine', { name: r.partyName, email: r.email, password: r.temporaryPassword })
+          : t('partyRegisterFailedLine', { name: r.partyName, error: r.error }));
+        alert(lines.join('\n\n'));
+      }
       adminView = 'list';
       activeDealId = id;
       await loadData();
@@ -1766,7 +1794,12 @@ function buildPartiesSection(deal){
       saveBtn.onclick = async () => {
         errEl.textContent = '';
         try{
-          await apiFetch(`/api/deals/${deal.id}/parties`, { method:'POST', body: JSON.stringify(block.collectParty(side)) });
+          const result = await apiFetch(`/api/deals/${deal.id}/parties`, { method:'POST', body: JSON.stringify(block.collectParty(side)) });
+          if(result.temporaryPassword){
+            alert(t('partyRegisteredAlert', { password: result.temporaryPassword }));
+          } else if(result.emailError){
+            alert(t('partyRegisterFailedAlert', { error: result.emailError }));
+          }
           await openDeal(deal.id);
         }catch(e){ errEl.textContent = e.message; }
       };
@@ -1952,6 +1985,8 @@ function buildAdminDealDetail(deal){
   tasksCard.className = 'card';
   tasksCard.appendChild(buildTaskList(deal));
   wrap.appendChild(tasksCard);
+
+  buildSignatureTasksSection(deal, wrap);
 
   const agentsTitle = document.createElement('div');
   agentsTitle.className = 'section-title'; agentsTitle.textContent = t('agentsInDeal');
@@ -2268,7 +2303,7 @@ function buildDocItemLi(deal, doc){
       ${doc.fileUrl ? `<a href="/api/deals/${deal.id}/documents/${doc.id}/file" target="_blank" class="btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px;"><i class="ti ti-eye" aria-hidden="true"></i> ${t('viewFile')}</a>` : ''}
       <button type="button" class="btn doc-upload-btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px;" title="${t('attachDocument')}"><i class="ti ti-upload" aria-hidden="true"></i> ${doc.fileUrl ? t('replaceFile') : t('upload')}</button>
       ${doc.fileUrl ? `<button type="button" class="btn doc-delete-btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px; color:var(--oxblood);" title="${t('deleteFile')}"><i class="ti ti-trash" aria-hidden="true"></i></button>` : ''}
-      ${['admin','agent','lawyer'].includes(currentUser.role) ? `<button type="button" class="btn doc-remove-req-btn" style="font-size:11px; padding:4px 8px; color:var(--oxblood);" title="${t('removeChecklistItemTitle')}"><i class="ti ti-x" aria-hidden="true"></i></button>` : ''}
+      ${['admin','agent','lawyer','external_lawyer'].includes(currentUser.role) ? `<button type="button" class="btn doc-remove-req-btn" style="font-size:11px; padding:4px 8px; color:var(--oxblood);" title="${t('removeChecklistItemTitle')}"><i class="ti ti-x" aria-hidden="true"></i></button>` : ''}
       <input type="file" class="doc-file-input" style="display:none;" accept=".pdf,.jpg,.jpeg,.png,.heic">
     </span>`;
   li.querySelector('.doc-check').onclick = async () => {
@@ -2381,7 +2416,7 @@ function buildDocListForParty(deal, party){
   const hLabel = document.createElement('span');
   hLabel.textContent = `${party.name} (${sideLabel} · ${TYPE_LABEL[party.partyType]})`;
   h.appendChild(hLabel);
-  if(['admin','agent','lawyer'].includes(currentUser.role)){
+  if(['admin','agent','lawyer','external_lawyer'].includes(currentUser.role)){
     const remindBtn = document.createElement('button');
     remindBtn.className = 'btn'; remindBtn.style.cssText = 'font-size:11px; padding:3px 10px;';
     remindBtn.textContent = t('remindDocuments');
@@ -2461,7 +2496,7 @@ function buildDocListForParty(deal, party){
     g.docs.forEach(doc => ul.appendChild(buildDocItemLi(deal, doc)));
     box.appendChild(ul);
   });
-  if(['admin','agent','lawyer'].includes(currentUser.role)){
+  if(['admin','agent','lawyer','external_lawyer'].includes(currentUser.role)){
     box.appendChild(buildAddDocumentRow(deal, party.id));
   }
   return box;
@@ -2489,7 +2524,7 @@ function buildPropertyDocsSection(deal){
   ul.className = 'doc-list';
   docs.forEach(doc => ul.appendChild(buildDocItemLi(deal, doc)));
   box.appendChild(ul);
-  if(['admin','agent','lawyer'].includes(currentUser.role)){
+  if(['admin','agent','lawyer','external_lawyer'].includes(currentUser.role)){
     box.appendChild(buildAddDocumentRow(deal, null));
   }
   return box;
@@ -2566,6 +2601,7 @@ function buildInviteForm(deal){
       <label>${t('personToInvite')} <select id="inv-target">
         ${partyOptions}
         <option value="agent">${t('agentThisDeal')}</option>
+        <option value="external_lawyer">${t('externalLawyerThisDeal')}</option>
       </select></label>
       <label>${t('name')} <input type="text" id="inv-name" placeholder="${t('namePh')}"></label>
       <label>${t('email')} <input type="email" id="inv-email" placeholder="${t('emailPh')}"></label>
@@ -2576,12 +2612,14 @@ function buildInviteForm(deal){
         <option value="seller">${t('representsSeller')}</option>
         <option value="buyer">${t('representsBuyer')}</option>
       </select></label>
-      <label>${t('registerAgencyPlaceholderSelect')} <select id="inv-agency">
-        <option value="">${t('registerAgencyPlaceholderSelect')}</option>
-        ${AGENCIES.map(a => `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join('')}
-        <option value="Otro">${t('registerAgencyOther')}</option>
-      </select></label>
-      <label>${t('registerAgencyOther')} <input type="text" id="inv-agency-other" placeholder="${t('registerAgencyOtherPh')}" style="display:none;"></label>
+      <span id="inv-agency-fields" style="display:flex; gap:10px; flex-wrap:wrap;">
+        <label>${t('registerAgencyPlaceholderSelect')} <select id="inv-agency">
+          <option value="">${t('registerAgencyPlaceholderSelect')}</option>
+          ${AGENCIES.map(a => `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join('')}
+          <option value="Otro">${t('registerAgencyOther')}</option>
+        </select></label>
+        <label>${t('registerAgencyOther')} <input type="text" id="inv-agency-other" placeholder="${t('registerAgencyOtherPh')}" style="display:none;"></label>
+      </span>
     </div>
     <div class="form-row" style="align-items:flex-end;">
       <button class="btn primary" id="inv-generate">${t('generateInvite')}</button>
@@ -2609,24 +2647,29 @@ function buildInviteForm(deal){
     <div class="gate-error" id="inv-error"></div>
   `;
   if(!unlinked.length){
-    card.querySelector('#inv-target').innerHTML = `<option value="agent">${t('agentThisDeal')}</option>`;
+    card.querySelector('#inv-target').innerHTML = `<option value="agent">${t('agentThisDeal')}</option><option value="external_lawyer">${t('externalLawyerThisDeal')}</option>`;
   }
   const targetSel = card.querySelector('#inv-target');
   const nameInput = card.querySelector('#inv-name');
   const registerDirectBtn = card.querySelector('#inv-register-direct');
   const agentFieldsRow = card.querySelector('#inv-agent-fields');
+  const agencyFieldsSpan = card.querySelector('#inv-agency-fields');
   const agencySelect = card.querySelector('#inv-agency');
   const agencyOtherInput = card.querySelector('#inv-agency-other');
   agencySelect.onchange = () => { agencyOtherInput.style.display = agencySelect.value === 'Otro' ? '' : 'none'; };
+  const isCollaboratorTarget = () => ['agent', 'external_lawyer'].includes(targetSel.value);
   const prefillName = () => {
     if(targetSel.value.startsWith('party:')){
       const party = unlinked.find(p => 'party:'+p.id === targetSel.value);
       if(party && !nameInput.value) nameInput.value = party.name;
     }
-    agentFieldsRow.style.display = targetSel.value === 'agent' ? '' : 'none';
+    agentFieldsRow.style.display = isCollaboratorTarget() ? '' : 'none';
+    // La agencia (LPR Luxury, etc.) solo aplica a agente de venta — un
+    // abogado externo no tiene una.
+    agencyFieldsSpan.style.display = targetSel.value === 'agent' ? '' : 'none';
     // Dar de alta directo funciona para una parte específica (comprador/
-    // vendedor) o para un agente nuevo (sin cuenta todavía) — para un
-    // agente que YA tiene cuenta se usa el dropdown de "Agentes disponibles".
+    // vendedor) o para un colaborador nuevo (sin cuenta todavía) — para uno
+    // que YA tiene cuenta se usa el dropdown de "Agentes disponibles".
     registerDirectBtn.disabled = false;
   };
   targetSel.onchange = prefillName;
@@ -2639,8 +2682,8 @@ function buildInviteForm(deal){
     const errEl = card.querySelector('#inv-error');
     errEl.textContent = '';
     if (!name || !email) { errEl.textContent = t('errNameOrEmail'); return; }
-    const body = target === 'agent'
-      ? { dealId: deal.id, roleInDeal: 'agent', name, email, representsSide: card.querySelector('#inv-represents').value || null }
+    const body = ['agent', 'external_lawyer'].includes(target)
+      ? { dealId: deal.id, roleInDeal: target, name, email, representsSide: card.querySelector('#inv-represents').value || null }
       : (() => {
           const party = unlinked.find(p => 'party:'+p.id === target);
           return { dealId: deal.id, dealPartyEntityId: party.id, roleInDeal: party.side, name, email };
@@ -2673,13 +2716,13 @@ function buildInviteForm(deal){
     if (!name || !email) { errEl.textContent = t('errNameOrEmail'); return; }
     try {
       let temporaryPassword;
-      if(target === 'agent'){
-        const agency = agencySelect.value;
-        const agencyOther = agencyOtherInput.value.trim();
-        if(!agency || (agency === 'Otro' && !agencyOther)){ errEl.textContent = t('registerErrAgency'); return; }
+      if(['agent', 'external_lawyer'].includes(target)){
+        const agency = target === 'agent' ? agencySelect.value : '';
+        const agencyOther = target === 'agent' ? agencyOtherInput.value.trim() : '';
+        if(target === 'agent' && (!agency || (agency === 'Otro' && !agencyOther))){ errEl.textContent = t('registerErrAgency'); return; }
         const representsSide = card.querySelector('#inv-represents').value || null;
         ({ temporaryPassword } = await apiFetch(`/api/deals/${deal.id}/agents/register`, {
-          method: 'POST', body: JSON.stringify({ name, email, agency, agencyOther, representsSide })
+          method: 'POST', body: JSON.stringify({ name, email, role: target, agency, agencyOther, representsSide })
         }));
       } else {
         const party = unlinked.find(p => 'party:'+p.id === target);
@@ -2720,7 +2763,7 @@ function buildDealAgentsSection(deal){
       const row = document.createElement('div');
       row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:0.5px solid var(--line); gap:10px; flex-wrap:wrap;';
       row.innerHTML = `
-        <span style="font-size:13px;">${escapeHtml(a.name)} <span class="field-hint" style="margin:0;">— ${escapeHtml(a.email)}${a.agency ? ' · ' + escapeHtml(a.agency) : ''}</span>${a.status==='pending' ? ` <span class="badge" style="background:var(--oxblood-soft); color:var(--oxblood); font-size:10px;">${t('pendingApproval')}</span>` : ''}</span>
+        <span style="font-size:13px;">${escapeHtml(a.name)} <span class="field-hint" style="margin:0;">— ${escapeHtml(a.email)} · ${escapeHtml(roleDisplayLabel(a.role))}${a.agency ? ' · ' + escapeHtml(a.agency) : ''}</span>${a.status==='pending' ? ` <span class="badge" style="background:var(--oxblood-soft); color:var(--oxblood); font-size:10px;">${t('pendingApproval')}</span>` : ''}</span>
         <span style="display:flex; align-items:center; gap:8px;">
           <select data-represents style="font-size:11.5px; padding:2px 6px;">
             <option value="" ${!a.representsSide?'selected':''}>${t('representsUnset')}</option>
@@ -2774,7 +2817,7 @@ function buildDealAgentsSection(deal){
     row.style.cssText = 'display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;';
     row.innerHTML = `
       <select id="add-agent-select">
-        ${avail.map(a => `<option value="${a.id}">${escapeHtml(a.name)}${a.agency ? ' — ' + escapeHtml(a.agency) : ''}${a.status==='pending' ? ' ('+t('pendingApproval')+')' : ''}</option>`).join('')}
+        ${avail.map(a => `<option value="${a.id}">${escapeHtml(a.name)} — ${escapeHtml(roleDisplayLabel(a.role))}${a.agency ? ' · ' + escapeHtml(a.agency) : ''}${a.status==='pending' ? ' ('+t('pendingApproval')+')' : ''}</option>`).join('')}
       </select>
       <select id="add-agent-represents">
         <option value="">${t('representsUnset')}</option>
@@ -3164,7 +3207,7 @@ function renderPortal(body){
   // vista previa interna. Un comprador/vendedor real siempre ve solo su
   // propia parte (nunca elige, ni ve el checklist de otra persona del mismo
   // lado si hay varias).
-  const isPreview = ['admin','agent','lawyer'].includes(currentUser.role);
+  const isPreview = ['admin','agent','lawyer','external_lawyer'].includes(currentUser.role);
 
   if(isPreview){
     const banner = document.createElement('div');
@@ -3277,86 +3320,106 @@ function renderPortal(body){
   tcard.appendChild(buildTaskList(deal));
   body.appendChild(tcard);
 
+  buildSignatureTasksSection(deal, body);
+}
+
+// Documentos de cierre que requieren firma (escrow agreement, KYC del
+// fiduciario, escritura) — llenar/generar/mandar a firma es SOLO de
+// admin/abogado interno (canManage), nunca de agente ni abogado externo:
+// son documentos legales de la operación, no algo que un facilitador deba
+// poder armar por su cuenta. Agente/abogado externo/cliente ven lo mismo
+// que un comprador/vendedor: estado + "Firmar ahora" si les toca firmar.
+// Se usa tanto en el detalle de Operaciones (admin/abogado) como en Portal
+// (donde antes vivía esto en solitario, con permisos más laxos de los que
+// debía tener).
+function buildSignatureTasksSection(deal, body){
+  const canManage = ['admin','lawyer'].includes(currentUser.role);
   const signTasks = deal.tasks.filter(task=>task.sign);
-  if(signTasks.length){
-    const st = document.createElement('div'); st.className='section-title'; st.textContent=t('eSignature');
-    body.appendChild(st);
-    const scard = document.createElement('div'); scard.className='card';
-    scard.innerHTML = `<div class="field-hint" style="margin-top:0;">${isPreview ? t('eSignHintStaff') : t('eSignHintClient')}</div>`;
-    signTasks.forEach(task => {
-      const row = document.createElement('div');
-      row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:0.5px solid var(--line); flex-wrap:wrap; gap:8px;';
-      const statusLabel = {not_sent:t('docusignNotSent'), sent:t('docusignSent'), delivered:t('docusignDelivered'), completed:t('docusignCompleted'), declined:t('docusignDeclined'), voided:t('docusignVoided')}[task.docusignStatus] || task.docusignStatus;
-      row.innerHTML = `<span style="font-size:13px;">${escapeHtml(task.en)} <span class="task-es">(${escapeHtml(task.es)})</span><br><span class="field-hint" style="margin:0;">${t('documentColon')}: ${task.documentOriginalName ? escapeHtml(task.documentOriginalName) : t('notUploaded')} · ${t('docusignStatusColon')}: ${escapeHtml(statusLabel)}</span></span>`;
+  if(!signTasks.length) return;
+  const st = document.createElement('div'); st.className='section-title'; st.textContent=t('eSignature');
+  body.appendChild(st);
+  const scard = document.createElement('div'); scard.className='card';
+  scard.innerHTML = `<div class="field-hint" style="margin-top:0;">${canManage ? t('eSignHintStaff') : t('eSignHintClient')}</div>`;
+  signTasks.forEach(task => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:0.5px solid var(--line); flex-wrap:wrap; gap:8px;';
+    const statusLabel = {not_sent:t('docusignNotSent'), sent:t('docusignSent'), delivered:t('docusignDelivered'), completed:t('docusignCompleted'), declined:t('docusignDeclined'), voided:t('docusignVoided')}[task.docusignStatus] || task.docusignStatus;
+    row.innerHTML = `<span style="font-size:13px;">${escapeHtml(task.en)} <span class="task-es">(${escapeHtml(task.es)})</span><br><span class="field-hint" style="margin:0;">${t('documentColon')}: ${task.documentOriginalName ? escapeHtml(task.documentOriginalName) : t('notUploaded')} · ${t('docusignStatusColon')}: ${escapeHtml(statusLabel)}</span></span>`;
 
-      const actions = document.createElement('div');
-      actions.style.cssText = 'display:flex; gap:8px; align-items:center;';
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex; gap:8px; align-items:center;';
 
-      if(isPreview){
-        const fileInput = document.createElement('input');
-        fileInput.type = 'file'; fileInput.accept = '.pdf'; fileInput.style.cssText = 'font-size:11px; max-width:110px;';
-        fileInput.onchange = async (e) => {
-          const file = e.target.files[0]; if(!file) return;
-          const fd = new FormData(); fd.append('file', file);
-          try{
-            await apiUpload(`/api/docusign/deals/${deal.id}/tasks/${task.id}/document`, fd);
-            await openDeal(deal.id);
-          }catch(err){ alert(err.message); }
-        };
-        actions.appendChild(fileInput);
+    if(canManage){
+      const fileInput = document.createElement('input');
+      fileInput.type = 'file'; fileInput.accept = '.pdf'; fileInput.style.cssText = 'font-size:11px; max-width:110px;';
+      fileInput.title = t('uploadSignedDocTitle');
+      fileInput.onchange = async (e) => {
+        const file = e.target.files[0]; if(!file) return;
+        const fd = new FormData(); fd.append('file', file);
+        try{
+          await apiUpload(`/api/docusign/deals/${deal.id}/tasks/${task.id}/document`, fd);
+          await openDeal(deal.id);
+        }catch(err){ alert(err.message); }
+      };
+      actions.appendChild(fileInput);
 
+      // El botón de "generar desde plantilla" solo tiene sentido para la
+      // tarea del escrow agreement (docType 'escrow') — para las demás
+      // (ej. KYC del fiduciario) no hay plantilla, el documento llega de
+      // afuera (banco/notaría) y solo se sube con el input de arriba.
+      if(task.docType === 'escrow'){
         const escrowBtn = document.createElement('button');
         escrowBtn.className = 'btn'; escrowBtn.style.fontSize = '11px';
         escrowBtn.textContent = t('generateEscrow');
         escrowBtn.onclick = () => { escrowFormOpenFor = (escrowFormOpenFor === task.id ? null : task.id); render(); };
         actions.appendChild(escrowBtn);
-
-        const sendBtn = document.createElement('button');
-        sendBtn.className = 'btn gold';
-        sendBtn.textContent = t('sendForSignature');
-        sendBtn.disabled = !task.documentOriginalName || task.docusignStatus !== 'not_sent';
-        sendBtn.onclick = async () => {
-          try{
-            await apiFetch(`/api/docusign/deals/${deal.id}/tasks/${task.id}/send-for-signature`, { method:'POST' });
-            await openDeal(deal.id);
-          }catch(err){ alert(err.message); }
-        };
-        actions.appendChild(sendBtn);
-      } else {
-        const signBtn = document.createElement('button');
-        signBtn.className = 'btn gold';
-        signBtn.textContent = task.status==='done' ? t('signed') : t('signNow');
-        signBtn.disabled = task.status==='done' || task.docusignStatus==='not_sent';
-        signBtn.onclick = async () => {
-          try{
-            const { url } = await apiFetch(`/api/docusign/deals/${deal.id}/tasks/${task.id}/signing-url`, { method:'POST' });
-            openSigningModal(url, deal.id, task.id);
-          }catch(err){ alert(err.message); }
-        };
-        actions.appendChild(signBtn);
       }
 
-      const checkBtn = document.createElement('button');
-      checkBtn.className = 'btn';
-      checkBtn.textContent = t('checkStatus');
-      checkBtn.style.fontSize = '11px';
-      checkBtn.onclick = async () => {
+      const sendBtn = document.createElement('button');
+      sendBtn.className = 'btn gold';
+      sendBtn.textContent = t('sendForSignature');
+      sendBtn.disabled = !task.documentOriginalName || task.docusignStatus !== 'not_sent';
+      sendBtn.onclick = async () => {
         try{
-          await apiFetch(`/api/docusign/deals/${deal.id}/tasks/${task.id}/status`);
+          await apiFetch(`/api/docusign/deals/${deal.id}/tasks/${task.id}/send-for-signature`, { method:'POST' });
           await openDeal(deal.id);
         }catch(err){ alert(err.message); }
       };
-      actions.appendChild(checkBtn);
+      actions.appendChild(sendBtn);
+    } else {
+      const signBtn = document.createElement('button');
+      signBtn.className = 'btn gold';
+      signBtn.textContent = task.status==='done' ? t('signed') : t('signNow');
+      signBtn.disabled = task.status==='done' || task.docusignStatus==='not_sent';
+      signBtn.onclick = async () => {
+        try{
+          const { url } = await apiFetch(`/api/docusign/deals/${deal.id}/tasks/${task.id}/signing-url`, { method:'POST' });
+          openSigningModal(url, deal.id, task.id);
+        }catch(err){ alert(err.message); }
+      };
+      actions.appendChild(signBtn);
+    }
 
-      row.appendChild(actions);
-      scard.appendChild(row);
+    const checkBtn = document.createElement('button');
+    checkBtn.className = 'btn';
+    checkBtn.textContent = t('checkStatus');
+    checkBtn.style.fontSize = '11px';
+    checkBtn.onclick = async () => {
+      try{
+        await apiFetch(`/api/docusign/deals/${deal.id}/tasks/${task.id}/status`);
+        await openDeal(deal.id);
+      }catch(err){ alert(err.message); }
+    };
+    actions.appendChild(checkBtn);
 
-      if(isPreview && escrowFormOpenFor === task.id){
-        scard.appendChild(buildEscrowForm(deal, task));
-      }
-    });
-    body.appendChild(scard);
-  }
+    row.appendChild(actions);
+    scard.appendChild(row);
+
+    if(canManage && escrowFormOpenFor === task.id){
+      scard.appendChild(buildEscrowForm(deal, task));
+    }
+  });
+  body.appendChild(scard);
 }
 
 function buildEscrowForm(deal, task){

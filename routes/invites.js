@@ -22,9 +22,9 @@ const rateLimitAccept = createRateLimiter({ windowMs: 15 * 60 * 1000, maxAttempt
 // compradores/vendedores, cada uno necesita su propia invitación ligada a
 // su propia parte. Para agente/abogado, sin dealId/partyEntityId es una
 // invitación de equipo (se une a la firma en general).
-router.post('/', requireRole('admin', 'agent', 'lawyer'), async (req, res) => {
+router.post('/', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), async (req, res) => {
   const { dealId, dealPartyEntityId, roleInDeal, name, email, representsSide } = req.body || {};
-  if (!['buyer', 'seller', 'agent', 'lawyer'].includes(roleInDeal) || !name || !email) {
+  if (!['buyer', 'seller', 'agent', 'lawyer', 'external_lawyer'].includes(roleInDeal) || !name || !email) {
     return res.status(400).json({ error: 'Datos inválidos.' });
   }
   if (representsSide !== undefined && representsSide !== null && !['buyer', 'seller'].includes(representsSide)) {
@@ -55,7 +55,7 @@ router.post('/', requireRole('admin', 'agent', 'lawyer'), async (req, res) => {
     VALUES (?,?,?,?,?,?,?,?,?)
   `).run(token, dealId || null, ['buyer', 'seller'].includes(roleInDeal) ? dealPartyEntityId : null,
          roleInDeal, normalizedEmail, name, req.session.userId, expiresAt,
-         roleInDeal === 'agent' ? (representsSide || null) : null);
+         ['agent', 'external_lawyer'].includes(roleInDeal) ? (representsSide || null) : null);
 
   const url = `/invite.html?token=${token}`;
   const dealProperty = dealId ? db.prepare('SELECT property FROM deals WHERE id = ?').get(dealId)?.property : null;
@@ -143,8 +143,13 @@ router.post('/:token/accept', rateLimitAccept, (req, res) => {
       user = { id: info.lastInsertRowid, name: invite.name, email: invite.email, role: invite.role_in_deal };
     }
     if (invite.deal_id) {
+      // deal_parties.role_in_deal solo acepta 'buyer'/'seller'/'agent' — un
+      // abogado externo funciona exactamente como un agente DENTRO de la
+      // operación (facilitador de un lado, no parte transaccional), lo que
+      // lo distingue es users.role, no su función aquí.
+      const dealPartiesRole = invite.role_in_deal === 'external_lawyer' ? 'agent' : invite.role_in_deal;
       db.prepare('INSERT OR IGNORE INTO deal_parties (deal_id, user_id, role_in_deal, deal_party_entity_id, represents_side) VALUES (?,?,?,?,?)')
-        .run(invite.deal_id, user.id, invite.role_in_deal, partyEntityId || null, invite.represents_side || null);
+        .run(invite.deal_id, user.id, dealPartiesRole, partyEntityId || null, invite.represents_side || null);
     }
     db.prepare('UPDATE invites SET used_at = datetime(\'now\'), used_by_user_id = ? WHERE id = ?')
       .run(user.id, invite.id);

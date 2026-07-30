@@ -37,7 +37,7 @@ function logAccess(userId, action, req) {
 // entrar de inmediato sin que alguien lo revise primero.
 router.post('/register', rateLimitRegister, (req, res) => {
   const { name, email, password, role, agency, agencyOther } = req.body || {};
-  if (!name || !email || !password || !['agent', 'lawyer'].includes(role)) {
+  if (!name || !email || !password || !['agent', 'lawyer', 'external_lawyer'].includes(role)) {
     return res.status(400).json({ error: 'Datos inválidos.' });
   }
   if (password.length < 8) {

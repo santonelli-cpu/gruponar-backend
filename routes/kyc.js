@@ -5,7 +5,7 @@ const multer = require('multer');
 const docusign = require('docusign-esign');
 const db = require('../db');
 const { requireAuth, requireRole } = require('./auth');
-const { canAccessDeal, myDealPartyEntityId, myRepresentsSide } = require('../lib/access');
+const { canAccessDeal, myDealPartyEntityId, myRepresentsSide, AGENT_LIKE_ROLES } = require('../lib/access');
 const { dealDir, genFilename } = require('../lib/storage');
 const gcsStorage = require('../lib/gcsStorage');
 const driveClient = require('../lib/googleDriveClient');
@@ -179,7 +179,7 @@ function getLatestSubmission(partyId, kind) {
 function canWorkOnKyc(req, dealId, partyId) {
   if (!canAccessDeal(req, dealId)) return false;
   if (['admin', 'lawyer'].includes(req.session.role)) return true;
-  if (req.session.role === 'agent') {
+  if (AGENT_LIKE_ROLES.includes(req.session.role)) {
     const side = myRepresentsSide(req, dealId);
     if (!side) return true; // todavía no eligió lado — no restringe (compatibilidad)
     const party = db.prepare('SELECT side FROM deal_party_entities WHERE id = ?').get(partyId);
@@ -235,7 +235,7 @@ router.get('/deals/:id/kyc/:partyId', requireAuth, (req, res) => {
 // con el idioma/compañía equivocada). Solo staff, y solo si todavía no se
 // envió a firma — una vez enviado, borrar la fila local no cancela el sobre
 // de DocuSign, así que no se permite.
-router.delete('/deals/:id/kyc/:partyId', requireRole('admin', 'agent', 'lawyer'), async (req, res) => {
+router.delete('/deals/:id/kyc/:partyId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), async (req, res) => {
   const { id, partyId } = req.params;
   if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
 
@@ -257,7 +257,7 @@ router.delete('/deals/:id/kyc/:partyId', requireRole('admin', 'agent', 'lawyer')
 // se sube ya firmado en vez de pasar por el flujo de generar + DocuSign.
 // Solo staff, porque es un registro administrativo de algo que ya pasó
 // afuera, no algo que la propia parte reporte de sí misma.
-router.post('/deals/:id/kyc/:partyId/upload-signed', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+router.post('/deals/:id/kyc/:partyId/upload-signed', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
   const { id, partyId } = req.params;
   if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
 
@@ -443,7 +443,7 @@ router.get('/deals/:id/kyc/:partyId/file', requireAuth, async (req, res) => {
 
 // POST /api/deals/:id/kyc/:partyId/send-for-signature — solo admin/agente/
 // abogado envían; firma únicamente la persona ligada a esa parte.
-router.post('/deals/:id/kyc/:partyId/send-for-signature', requireRole('admin', 'agent', 'lawyer'), async (req, res) => {
+router.post('/deals/:id/kyc/:partyId/send-for-signature', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), async (req, res) => {
   const { id, partyId } = req.params;
   if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
 

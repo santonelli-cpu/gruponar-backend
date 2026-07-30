@@ -14,7 +14,7 @@ const router = express.Router();
 // un solo dato de referencia.
 const NOTARY_PAYMENT_NOTE_KEY = 'notary_payment_note';
 
-router.get('/notary-payment-note', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+router.get('/notary-payment-note', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
   const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(NOTARY_PAYMENT_NOTE_KEY);
   res.json({ note: row ? row.value : '' });
 });

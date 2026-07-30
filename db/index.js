@@ -152,6 +152,19 @@ db.prepare(`
   WHERE requires_signature = 0 AND label_es = 'Cuenta de escrow aperturada'
 `).run();
 
+// Todas las tareas con firma compartían el mismo botón "Generar escrow
+// (Armour)" en el frontend, sin importar de qué tarea se tratara — para
+// "KYC y formatos del fiduciario firmados" ese botón no tiene sentido (no
+// es un escrow agreement, es un documento del banco que se sube ya
+// recibido). doc_type distingue cuál tarea sí sabe generar su propio
+// documento desde una plantilla ('escrow') de las que solo se suben a mano
+// ('manual') — ver data/scenario-tasks.json.
+ensureColumn('tasks', 'doc_type', "doc_type TEXT NOT NULL DEFAULT 'manual'");
+db.prepare(`
+  UPDATE tasks SET doc_type = 'escrow'
+  WHERE doc_type = 'manual' AND label_es = 'Cuenta de escrow aperturada'
+`).run();
+
 // "Costos de cierre (recibo del notario)" se agregó a data/scenario-docs.json
 // como documento de Propiedad — insertPropertyDocs (routes/deals.js) solo
 // corre al CREAR una operación, así que las que ya existían nunca lo
@@ -560,5 +573,43 @@ function ensurePropertyDocsBackfill() {
   if (added) console.log(`[migration] ${added} documento(s) de Propiedad agregados a operaciones que les faltaban`);
 }
 ensurePropertyDocsBackfill();
+
+// 'external_lawyer' — abogado externo (del despacho del comprador/vendedor,
+// no de Grupo Nar): se comporta como 'agent' en todos lados (se liga por
+// deal_parties a operaciones específicas, puede elegir a qué lado
+// representa) en vez de como 'lawyer' interno, que ve TODAS las operaciones
+// sin restricción (UNRESTRICTED_ROLES en lib/access.js) — un despacho
+// externo no debe tener esa visibilidad global.
+function ensureUserRoleAllowsExternalLawyer() {
+  const row = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='users'`).get();
+  if (row && row.sql.includes("'external_lawyer'")) return;
+
+  db.pragma('foreign_keys = OFF');
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE users_migration_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL CHECK(role IN ('admin','agent','lawyer','external_lawyer','buyer','seller')),
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('pending','active')),
+        agency TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO users_migration_new (id, name, email, password_hash, role, status, agency, created_at)
+        SELECT id, name, email, password_hash, role, status, agency, created_at FROM users;
+      DROP TABLE users;
+      ALTER TABLE users_migration_new RENAME TO users;
+    `);
+    const violations = db.prepare('PRAGMA foreign_key_check').all();
+    if (violations.length) {
+      throw new Error('Migración de users dejaría foreign keys rotas: ' + JSON.stringify(violations));
+    }
+  })();
+  db.pragma('foreign_keys = ON');
+  console.log('[migration] users.role ahora acepta \'external_lawyer\'');
+}
+ensureUserRoleAllowsExternalLawyer();
 
 module.exports = db;
