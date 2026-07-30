@@ -3491,10 +3491,12 @@ function buildInviteForm(deal){
       const agencyOther = target === 'agent' ? agencyOtherInput.value.trim() : '';
       if(target === 'agent' && (!agency || (agency === 'Otro' && !agencyOther))){ errEl.textContent = t('registerErrAgency'); return; }
       const representsSide = card.querySelector('#inv-represents').value || null;
-      const { temporaryPassword } = await apiFetch(`/api/deals/${deal.id}/agents/register`, {
+      const { temporaryPassword, welcomeEmailSent, welcomeEmailError } = await apiFetch(`/api/deals/${deal.id}/agents/register`, {
         method: 'POST', body: JSON.stringify({ name, email, role: target, agency, agencyOther, representsSide })
       });
-      card.querySelector('#inv-direct-result-label').textContent = t('registerDirectDone');
+      let doneLabel = t('registerDirectDone');
+      doneLabel += welcomeEmailSent ? t('welcomeEmailSentNote') : t('welcomeEmailFailedNote', { error: welcomeEmailError || '' });
+      card.querySelector('#inv-direct-result-label').textContent = doneLabel;
       card.querySelector('#inv-direct-password-row').style.display = '';
       card.querySelector('#inv-direct-password').value = temporaryPassword || '';
       card.querySelector('#inv-direct-result').style.display = 'block';

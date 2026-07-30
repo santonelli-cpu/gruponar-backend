@@ -249,17 +249,27 @@ function registerPartyUserRaw(dealId, party, name, email) {
 // sin lanzar ella misma (un correo que falla no debe tumbar el alta de la
 // parte), pero ahora quien la llama puede avisarle al admin en vez de que
 // parezca que todo salió bien cuando en realidad no llegó nada.
-async function sendPartyWelcomeEmail(req, dealProperty, name, email, side, scenario) {
+// `linkedExisting` — la cuenta ya existía (comprador/vendedor de otra
+// operación) y solo se ligó a esta: no hace falta contraseña ni link de
+// bienvenida, solo avisarle que ya puede ver esta operación también (antes
+// no se le mandaba NADA en este caso, y quedaba dado de alta sin enterarse).
+async function sendPartyWelcomeEmail(req, dealProperty, name, email, side, scenario, linkedExisting) {
   if (!mailer.isConfigured()) return { sent: false, error: 'Resend no está configurado (falta RESEND_API_KEY).' };
   try {
     const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase().trim());
     if (!user) return { sent: false, error: 'Cuenta no encontrada.' };
-    const token = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 7 * 86400000).toISOString();
-    db.prepare('INSERT INTO password_resets (token, user_id, expires_at) VALUES (?,?,?)').run(token, user.id, expiresAt);
-    const url = `${req.protocol}://${req.get('host')}/reset-password.html?token=${token}`;
     const lang = mailer.resolveClientLang(scenario, side);
-    const result = await mailer.sendInviteEmail({ to: email, name, roleInDeal: side, dealProperty, url, lang });
+    let result;
+    if (linkedExisting) {
+      const url = `${req.protocol}://${req.get('host')}/`;
+      result = await mailer.sendAgentAddedToDealEmail({ to: email, name, dealProperty, url, lang });
+    } else {
+      const token = crypto.randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + 7 * 86400000).toISOString();
+      db.prepare('INSERT INTO password_resets (token, user_id, expires_at) VALUES (?,?,?)').run(token, user.id, expiresAt);
+      const url = `${req.protocol}://${req.get('host')}/reset-password.html?token=${token}`;
+      result = await mailer.sendInviteEmail({ to: email, name, roleInDeal: side, dealProperty, url, lang });
+    }
     if (!result.ok) console.error('[welcome-email] no se pudo mandar a', email, '-', result.error);
     return { sent: result.ok, error: result.ok ? null : result.error };
   } catch (err) {
@@ -373,8 +383,8 @@ router.post('/', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), asy
       return { id, partyResults };
     })();
 
-    await Promise.all(result.partyResults.filter(r => !r.error && !r.linkedExisting).map(async r => {
-      const { sent, error } = await sendPartyWelcomeEmail(req, property, r.partyName, r.email, r.side, scenario);
+    await Promise.all(result.partyResults.filter(r => !r.error).map(async r => {
+      const { sent, error } = await sendPartyWelcomeEmail(req, property, r.partyName, r.email, r.side, scenario, r.linkedExisting);
       r.welcomeEmailSent = sent;
       r.welcomeEmailError = error;
     }));
@@ -510,9 +520,7 @@ router.post('/:id/parties', requireRole('admin', 'agent', 'lawyer', 'external_la
     try {
       const newParty = db.prepare('SELECT * FROM deal_party_entities WHERE id = ?').get(partyId);
       ({ temporaryPassword, linkedExisting } = db.transaction(() => registerPartyUserRaw(req.params.id, newParty, p.name, p.email))());
-      if (!linkedExisting) {
-        ({ sent: welcomeEmailSent, error: welcomeEmailError } = await sendPartyWelcomeEmail(req, deal.property, p.name, p.email, p.side, deal.scenario));
-      }
+      ({ sent: welcomeEmailSent, error: welcomeEmailError } = await sendPartyWelcomeEmail(req, deal.property, p.name, p.email, p.side, deal.scenario, linkedExisting));
     } catch (err) {
       emailError = err.message;
     }
@@ -577,8 +585,8 @@ router.patch('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer', 'e
   })();
 
   let welcomeEmailSent, welcomeEmailError;
-  if (!alreadyLinked && p.email && p.email.trim() && !emailError && !linkedExisting) {
-    ({ sent: welcomeEmailSent, error: welcomeEmailError } = await sendPartyWelcomeEmail(req, deal.property, p.name, p.email, p.side, deal.scenario));
+  if (!alreadyLinked && p.email && p.email.trim() && !emailError) {
+    ({ sent: welcomeEmailSent, error: welcomeEmailError } = await sendPartyWelcomeEmail(req, deal.property, p.name, p.email, p.side, deal.scenario, linkedExisting));
   }
   res.json({ ok: true, temporaryPassword, emailError, welcomeEmailSent, welcomeEmailError });
 });
@@ -764,7 +772,7 @@ router.post('/:id/agents', requireRole('admin', 'agent', 'lawyer', 'external_law
 // lo da de alta ya activo (no pasa por aprobación, quien lo está agregando
 // ya es staff) y lo liga a esta operación de una vez, con una contraseña
 // temporal que se comparte por el canal que prefieras.
-router.post('/:id/agents/register', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
+router.post('/:id/agents/register', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const { name, email, role, agency, agencyOther, representsSide } = req.body || {};
   if (!name || !email) return res.status(400).json({ error: 'Falta el nombre o el correo.' });
@@ -801,7 +809,29 @@ router.post('/:id/agents/register', requireRole('admin', 'agent', 'lawyer', 'ext
   });
 
   const userId = registerTx();
-  res.status(201).json({ id: userId, name: name.trim(), email: normalizedEmail, role: collaboratorRole, agency: resolvedAgency, temporaryPassword: password });
+
+  // Correo de bienvenida (best-effort, ANTES de responder para poder avisar
+  // si no salió) — mismo criterio que sendPartyWelcomeEmail: da de alta
+  // directo con contraseña temporal para compartir a mano, pero igual le
+  // llega un link para poner su propia contraseña si prefiere entrar por
+  // su cuenta.
+  let welcomeEmailSent, welcomeEmailError;
+  if (mailer.isConfigured()) {
+    const deal = db.prepare('SELECT property FROM deals WHERE id = ?').get(req.params.id);
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 7 * 86400000).toISOString();
+    db.prepare('INSERT INTO password_resets (token, user_id, expires_at) VALUES (?,?,?)').run(token, userId, expiresAt);
+    const url = `${req.protocol}://${req.get('host')}/reset-password.html?token=${token}`;
+    try {
+      const result = await mailer.sendInviteEmail({ to: normalizedEmail, name: name.trim(), roleInDeal: collaboratorRole, dealProperty: deal.property, url });
+      welcomeEmailSent = result.ok; welcomeEmailError = result.ok ? null : result.error;
+      if (!result.ok) console.error('[welcome-email] no se pudo mandar a', normalizedEmail, '-', result.error);
+    } catch (err) {
+      welcomeEmailSent = false; welcomeEmailError = err.message;
+    }
+  }
+
+  res.status(201).json({ id: userId, name: name.trim(), email: normalizedEmail, role: collaboratorRole, agency: resolvedAgency, temporaryPassword: password, welcomeEmailSent, welcomeEmailError });
 });
 
 // PATCH /api/deals/:id/agents/:userId — cambia a quién representa un agente
