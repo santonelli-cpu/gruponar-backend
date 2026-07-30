@@ -383,6 +383,10 @@ const STRINGS = {
     totpManualLabel: 'O escríbelo a mano en tu app:',
     totpCodeLabel: 'Código de verificación', totpCodePh: '000000', totpSubmit: 'Verificar',
     totpErrCode: 'Falta el código.',
+    totpIntroEmailSent: 'Te mandamos un código a tu correo — ponlo aquí (vence en 10 minutos).',
+    totpUseEmailInstead: '¿Prefieres recibir el código por correo?',
+    totpResendCode: 'Reenviar código', totpSending: 'Enviando...',
+    rememberDeviceLabel: 'Recordar este dispositivo por 30 días',
     forgotPasswordLink: '¿Olvidaste tu contraseña?', forgotPasswordTitle: 'Restablece tu contraseña',
     forgotPasswordSub: 'Escribe el correo de tu cuenta y te mandamos un link para poner una nueva contraseña.',
     forgotPasswordSubmit: 'Enviar link', backToLogin: 'Volver a iniciar sesión',
@@ -597,6 +601,10 @@ const STRINGS = {
     totpManualLabel: 'Or type it in by hand in your app:',
     totpCodeLabel: 'Verification code', totpCodePh: '000000', totpSubmit: 'Verify',
     totpErrCode: 'Missing code.',
+    totpIntroEmailSent: 'We sent a code to your email — enter it here (expires in 10 minutes).',
+    totpUseEmailInstead: 'Prefer to get the code by email?',
+    totpResendCode: 'Resend code', totpSending: 'Sending...',
+    rememberDeviceLabel: 'Remember this device for 30 days',
     forgotPasswordLink: 'Forgot your password?', forgotPasswordTitle: 'Reset your password',
     forgotPasswordSub: "Enter your account's email and we'll send you a link to set a new password.",
     forgotPasswordSubmit: 'Send link', backToLogin: 'Back to login',
@@ -846,13 +854,16 @@ let registerSuccess = '';
 let forgotLoading = false;
 let forgotMessage = '';
 // Segundo factor obligatorio (ver POST /api/auth/login y /api/auth/totp) —
-// pendingTotp queda null hasta que la contraseña ya se validó; entonces
-// guarda si hace falta mostrar el QR (cuenta sin 2FA todavía) o solo el
-// campo del código (cuenta que ya lo tenía activado).
-let pendingTotp = null; // { setup, qrCode, secret }
+// pendingTotp queda null hasta que la contraseña ya se validó; method es
+// 'choose' (cuenta nueva, sin 2FA todavía — se le ofrecen las dos opciones),
+// 'totp' (ya usa la app) o 'email' (ya usa correo, o lo acaba de elegir en
+// la pantalla de 'choose').
+let pendingTotp = null; // { method, qrCode, secret }
 let totpCode = '';
 let totpError = '';
 let totpLoading = false;
+let totpEmailSending = false;
+let totpRemember = true;
 
 
 async function apiFetch(path, options={}){
@@ -1381,10 +1392,10 @@ function renderLogin(body){
     if(!email || !password){ loginError = t('loginErrFields'); render(); return; }
     loginLoading = true; loginError=''; render();
     try{
-      const result = await apiFetch('/api/auth/login', {method:'POST', body: JSON.stringify({email, password})});
+      const result = await apiFetch('/api/auth/login', {method:'POST', body: JSON.stringify({email, password, lang})});
       loginLoading = false;
       if(result.twoFactor){
-        pendingTotp = { setup: result.setup, qrCode: result.qrCode, secret: result.secret };
+        pendingTotp = { method: result.method, qrCode: result.qrCode, secret: result.secret };
         totpCode = ''; totpError = '';
         authView = 'totp';
         render();
@@ -1415,12 +1426,15 @@ function renderLogin(body){
 // punto; lo único que falta es confirmar el código de la app.
 function renderTotp(body){
   if(!pendingTotp){ authView='login'; render(); return; }
+  const method = pendingTotp.method; // 'choose' | 'totp' | 'email'
+  const showQr = method === 'choose' || method === 'totp';
+  const intro = method === 'email' ? t('totpIntroEmailSent') : (method === 'choose' ? t('totpIntroSetup') : t('totpIntroVerify'));
   const wrap = buildGateShell(`
     <div class="gate-title">${t('totpTitle')}</div>
-    <div class="gate-sub">${pendingTotp.setup ? t('totpIntroSetup') : t('totpIntroVerify')}</div>
+    <div class="gate-sub">${intro}</div>
     <div class="gate-error">${escapeHtml(totpError)}</div>
-    ${pendingTotp.setup ? `
-      <div style="text-align:center; margin-bottom:14px;">
+    ${showQr ? `
+      <div style="text-align:center; margin-bottom:14px;" id="totp-qr-wrap">
         <img src="${pendingTotp.qrCode}" style="width:180px; height:180px;" alt="QR">
         <div class="field-hint" style="margin-top:6px;">${t('totpManualLabel')}</div>
         <code style="font-size:13px; letter-spacing:1px;">${escapeHtml(pendingTotp.secret)}</code>
@@ -1428,8 +1442,15 @@ function renderTotp(body){
     ` : ''}
     <label class="gate-field-label" for="totp-code">${t('totpCodeLabel')}</label>
     <input type="text" id="totp-code" inputmode="numeric" autocomplete="one-time-code" placeholder="${t('totpCodePh')}" style="text-align:center; font-size:20px; letter-spacing:4px;" value="${escapeHtml(totpCode)}">
+    <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; margin:12px 0 0; cursor:pointer;">
+      <input type="checkbox" id="totp-remember" ${totpRemember ? 'checked' : ''}> ${t('rememberDeviceLabel')}
+    </label>
     <button class="btn primary" id="totp-submit" style="margin-top:14px;" ${totpLoading ? 'disabled' : ''}>${totpLoading ? t('loginSubmitting') : t('totpSubmit')}</button>
-    <div class="field-hint" style="text-align:center; margin-top:16px;"><a href="#" id="totp-back">${t('backToLogin')}</a></div>
+    <div class="field-hint" style="text-align:center; margin-top:12px;">
+      ${method === 'choose' ? `<a href="#" id="totp-use-email">${t('totpUseEmailInstead')}</a><br>` : ''}
+      ${method === 'email' ? `<a href="#" id="totp-resend">${totpEmailSending ? t('totpSending') : t('totpResendCode')}</a><br>` : ''}
+      <a href="#" id="totp-back">${t('backToLogin')}</a>
+    </div>
   `);
   body.appendChild(wrap);
   const codeInput = wrap.querySelector('#totp-code');
@@ -1439,7 +1460,8 @@ function renderTotp(body){
     if(!code){ totpError = t('totpErrCode'); render(); return; }
     totpLoading = true; totpError=''; render();
     try{
-      const user = await apiFetch('/api/auth/totp', { method:'POST', body: JSON.stringify({ code }) });
+      const remember = document.getElementById('totp-remember')?.checked;
+      const user = await apiFetch('/api/auth/totp', { method:'POST', body: JSON.stringify({ code, method: pendingTotp.method === 'email' ? 'email' : 'totp', remember }) });
       pendingTotp = null;
       currentUser = user;
       authenticated = true;
@@ -1453,7 +1475,35 @@ function renderTotp(body){
     }
   };
   wrap.querySelector('#totp-submit').onclick = submit;
+  wrap.querySelector('#totp-remember').onchange = (e) => { totpRemember = e.target.checked; };
   codeInput.onkeydown = (e) => { if(e.key==='Enter') submit(); };
+  const useEmailBtn = wrap.querySelector('#totp-use-email');
+  if(useEmailBtn) useEmailBtn.onclick = async (e) => {
+    e.preventDefault();
+    totpEmailSending = true; totpError=''; render();
+    try{
+      await apiFetch('/api/auth/email-otp', { method:'POST', body: JSON.stringify({ lang }) });
+      pendingTotp = { method: 'email' };
+      totpCode = '';
+    }catch(err){
+      totpError = err.message;
+    }
+    totpEmailSending = false;
+    render();
+  };
+  const resendBtn = wrap.querySelector('#totp-resend');
+  if(resendBtn) resendBtn.onclick = async (e) => {
+    e.preventDefault();
+    if(totpEmailSending) return;
+    totpEmailSending = true; totpError=''; render();
+    try{
+      await apiFetch('/api/auth/email-otp', { method:'POST', body: JSON.stringify({ lang }) });
+    }catch(err){
+      totpError = err.message;
+    }
+    totpEmailSending = false;
+    render();
+  };
   wrap.querySelector('#totp-back').onclick = async (e) => {
     e.preventDefault();
     pendingTotp = null; totpError=''; totpCode='';

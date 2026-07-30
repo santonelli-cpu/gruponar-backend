@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const db = require('../db');
-const { requireRole, beginTotpChallenge } = require('./auth');
+const { requireRole, beginTwoFactorChallenge } = require('./auth');
 const { canAccessDeal } = require('../lib/access');
 const { createRateLimiter } = require('../lib/rateLimit');
 const { resolveAgency } = require('./auth');
@@ -166,7 +166,7 @@ router.post('/:token/accept', rateLimitAccept, (req, res) => {
   // no abre sesión sola — todavía falta el 2FA (arma el QR si es cuenta
   // nueva, o pide el código si ya lo tenía de otra operación).
   const fullUser = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
-  beginTotpChallenge(req, res, fullUser);
+  beginTwoFactorChallenge(req, res, fullUser);
 });
 
 module.exports = router;

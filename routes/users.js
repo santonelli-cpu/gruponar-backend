@@ -50,13 +50,16 @@ router.patch('/:id/approve', requireRole('admin'), (req, res) => {
 });
 
 // POST /api/users/:id/reset-2fa — para cuando alguien pierde el teléfono
-// donde tenía la app de autenticación (o cambió de equipo). Borra el
-// secreto guardado; en su siguiente login, POST /auth/login vuelve a tratar
-// la cuenta como si nunca hubiera tenido 2FA (nuevo QR, sin pedir el código
-// viejo que ya no puede generar).
+// donde tenía la app de autenticación (o cambió de equipo/correo). Borra el
+// método elegido y el secreto guardado; en su siguiente login, POST
+// /auth/login vuelve a tratar la cuenta como si nunca hubiera tenido 2FA
+// (le ofrece elegir de nuevo). También borra cualquier dispositivo
+// recordado de esta cuenta — si el motivo del reset es que alguien más
+// pudo haber tenido acceso, un "recuérdame" viejo no debe seguir sirviendo.
 router.post('/:id/reset-2fa', requireRole('admin'), (req, res) => {
-  const info = db.prepare("UPDATE users SET totp_enabled = 0, totp_secret = NULL WHERE id = ?").run(req.params.id);
+  const info = db.prepare("UPDATE users SET totp_enabled = 0, totp_secret = NULL, two_factor_method = NULL WHERE id = ?").run(req.params.id);
   if (!info.changes) return res.status(404).json({ error: 'Usuario no encontrado.' });
+  db.prepare('DELETE FROM remembered_devices WHERE user_id = ?').run(req.params.id);
   res.json({ ok: true });
 });
 

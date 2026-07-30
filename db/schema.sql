@@ -117,6 +117,31 @@ CREATE TABLE IF NOT EXISTS password_resets (
   used_at TEXT
 );
 
+-- Segundo factor por correo (alternativa a la app de autenticación, ver
+-- routes/auth.js) — código de 6 dígitos, vigente 10 minutos, un solo uso.
+-- code_hash en vez del código en claro: aunque es de vida corta, no hay
+-- razón para guardarlo legible en la base de datos.
+CREATE TABLE IF NOT EXISTS email_otp_codes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at TEXT NOT NULL,
+  used_at TEXT
+);
+
+-- "Recuérdame en este dispositivo" (ver routes/auth.js) — un token por
+-- navegador que se marcó como confiable, para saltarse el 2FA mientras no
+-- venza. token_hash en vez del token en claro, mismo motivo que arriba.
+CREATE TABLE IF NOT EXISTS remembered_devices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at TEXT NOT NULL,
+  last_used_at TEXT
+);
+
 -- Invitaciones para que un comprador/vendedor/agente cree su propia cuenta
 -- y quede ligado a una operación específica, sin que el admin tenga que
 -- inventarle una contraseña temporal. deal_id es NULL para invitaciones de

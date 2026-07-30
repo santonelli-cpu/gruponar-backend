@@ -106,6 +106,12 @@ ensureColumn('users', 'phone', 'phone TEXT');
 // llegó a escanear.
 ensureColumn('users', 'totp_secret', 'totp_secret TEXT');
 ensureColumn('users', 'totp_enabled', 'totp_enabled INTEGER NOT NULL DEFAULT 0');
+// 'totp' o 'email' — cuál de los dos eligió esta cuenta la primera vez que
+// confirmó un código real. NULL mientras no ha elegido todavía (login le
+// ofrece las dos opciones). No todos quieren instalar una app de
+// autenticador — un comprador/vendedor de una sola operación puede
+// preferir un código por correo, que ya sabe usar.
+ensureColumn('users', 'two_factor_method', 'two_factor_method TEXT');
 
 // Qué escrow company usa la operación — determina qué plantilla KYC/escrow
 // se ofrece (Armour o TLA). Sin CHECK aquí, igual que el resto de columnas
