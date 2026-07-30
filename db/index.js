@@ -188,6 +188,13 @@ db.prepare(`
 // (escrow, etc.), que siempre firman ambos lados.
 ensureColumn('tasks', 'sign_side', 'sign_side TEXT');
 
+// Liga una tarea doc_type='kyc_review' (routes/kyc.js ensureKycReviewTask)
+// de vuelta al expediente que hay que revisar — así se puede marcar
+// automáticamente como hecha cuando admin/abogado interno de verdad lo
+// manda a firma, en vez de que sea alguien tachándola a mano sin haber
+// mandado nada.
+ensureColumn('tasks', 'kyc_submission_id', 'kyc_submission_id INTEGER');
+
 // "Costos de cierre (recibo del notario)" se agregó a data/scenario-docs.json
 // como documento de Propiedad — insertPropertyDocs (routes/deals.js) solo
 // corre al CREAR una operación, así que las que ya existían nunca lo

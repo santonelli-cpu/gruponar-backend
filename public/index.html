@@ -506,6 +506,8 @@ const STRINGS = {
     saveDraft: 'Guardar borrador', saveGenerateSend: 'Guardar, generar y enviar a firma', close: 'Cerrar',
     alertGeneratedSent: 'Documento generado y enviado a firma automáticamente.',
     alertAutoSendFailed: 'El documento se generó, pero no se pudo enviar a firma automáticamente: {error}\nPuedes reintentar con el botón "Enviar a firma".',
+    alertPendingReview: 'Documento generado. Un administrador o abogado interno lo revisará y lo mandará a firma.',
+    goToKycSection: 'Ir a la sección de KYC',
     kycSignModalTitle: 'Firma del expediente KYC',
     viewFile: 'Ver archivo', attachDocument: 'Adjuntar documento', deleteFile: 'Borrar', deleteFileConfirm: '¿Borrar el archivo subido para "{name}"? Vuelve a quedar pendiente.',
     removeChecklistItemTitle: 'Quitar este requisito del checklist', removeChecklistItemConfirm: '¿Quitar "{name}" del checklist por completo? Si ya tenía un archivo subido, también se borra.',
@@ -727,6 +729,8 @@ const STRINGS = {
     saveDraft: 'Save draft', saveGenerateSend: 'Save, generate and send for signature', close: 'Close',
     alertGeneratedSent: 'Document generated and sent for signature automatically.',
     alertAutoSendFailed: "The document was generated, but couldn't be sent for signature automatically: {error}\nYou can retry with the \"Send for signature\" button.",
+    alertPendingReview: 'Document generated. An admin or internal lawyer will review it and send it for signature.',
+    goToKycSection: 'Go to KYC section',
     kycSignModalTitle: 'KYC file signature',
     viewFile: 'View file', attachDocument: 'Attach document', deleteFile: 'Delete', deleteFileConfirm: 'Delete the uploaded file for "{name}"? It goes back to pending.',
     removeChecklistItemTitle: 'Remove this requirement from the checklist', removeChecklistItemConfirm: 'Remove "{name}" from the checklist entirely? If it had an uploaded file, that goes too.',
@@ -2891,7 +2895,7 @@ function buildAdminDealDetail(deal){
   wrap.appendChild(docsCard);
 
   const kycTitle = document.createElement('div');
-  kycTitle.className = 'section-title'; kycTitle.textContent = t('kycFile');
+  kycTitle.className = 'section-title'; kycTitle.id = 'admin-kyc-section'; kycTitle.textContent = t('kycFile');
   wrap.appendChild(kycTitle);
   const kycCard = document.createElement('div'); kycCard.className = 'card';
   deal.parties.forEach(p => kycCard.appendChild(buildKycSection(deal, p, true)));
@@ -2996,7 +3000,7 @@ function buildKycSection(deal, party, isStaffView, kind){
     actions.appendChild(viewLink);
   }
 
-  if(isStaffView && data.status === 'generated'){
+  if(isStaffView && ['admin','lawyer'].includes(currentUser.role) && data.status === 'generated'){
     const sendBtn = document.createElement('button');
     sendBtn.className = 'btn gold';
     sendBtn.textContent = t('sendForSignature');
@@ -3165,6 +3169,10 @@ function buildKycForm(deal, role, data, isStaffView, kind){
         }catch(e){ /* si falla, se queda en la sección con el botón "Firmar ahora" como respaldo */ }
       } else if(result.sentForSignature){
         alert(t('alertGeneratedSent'));
+      } else if(result.pendingReview){
+        // Agente/abogado externo — no se manda solo, admin/abogado interno
+        // lo revisa y lo manda (ver tarea nueva en Seguimiento del cierre).
+        alert(t('alertPendingReview'));
       } else if(result.autoSendError){
         alert(t('alertAutoSendFailed', { error: result.autoSendError }));
       }
@@ -3662,20 +3670,32 @@ function buildTaskList(deal, canManage){
     const row = document.createElement('div');
     row.className = 'task-row';
     const cls = task.status==='done'?'done':(task.status==='progress'?'progress':'');
+    // kyc_review (ver ensureKycReviewTask en routes/kyc.js) no se tacha a
+    // mano — se marca sola cuando admin/abogado interno de verdad manda el
+    // expediente a firma desde la sección de KYC, para que la tarea no
+    // pueda dar por hecho un envío que nunca pasó.
+    const isKycReview = task.docType === 'kyc_review';
+    const stampClickable = canManage && !isKycReview;
     row.innerHTML = `
-      <div class="task-stamp ${cls}" ${canManage ? '' : 'style="cursor:default;"'}>${task.status==='done'?'<i class=\"ti ti-check\" aria-hidden=\"true\"></i>':(idx+1)}</div>
+      <div class="task-stamp ${cls}" ${stampClickable ? '' : 'style="cursor:default;"'}>${task.status==='done'?'<i class=\"ti ti-check\" aria-hidden=\"true\"></i>':(idx+1)}</div>
       <div style="flex:1;">
         <div class="task-en">${escapeHtml(task.en)}${task.sign?`<span class="sign-tag">${t('requiresSignature')}</span>`:''}</div>
         <div class="task-es">${escapeHtml(task.es)}</div>
+        ${isKycReview && task.status !== 'done' ? `<a href="#" class="task-go-kyc" style="font-size:11px;">${t('goToKycSection')}</a>` : ''}
       </div>
     `;
-    if(canManage) row.querySelector('.task-stamp').onclick = async () => {
+    if(stampClickable) row.querySelector('.task-stamp').onclick = async () => {
       const order=['pending','progress','done'];
       const next = order[(order.indexOf(task.status)+1)%order.length];
       try{
         await apiFetch(`/api/deals/${deal.id}/tasks/${task.id}`, { method:'PATCH', body: JSON.stringify({status: next}) });
         task.status = next; render();
       }catch(e){ alert(e.message); }
+    };
+    const goKycLink = row.querySelector('.task-go-kyc');
+    if(goKycLink) goKycLink.onclick = (e) => {
+      e.preventDefault();
+      document.getElementById('admin-kyc-section')?.scrollIntoView({ behavior:'smooth', block:'start' });
     };
     ul.appendChild(row);
   });

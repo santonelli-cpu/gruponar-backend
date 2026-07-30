@@ -269,6 +269,8 @@ router.delete('/deals/:id/kyc/:partyId', requireRole('admin', 'agent', 'lawyer',
     await gcsStorage.deleteFile(submission.generated_file_url);
   }
   db.prepare('DELETE FROM kyc_submissions WHERE id = ?').run(submission.id);
+  // No queda nada que revisar si el expediente mismo se borró.
+  db.prepare("DELETE FROM tasks WHERE kyc_submission_id = ? AND status != 'done'").run(submission.id);
   res.json({ ok: true });
 });
 
@@ -362,6 +364,16 @@ router.post('/deals/:id/kyc/:partyId', requireAuth, (req, res) => {
 // por correo normal de DocuSign (embedUserId null/undefined) — el cliente
 // nunca estuvo en el portal, no hay sesión suya que reusar.
 async function sendKycEnvelope(deal, party, submission, template, embedUserId) {
+  // Nunca crear un segundo sobre para el mismo expediente — antes esta
+  // función se volvía a llamar completa en cada reintento de /generate
+  // (ej. después de un 502 aunque el envío original sí hubiera funcionado),
+  // y cada llamada mandaba un sobre de DocuSign NUEVO al cliente. Los
+  // llamadores (POST /generate, POST /send-for-signature) ya revisan esto
+  // antes de llegar aquí — este chequeo es el respaldo final para que sea
+  // imposible mandarlo dos veces sin importar desde dónde se llame.
+  if (submission.docusign_envelope_id) {
+    throw new Error('Este expediente ya se mandó a firma.');
+  }
   const signer = db.prepare(`
     SELECT u.id AS userId, u.name, u.email FROM deal_parties dp
     JOIN users u ON u.id = dp.user_id
@@ -401,9 +413,47 @@ async function sendKycEnvelope(deal, party, submission, template, embedUserId) {
   return result.envelopeId;
 }
 
+// Agente/abogado externo puede llenar y generar el KYC, pero ya no lo manda
+// a firma directo (ver AGENT_LIKE_ROLES en POST /generate) — esto deja un
+// aviso en el Seguimiento del cierre para que admin/abogado interno lo
+// revise, además del estado "Generado, sin enviar" que ya se ve en la
+// propia sección de KYC. requires_signature=0: lo que falta no es firmar un
+// PDF adjunto a la tarea, sino ir a la sección de KYC y darle "Enviar a
+// firma" ahí. No duplica la tarea si ya hay una pendiente para este mismo
+// expediente (ej. el agente le da "generar" dos veces).
+function ensureKycReviewTask(dealId, party, kycSubmissionId, kind) {
+  const existing = db.prepare("SELECT id FROM tasks WHERE kyc_submission_id = ? AND status != 'done'").get(kycSubmissionId);
+  if (existing) return;
+  const suffix = kind === 'lpr' ? ' (LPR Luxury)' : '';
+  const labelEs = `Revisar y enviar a firma el KYC de ${party.name}${suffix}`;
+  const labelEn = `Review and send for signature: KYC for ${party.name}${suffix}`;
+  const nextOrder = db.prepare('SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM tasks WHERE deal_id = ?').get(dealId).n;
+  db.prepare(`
+    INSERT INTO tasks (deal_id, label_en, label_es, requires_signature, doc_type, kyc_submission_id, sort_order, created_at)
+    VALUES (?, ?, ?, 0, 'kyc_review', ?, ?, datetime('now'))
+  `).run(dealId, labelEn, labelEs, kycSubmissionId, nextOrder);
+}
+
+// Se llama al mandar de verdad a firma (desde /generate cuando quien genera
+// sí puede auto-enviar, o desde /send-for-signature) — cierra cualquier
+// tarea de revisión pendiente que hubiera quedado de un intento anterior de
+// un agente, para que no se quede colgada en el tracker una vez que ya se
+// mandó.
+function completeKycReviewTask(kycSubmissionId) {
+  db.prepare("UPDATE tasks SET status = 'done' WHERE kyc_submission_id = ? AND status != 'done'").run(kycSubmissionId);
+}
+
 // POST /api/deals/:id/kyc/:partyId/generate — arma el PDF final desde la
-// plantilla y, si DocuSign ya está configurado y el firmante tiene cuenta
-// ligada, lo manda a firma automáticamente en el mismo paso.
+// plantilla y, si DocuSign ya está configurado, lo manda a firma
+// automáticamente en el mismo paso — EXCEPTO si quien genera es agente o
+// abogado externo (AGENT_LIKE_ROLES): en ese caso queda "generado, sin
+// enviar" y se crea una tarea para que admin/abogado interno lo revise y lo
+// mande él mismo (ver ensureKycReviewTask). Antes cualquiera de los cuatro
+// roles podía mandarlo directo, y un reintento de este mismo endpoint
+// después de un error (ej. 502) volvía a mandar un sobre de DocuSign nuevo
+// cada vez — por eso, si el expediente ya se había mandado antes
+// (docusign_envelope_id ya puesto), este endpoint solo regenera el PDF y
+// nunca vuelve a intentar el envío.
 router.post('/deals/:id/kyc/:partyId/generate', requireAuth, async (req, res) => {
   const { id, partyId } = req.params;
   if (!canWorkOnKyc(req, id, partyId)) return res.status(403).json({ error: 'No autorizado.' });
@@ -418,6 +468,7 @@ router.post('/deals/:id/kyc/:partyId/generate', requireAuth, async (req, res) =>
   if (!submission) return res.status(400).json({ error: 'Guarda el formulario antes de generar el documento.' });
   const template = TEMPLATES[submission.template_key];
   if (!template) return res.status(500).json({ error: 'Plantilla desconocida para este expediente.' });
+  const alreadySent = !!submission.docusign_envelope_id;
 
   try {
     const answers = JSON.parse(submission.answers_json);
@@ -437,7 +488,17 @@ router.post('/deals/:id/kyc/:partyId/generate', requireAuth, async (req, res) =>
     let sentForSignature = false;
     let autoSendError = null;
     let embedded = false;
-    if (docusignClient.isConfigured()) {
+    let pendingReview = false;
+    if (alreadySent) {
+      // Ya se había mandado antes (esto es un reintento, o alguien editó y
+      // regeneró el PDF después de enviado) — no se vuelve a mandar el
+      // sobre, solo se refleja que sigue "afuera".
+      sentForSignature = true;
+      embedded = ['buyer', 'seller'].includes(req.session.role);
+    } else if (AGENT_LIKE_ROLES.includes(req.session.role)) {
+      pendingReview = true;
+      ensureKycReviewTask(id, party, submission.id, kind);
+    } else if (docusignClient.isConfigured()) {
       try {
         const freshSubmission = db.prepare('SELECT * FROM kyc_submissions WHERE id = ?').get(submission.id);
         // Solo se embebe si quien llama es comprador/vendedor en sesión
@@ -447,12 +508,13 @@ router.post('/deals/:id/kyc/:partyId/generate', requireAuth, async (req, res) =>
         await sendKycEnvelope(deal, party, freshSubmission, template, embedUserId);
         sentForSignature = true;
         embedded = !!embedUserId;
+        completeKycReviewTask(submission.id);
       } catch (err) {
         autoSendError = err.message || 'No se pudo enviar a firma automáticamente.';
       }
     }
 
-    res.json({ ok: true, sentForSignature, autoSendError, embedded });
+    res.json({ ok: true, sentForSignature, autoSendError, embedded, pendingReview });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Error al generar el documento.' });
   }
@@ -477,9 +539,12 @@ router.get('/deals/:id/kyc/:partyId/file', requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/deals/:id/kyc/:partyId/send-for-signature — solo admin/agente/
-// abogado envían; firma únicamente la persona ligada a esa parte.
-router.post('/deals/:id/kyc/:partyId/send-for-signature', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), async (req, res) => {
+// POST /api/deals/:id/kyc/:partyId/send-for-signature — respaldo manual
+// para cuando el auto-envío de /generate no aplicó (agente/abogado externo
+// generó y quedó pendiente de revisión) o falló. Solo admin/abogado
+// interno — un agente ya no puede mandar un KYC a firma directo, tiene que
+// pasar por esta revisión (ver AGENT_LIKE_ROLES en /generate).
+router.post('/deals/:id/kyc/:partyId/send-for-signature', requireRole('admin', 'lawyer'), async (req, res) => {
   const { id, partyId } = req.params;
   if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
 
@@ -505,6 +570,7 @@ router.post('/deals/:id/kyc/:partyId/send-for-signature', requireRole('admin', '
 
   try {
     const envelopeId = await sendKycEnvelope(deal, party, submission, template);
+    completeKycReviewTask(submission.id);
     res.json({ ok: true, envelopeId });
   } catch (err) {
     res.status(502).json({ error: err.message || 'Error al enviar el expediente a firma.' });
