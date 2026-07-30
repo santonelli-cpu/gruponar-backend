@@ -393,7 +393,7 @@ async function sendKycEnvelope(deal, party, submission, template, embedUserId) {
 
   const apiClient = await docusignClient.getAuthorizedApiClient();
   const envelopesApi = new docusign.EnvelopesApi(apiClient);
-  const result = await envelopesApi.createEnvelope(process.env.DOCUSIGN_ACCOUNT_ID, { envelopeDefinition });
+  const result = await envelopesApi.createEnvelope(await docusignClient.getAccountId(), { envelopeDefinition });
 
   db.prepare("UPDATE kyc_submissions SET status = 'sent', docusign_envelope_id = ?, docusign_status = 'sent', updated_at = datetime('now') WHERE id = ?")
     .run(result.envelopeId, submission.id);
@@ -534,7 +534,7 @@ router.post('/deals/:id/kyc/:partyId/signing-url', requireAuth, async (req, res)
     const apiClient = await docusignClient.getAuthorizedApiClient();
     const envelopesApi = new docusign.EnvelopesApi(apiClient);
     const baseUrl = `${req.protocol}://${req.get('host')}`;
-    const result = await envelopesApi.createRecipientView(process.env.DOCUSIGN_ACCOUNT_ID, submission.docusign_envelope_id, {
+    const result = await envelopesApi.createRecipientView(await docusignClient.getAccountId(), submission.docusign_envelope_id, {
       recipientViewRequest: {
         returnUrl: `${baseUrl}/sign-return.html?dealId=${id}&kycPartyId=${partyId}`,
         authenticationMethod: 'none',
@@ -563,7 +563,7 @@ router.get('/deals/:id/kyc/:partyId/status', requireAuth, async (req, res) => {
   try {
     const apiClient = await docusignClient.getAuthorizedApiClient();
     const envelopesApi = new docusign.EnvelopesApi(apiClient);
-    const envelope = await envelopesApi.getEnvelope(process.env.DOCUSIGN_ACCOUNT_ID, submission.docusign_envelope_id);
+    const envelope = await envelopesApi.getEnvelope(await docusignClient.getAccountId(), submission.docusign_envelope_id);
     const newStatus = envelope.status === 'completed' ? 'signed' : submission.status;
 
     // Recién completado — hay que traer el PDF YA FIRMADO y reemplazar el

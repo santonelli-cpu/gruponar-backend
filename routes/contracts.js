@@ -395,7 +395,7 @@ router.post('/deals/:id/contract/send-for-signature', requireRole('admin', 'lawy
 
     const apiClient = await docusignClient.getAuthorizedApiClient();
     const envelopesApi = new docusign.EnvelopesApi(apiClient);
-    const result = await envelopesApi.createEnvelope(process.env.DOCUSIGN_ACCOUNT_ID, { envelopeDefinition });
+    const result = await envelopesApi.createEnvelope(await docusignClient.getAccountId(), { envelopeDefinition });
 
     db.prepare("UPDATE deals SET contract_status = 'sent', contract_docusign_envelope_id = ?, contract_docusign_status = 'sent' WHERE id = ?")
       .run(result.envelopeId, id);
@@ -420,7 +420,7 @@ router.get('/deals/:id/contract/status', requireAuth, async (req, res) => {
   try {
     const apiClient = await docusignClient.getAuthorizedApiClient();
     const envelopesApi = new docusign.EnvelopesApi(apiClient);
-    const envelope = await envelopesApi.getEnvelope(process.env.DOCUSIGN_ACCOUNT_ID, deal.contract_docusign_envelope_id);
+    const envelope = await envelopesApi.getEnvelope(await docusignClient.getAccountId(), deal.contract_docusign_envelope_id);
     const newStatus = envelope.status === 'completed' ? 'signed' : deal.contract_status;
 
     if (envelope.status === 'completed' && deal.contract_status !== 'signed' && deal.contract_generated_file_url) {

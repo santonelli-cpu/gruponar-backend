@@ -245,7 +245,7 @@ router.post('/deals/:id/tasks/:taskId/send-for-signature', requireRole('admin', 
 
     const apiClient = await docusignClient.getAuthorizedApiClient();
     const envelopesApi = new docusign.EnvelopesApi(apiClient);
-    const result = await envelopesApi.createEnvelope(process.env.DOCUSIGN_ACCOUNT_ID, { envelopeDefinition });
+    const result = await envelopesApi.createEnvelope(await docusignClient.getAccountId(), { envelopeDefinition });
 
     db.prepare('UPDATE tasks SET docusign_envelope_id = ?, docusign_status = ? WHERE id = ?')
       .run(result.envelopeId, 'sent', task.id);
@@ -269,7 +269,7 @@ router.get('/deals/:id/tasks/:taskId/status', requireAuth, async (req, res) => {
   try {
     const apiClient = await docusignClient.getAuthorizedApiClient();
     const envelopesApi = new docusign.EnvelopesApi(apiClient);
-    const envelope = await envelopesApi.getEnvelope(process.env.DOCUSIGN_ACCOUNT_ID, task.docusign_envelope_id);
+    const envelope = await envelopesApi.getEnvelope(await docusignClient.getAccountId(), task.docusign_envelope_id);
 
     const docusignStatus = envelope.status;
     const newStatus = docusignStatus === 'completed' ? 'done' : task.status;
