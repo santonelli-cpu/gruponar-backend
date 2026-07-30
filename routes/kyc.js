@@ -356,7 +356,16 @@ router.post('/deals/:id/kyc/:partyId', requireAuth, (req, res) => {
 // cuenta ligada en el momento de generar). Como máximo hay 1 usuario por
 // deal_party_entity_id (UNIQUE en deal_parties), así que el firmante nunca
 // es ambiguo aunque haya varios compradores/vendedores en la operación.
-async function sendKycEnvelope(deal, party, submission, template) {
+//
+// `embedUserId`: si quien está generando/mandando el expediente ES el mismo
+// firmante (el propio comprador/vendedor llenó su formulario y le dio
+// "Guardar, generar y enviar" en su propia sesión), se manda como firma
+// EMBEBIDA — ya está autenticado y adentro del portal en ese momento, así
+// que firmar ahí mismo es mejor que mandarlo a buscar un correo. Si en
+// cambio lo llenó/generó staff (agente/abogado) A NOMBRE del cliente, va
+// por correo normal de DocuSign (embedUserId null/undefined) — el cliente
+// nunca estuvo en el portal, no hay sesión suya que reusar.
+async function sendKycEnvelope(deal, party, submission, template, embedUserId) {
   const signer = db.prepare(`
     SELECT u.id AS userId, u.name, u.email FROM deal_parties dp
     JOIN users u ON u.id = dp.user_id
@@ -367,18 +376,17 @@ async function sendKycEnvelope(deal, party, submission, template) {
   }
 
   const documentBase64 = (await gcsStorage.downloadToBuffer(submission.generated_file_url)).toString('base64');
+  const embed = embedUserId && embedUserId === signer.userId;
 
   const envelopeDefinition = {
     emailSubject: `Firma requerida: ${template.definition.label || 'Expediente KYC'} — ${deal.property}`,
     documents: [{ documentBase64, name: 'Expediente KYC.pdf', fileExtension: 'pdf', documentId: '1' }],
     recipients: {
-      // Sin clientUserId, DocuSign manda el correo de firma directo (igual
-      // que si se enviara desde su propia página) — no hace falta que el
-      // firmante tenga ni use una cuenta del portal para firmar.
       signers: [{
         email: signer.email,
         name: signer.name,
         recipientId: '1',
+        ...(embed ? { clientUserId: String(signer.userId) } : {}),
         tabs: {
           signHereTabs: [{ anchorString: template.signatureAnchor, anchorUnits: 'pixels', anchorXOffset: '0', anchorYOffset: '-20', optional: 'false' }]
         }
@@ -432,17 +440,23 @@ router.post('/deals/:id/kyc/:partyId/generate', requireAuth, async (req, res) =>
 
     let sentForSignature = false;
     let autoSendError = null;
+    let embedded = false;
     if (docusignClient.isConfigured()) {
       try {
         const freshSubmission = db.prepare('SELECT * FROM kyc_submissions WHERE id = ?').get(submission.id);
-        await sendKycEnvelope(deal, party, freshSubmission, template);
+        // Solo se embebe si quien llama es comprador/vendedor en sesión
+        // (llenando lo suyo) — staff generando a nombre del cliente siempre
+        // manda por correo normal, sin importar qué diga el frontend.
+        const embedUserId = ['buyer', 'seller'].includes(req.session.role) ? req.session.userId : null;
+        await sendKycEnvelope(deal, party, freshSubmission, template, embedUserId);
         sentForSignature = true;
+        embedded = !!embedUserId;
       } catch (err) {
         autoSendError = err.message || 'No se pudo enviar a firma automáticamente.';
       }
     }
 
-    res.json({ ok: true, sentForSignature, autoSendError });
+    res.json({ ok: true, sentForSignature, autoSendError, embedded });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Error al generar el documento.' });
   }
@@ -498,6 +512,44 @@ router.post('/deals/:id/kyc/:partyId/send-for-signature', requireRole('admin', '
     res.json({ ok: true, envelopeId });
   } catch (err) {
     res.status(502).json({ error: err.message || 'Error al enviar el expediente a firma.' });
+  }
+});
+
+// POST /api/deals/:id/kyc/:partyId/signing-url — el firmante en sesión pide
+// su propia URL de firma embebida. Solo funciona si el sobre se mandó
+// embebido (ver embedUserId en sendKycEnvelope) — si se mandó por correo
+// normal (staff lo llenó a nombre del cliente), esto falla porque DocuSign
+// nunca registró un clientUserId para ese firmante; en ese caso el cliente
+// firma desde el correo que le llegó, no desde aquí.
+router.post('/deals/:id/kyc/:partyId/signing-url', requireAuth, async (req, res) => {
+  const { id, partyId } = req.params;
+  if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
+  if (myDealPartyEntityId(req, id) !== Number(partyId)) {
+    return res.status(403).json({ error: 'Solo puedes firmar tu propio expediente.' });
+  }
+
+  const kind = req.query.kind === 'lpr' ? 'lpr' : 'escrow';
+  const submission = getLatestSubmission(partyId, kind);
+  if (!submission || !submission.docusign_envelope_id) return res.status(400).json({ error: 'Este expediente todavía no se ha enviado a firma.' });
+
+  const me = db.prepare('SELECT name, email FROM users WHERE id = ?').get(req.session.userId);
+
+  try {
+    const apiClient = await docusignClient.getAuthorizedApiClient();
+    const envelopesApi = new docusign.EnvelopesApi(apiClient);
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const result = await envelopesApi.createRecipientView(process.env.DOCUSIGN_ACCOUNT_ID, submission.docusign_envelope_id, {
+      recipientViewRequest: {
+        returnUrl: `${baseUrl}/sign-return.html?dealId=${id}&kycPartyId=${partyId}`,
+        authenticationMethod: 'none',
+        email: me.email,
+        userName: me.name,
+        clientUserId: String(req.session.userId)
+      }
+    });
+    res.json({ url: result.url });
+  } catch (err) {
+    res.status(502).json({ error: err.message || 'Error al generar la URL de firma. Si este expediente se mandó por correo (no lo llenaste tú), fírmalo desde el correo que llegó, no desde aquí.' });
   }
 });
 
