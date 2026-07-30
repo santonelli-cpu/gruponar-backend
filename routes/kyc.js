@@ -361,9 +361,10 @@ router.post('/deals/:id/kyc/:partyId', requireAuth, rateLimitWrite, validateBody
 // compartido entre el auto-envío de /generate y el botón manual de
 // /send-for-signature (que sigue existiendo como respaldo si el auto-envío
 // falla, ej. DocuSign se configuró después, o la persona todavía no tenía
-// cuenta ligada en el momento de generar). Como máximo hay 1 usuario por
-// deal_party_entity_id (UNIQUE en deal_parties), así que el firmante nunca
-// es ambiguo aunque haya varios compradores/vendedores en la operación.
+// cuenta ligada en el momento de generar). Una parte puede tener hasta dos
+// cuentas ligadas (titular y apoderado, ver ensureDealPartiesAllowAttorneyInFact
+// en db/index.js) — el firmante sigue siendo el titular si existe, el
+// apoderado solo si es la única cuenta ligada.
 //
 // `embedUserId`: si quien está generando/mandando el expediente ES el mismo
 // firmante (el propio comprador/vendedor llenó su formulario y le dio
@@ -388,6 +389,7 @@ async function sendKycEnvelope(deal, party, submission, template, embedUserId) {
     SELECT u.id AS userId, u.name, u.email FROM deal_parties dp
     JOIN users u ON u.id = dp.user_id
     WHERE dp.deal_party_entity_id = ?
+    ORDER BY dp.relationship != 'titular'
   `).get(party.id);
   if (!signer) {
     throw new Error(`Todavía no hay cuenta ligada a "${party.name}" para firmar este expediente.`);

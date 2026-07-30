@@ -29,7 +29,13 @@ const partyFields = {
   parentHasTrustAbove: z.boolean().optional(),
   parentTrustName: z.string().trim().max(300).optional(),
   directTrustName: z.string().trim().max(300).optional(),
-  email: z.string().trim().max(254).optional()
+  email: z.string().trim().max(254).optional(),
+  // Apoderado — otra cuenta con las mismas facultades que el titular sobre
+  // esta parte (ver registerPartyUserRaw). Solo aplica al editar una parte
+  // ya creada (PATCH), no al crearla.
+  attorneyName: z.string().trim().max(200).optional(),
+  attorneyEmail: z.string().trim().max(254).optional(),
+  removeAttorney: z.boolean().optional()
 };
 const partyInArraySchema = z.object({ ...partyFields, side: z.enum(['buyer', 'seller']) }).strict();
 const createPartySchema = z.object({ ...partyFields, side: z.enum(['buyer', 'seller']) }).strict();
@@ -303,7 +309,13 @@ function insertPartyWithDocs(dealId, scenario, side, sortOrder, p) {
 // cuenta a esta parte en vez de fallar. Solo se bloquea si el correo es de
 // una cuenta de equipo (admin/agente/abogado), que no debería quedar ligada
 // como comprador/vendedor.
-function registerPartyUserRaw(dealId, party, name, email) {
+// `relationship`: 'titular' (default, el propio comprador/vendedor) o
+// 'attorney_in_fact' (apoderado — ver ensureDealPartiesAllowAttorneyInFact
+// en db/index.js). Ambos quedan con exactamente el mismo acceso a esta
+// parte porque canAccessDeal/myDealPartyEntityId/canTouchDoc resuelven todo
+// por fila de deal_parties, no por "la" cuenta de la parte.
+function registerPartyUserRaw(dealId, party, name, email, relationship) {
+  relationship = relationship || 'titular';
   if (!isValidEmail(email)) {
     const err = new Error('Ese correo no tiene un formato válido.');
     err.status = 400;
@@ -317,16 +329,16 @@ function registerPartyUserRaw(dealId, party, name, email) {
       err.status = 409;
       throw err;
     }
-    db.prepare('INSERT INTO deal_parties (deal_id, user_id, role_in_deal, deal_party_entity_id) VALUES (?,?,?,?)')
-      .run(dealId, existing.id, party.side, party.id);
+    db.prepare('INSERT INTO deal_parties (deal_id, user_id, role_in_deal, deal_party_entity_id, relationship) VALUES (?,?,?,?,?)')
+      .run(dealId, existing.id, party.side, party.id, relationship);
     return { userId: existing.id, temporaryPassword: null, linkedExisting: true };
   }
   const password = crypto.randomBytes(6).toString('base64url');
   const hash = bcrypt.hashSync(password, 12);
   const info = db.prepare("INSERT INTO users (name, email, password_hash, role, status) VALUES (?,?,?,?,'active')")
     .run(name.trim(), normalizedEmail, hash, party.side);
-  db.prepare('INSERT INTO deal_parties (deal_id, user_id, role_in_deal, deal_party_entity_id) VALUES (?,?,?,?)')
-    .run(dealId, info.lastInsertRowid, party.side, party.id);
+  db.prepare('INSERT INTO deal_parties (deal_id, user_id, role_in_deal, deal_party_entity_id, relationship) VALUES (?,?,?,?,?)')
+    .run(dealId, info.lastInsertRowid, party.side, party.id, relationship);
   return { userId: info.lastInsertRowid, temporaryPassword: password, linkedExisting: false };
 }
 
@@ -398,15 +410,38 @@ function attachParties(rows) {
   // vendedor de esa operación (tarjeta BUYER/SELLER), sin tener que abrir
   // el detalle completo de cada una primero.
   const linkedRows = db.prepare(`
-    SELECT dp.deal_party_entity_id AS partyId, u.id AS userId, u.name, u.email
+    SELECT dp.deal_party_entity_id AS partyId, dp.relationship, u.id AS userId, u.name, u.email
     FROM deal_parties dp JOIN users u ON u.id = dp.user_id
     WHERE dp.deal_id IN (${placeholders}) AND dp.deal_party_entity_id IS NOT NULL
   `).all(...ids);
-  const linkedByParty = {};
-  linkedRows.forEach(r => { linkedByParty[r.partyId] = { userId: r.userId, name: r.name, email: r.email }; });
-  parties.forEach(p => { p.linkedUser = linkedByParty[p.id] || null; });
+  const { linkedByParty, attorneyByParty, userIdsByParty } = buildPartyLinkMaps(linkedRows);
+  parties.forEach(p => {
+    p.linkedUser = linkedByParty[p.id] || null;
+    p.linkedAttorney = attorneyByParty[p.id] || null;
+    p.linkedUserIds = userIdsByParty[p.id] || [];
+  });
   rows.forEach(r => { r.parties = byDeal[r.id] || []; });
   return rows;
+}
+
+// A partir de filas deal_parties+users ligadas a partes (titular y/o
+// apoderado — ver ensureDealPartiesAllowAttorneyInFact en db/index.js),
+// arma tres mapas por deal_party_entity_id: linkedUser (titular),
+// linkedAttorney (apoderado), y linkedUserIds (ambos juntos, para que el
+// frontend reconozca "esta es mi parte" sin importar cuál de las dos
+// cuentas inició sesión — canAccessDeal/myDealPartyEntityId ya les dan
+// acceso idéntico a los documentos/KYC de la parte).
+function buildPartyLinkMaps(linkedRows) {
+  const linkedByParty = {};
+  const attorneyByParty = {};
+  const userIdsByParty = {};
+  linkedRows.forEach(r => {
+    const entry = { userId: r.userId, name: r.name, email: r.email };
+    if (r.relationship === 'attorney_in_fact') attorneyByParty[r.partyId] = entry;
+    else linkedByParty[r.partyId] = entry;
+    (userIdsByParty[r.partyId] ||= []).push(r.userId);
+  });
+  return { linkedByParty, attorneyByParty, userIdsByParty };
 }
 
 // GET /api/deals — lista operaciones. Admin/abogado ven todas; agente/buyer/seller solo las suyas.
@@ -538,16 +573,17 @@ router.get('/:id', requireAuth, (req, res) => {
   ownerRows.forEach(o => { (ownersByParty[o.deal_party_entity_id] ||= []).push(o); });
 
   const linkedRows = db.prepare(`
-    SELECT dp.deal_party_entity_id AS partyId, u.id AS userId, u.name, u.email
+    SELECT dp.deal_party_entity_id AS partyId, dp.relationship, u.id AS userId, u.name, u.email
     FROM deal_parties dp JOIN users u ON u.id = dp.user_id
     WHERE dp.deal_id = ? AND dp.deal_party_entity_id IS NOT NULL
   `).all(deal.id);
-  const linkedByParty = {};
-  linkedRows.forEach(r => { linkedByParty[r.partyId] = { userId: r.userId, name: r.name, email: r.email }; });
+  const { linkedByParty, attorneyByParty, userIdsByParty } = buildPartyLinkMaps(linkedRows);
 
   parties.forEach(p => {
     p.owners = ownersByParty[p.id] || [];
     p.linkedUser = linkedByParty[p.id] || null;
+    p.linkedAttorney = attorneyByParty[p.id] || null;
+    p.linkedUserIds = userIdsByParty[p.id] || [];
   });
 
   const agents = db.prepare(`
@@ -670,7 +706,11 @@ router.post('/:id/parties', requireRole('admin', 'agent', 'lawyer', 'external_la
 // correo aquí y guardar — antes existía una sección aparte ("Invite to this
 // deal") para esto y resultaba confuso, así que esa sección ahora es solo
 // para agentes/abogados externos (ver buildInviteForm en el frontend) y
-// esta es la ÚNICA forma de ligar/crear la cuenta de una parte.
+// esta es la ÚNICA forma de ligar/crear la cuenta de una parte. También es
+// donde se liga (o quita) el apoderado de la parte — attorneyName/
+// attorneyEmail para agregarlo, removeAttorney para quitarlo — con las
+// mismas facultades que el titular sobre esta misma parte (ver
+// registerPartyUserRaw).
 router.patch('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, validateBody(updatePartySchema), async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
@@ -684,10 +724,13 @@ router.patch('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer', 'e
   // Ya ligada — no se vuelve a intentar registrar/ligar con el correo que
   // venga en el body (cambiar la cuenta ligada de una parte no es un caso
   // que se pida hoy; el campo de correo en el frontend se deshabilita una
-  // vez ligada, esto es un respaldo del lado del servidor).
-  const alreadyLinked = db.prepare('SELECT 1 FROM deal_parties WHERE deal_party_entity_id = ?').get(party.id);
+  // vez ligada, esto es un respaldo del lado del servidor). El apoderado es
+  // una fila aparte (relationship='attorney_in_fact'), con su propio check.
+  const alreadyLinked = db.prepare("SELECT 1 FROM deal_parties WHERE deal_party_entity_id = ? AND relationship = 'titular'").get(party.id);
+  const alreadyHasAttorney = db.prepare("SELECT 1 FROM deal_parties WHERE deal_party_entity_id = ? AND relationship = 'attorney_in_fact'").get(party.id);
 
   let temporaryPassword, linkedExisting, emailError;
+  let attorneyTemporaryPassword, attorneyLinkedExisting, attorneyError;
   db.transaction(() => {
     db.prepare(`
       UPDATE deal_party_entities SET name=?, party_type=?, ownership_mode=?, parent_entity_name=?, parent_entity_type=?, parent_has_trust_above=?, parent_trust_name=?, direct_trust_name=?
@@ -716,13 +759,31 @@ router.patch('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer', 'e
         emailError = regErr.message;
       }
     }
+
+    if (p.removeAttorney && alreadyHasAttorney) {
+      db.prepare("DELETE FROM deal_parties WHERE deal_party_entity_id = ? AND relationship = 'attorney_in_fact'").run(party.id);
+    } else if (!alreadyHasAttorney && p.attorneyName && p.attorneyName.trim() && p.attorneyEmail && p.attorneyEmail.trim()) {
+      try {
+        ({ temporaryPassword: attorneyTemporaryPassword, linkedExisting: attorneyLinkedExisting } =
+          registerPartyUserRaw(req.params.id, party, p.attorneyName, p.attorneyEmail, 'attorney_in_fact'));
+      } catch (regErr) {
+        attorneyError = regErr.message;
+      }
+    }
   })();
 
   let welcomeEmailSent, welcomeEmailError;
   if (!alreadyLinked && p.email && p.email.trim() && !emailError) {
     ({ sent: welcomeEmailSent, error: welcomeEmailError } = await sendPartyWelcomeEmail(req, deal.property, p.name, p.email, p.side, deal.scenario, linkedExisting));
   }
-  res.json({ ok: true, temporaryPassword, emailError, welcomeEmailSent, welcomeEmailError });
+  let attorneyWelcomeEmailSent, attorneyWelcomeEmailError;
+  if (!alreadyHasAttorney && p.attorneyName && p.attorneyEmail && !attorneyError) {
+    ({ sent: attorneyWelcomeEmailSent, error: attorneyWelcomeEmailError } = await sendPartyWelcomeEmail(req, deal.property, p.attorneyName, p.attorneyEmail, p.side, deal.scenario, attorneyLinkedExisting));
+  }
+  res.json({
+    ok: true, temporaryPassword, emailError, welcomeEmailSent, welcomeEmailError,
+    attorneyTemporaryPassword, attorneyError, attorneyWelcomeEmailSent, attorneyWelcomeEmailError
+  });
 });
 
 // Inserta solo los documentos que falten según la estructura ACTUAL de la
@@ -818,19 +879,22 @@ router.delete('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer', '
 });
 
 // POST /api/deals/:id/parties/:partyId/remind — manda un correo (Resend) a
-// la persona ligada a esta parte listando sus documentos pendientes. Los
-// documentos de Propiedad (deal_party_entity_id NULL) se incluyen solo si
-// esta parte es del lado vendedor, que es quien realísticamente los provee.
+// la(s) persona(s) ligada(s) a esta parte listando sus documentos
+// pendientes — al titular y, si tiene, también a su apoderado (ambos suben
+// documentos con las mismas facultades, ver ensureDealPartiesAllowAttorneyInFact
+// en db/index.js). Los documentos de Propiedad (deal_party_entity_id NULL)
+// se incluyen solo si esta parte es del lado vendedor, que es quien
+// realísticamente los provee.
 router.post('/:id/parties/:partyId/remind', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitEmail, async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
   if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
   const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id);
 
-  const linked = db.prepare(`
+  const linkedRecipients = db.prepare(`
     SELECT u.name, u.email FROM deal_parties dp JOIN users u ON u.id = dp.user_id WHERE dp.deal_party_entity_id = ?
-  `).get(party.id);
-  if (!linked) return res.status(400).json({ error: 'Esta parte todavía no tiene una cuenta ligada — invítala primero.' });
+  `).all(party.id);
+  if (!linkedRecipients.length) return res.status(400).json({ error: 'Esta parte todavía no tiene una cuenta ligada — invítala primero.' });
 
   const pending = party.side === 'seller'
     ? db.prepare("SELECT name FROM documents WHERE status = 'pending' AND deal_id = ? AND (deal_party_entity_id = ? OR deal_party_entity_id IS NULL)").all(req.params.id, party.id)
@@ -839,11 +903,12 @@ router.post('/:id/parties/:partyId/remind', requireRole('admin', 'agent', 'lawye
 
   if (!mailer.isConfigured()) return res.status(501).json({ error: 'Resend no está configurado todavía (falta RESEND_API_KEY).' });
   const url = `${req.protocol}://${req.get('host')}/`;
-  const result = await mailer.sendDocumentReminderEmail({
-    to: linked.email, name: linked.name, dealProperty: deal.property, pendingDocNames: pending.map(p => p.name), url,
-    lang: mailer.resolveClientLang(deal.scenario, party.side)
-  });
-  if (!result.ok) return res.status(502).json({ error: result.error });
+  const lang = mailer.resolveClientLang(deal.scenario, party.side);
+  const results = await Promise.all(linkedRecipients.map(linked => mailer.sendDocumentReminderEmail({
+    to: linked.email, name: linked.name, dealProperty: deal.property, pendingDocNames: pending.map(p => p.name), url, lang
+  })));
+  const failed = results.find(r => !r.ok);
+  if (failed) return res.status(502).json({ error: failed.error });
   db.prepare(`
     INSERT INTO document_reminders_log (deal_party_entity_id, last_sent_at) VALUES (?, datetime('now'))
     ON CONFLICT(deal_party_entity_id) DO UPDATE SET last_sent_at = datetime('now')

@@ -98,6 +98,9 @@
   .stat{display:flex; flex-direction:column; gap:3px;}
   .stat-label{font-size:11px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:0.06em; font-weight:500;}
   .stat-value{font-size:15px; font-weight:600;}
+  .field-editable{cursor:pointer; border-bottom:1px dashed transparent; border-radius:2px;}
+  .field-editable:hover{border-bottom-color:var(--line-strong); background:var(--stone);}
+  .inline-edit-input{border:1px solid var(--line-strong); border-radius:6px; padding:3px 7px; background:var(--stone-card); color:var(--ink);}
   .progress-row{display:flex; gap:28px; margin-bottom:16px; flex-wrap:wrap;}
   .progress-block{flex:1; min-width:160px;}
   .progress-top{display:flex; justify-content:space-between; font-size:12px; margin-bottom:5px;}
@@ -464,7 +467,8 @@ const STRINGS = {
     uploadSignedKyc: 'Subir ya firmado', uploadSignedKycTitle: 'Si el KYC se llenó y firmó fuera del portal, súbelo aquí ya firmado en vez de generarlo/enviarlo a firma.',
     uploadSignedContract: 'Subir ya firmado', uploadSignedContractTitle: 'Si el contrato se redactó/firmó fuera del portal, súbelo aquí ya firmado en vez de generarlo/enviarlo a firma.',
     editDeal: 'Editar', editDealTitle: 'Editar datos de la operación', saveChanges: 'Guardar cambios', cancel: 'Cancelar',
-    editAgency: 'Editar agencia', setAgency: 'Poner agencia',
+    clickToEdit: 'Toca para editar',
+    editAgency: 'Editar agencia', setAgency: 'Poner agencia', editProfile: 'Editar nombre/correo',
     reset2fa: 'Restablecer 2FA', reset2faTitle: 'Borra el segundo factor de esta cuenta — en su próximo login le pedirá armarlo de nuevo (nuevo QR).',
     reset2faConfirm: '¿Restablecer el segundo factor de {name}? Va a necesitar escanear un QR nuevo en su próximo login.',
     reset2faDone: 'Listo — en su próximo login le va a pedir armar el 2FA de nuevo.',
@@ -488,6 +492,15 @@ const STRINGS = {
     partyEmailHint: 'Si lo pones y guardas, se da de alta y liga su cuenta de una vez (contraseña temporal para compartir tú, y le llega un correo de bienvenida) — así se le puede mandar a firmar aunque no se registre por su cuenta.',
     partyEmailLinkedHint: 'Cuenta ligada: {email}',
     partyRegisteredAlert: 'Cuenta creada. Contraseña temporal: {password}\n\nCompártela con esta persona por el canal que prefieras.',
+    hasAttorneyToggle: '¿Actúa por medio de un apoderado?',
+    attorneyHint: 'El apoderado queda registrado a esta operación con las mismas facultades que el titular sobre esta parte (subir documentos, llenar KYC, etc.).',
+    attorneyNameLabel: 'Nombre del apoderado', attorneyNamePh: 'Nombre completo',
+    attorneyEmailLabel: 'Correo del apoderado',
+    attorneyLinkedHint: 'Apoderado: {name} ({email})',
+    attorneyRemove: 'Quitar apoderado',
+    attorneyBadge: 'Apoderado',
+    confirmRemoveAttorney: '¿Quitar a este apoderado de la operación? Ya no podrá ver ni subir documentos de esta parte (su cuenta no se borra, solo se desliga).',
+    attorneyRegisteredAlert: 'Cuenta del apoderado creada. Contraseña temporal: {password}\n\nCompártela con esta persona por el canal que prefieras.',
     partyRegisterFailedAlert: 'La parte se agregó bien, pero no se pudo dar de alta su cuenta: {error}',
     partyRegisteredLine: '{name} ({email}) — contraseña temporal: {password}',
     partyRegisterFailedLine: '{name} — no se pudo dar de alta su cuenta: {error}',
@@ -699,7 +712,8 @@ const STRINGS = {
     uploadSignedKyc: 'Upload signed', uploadSignedKycTitle: 'If the KYC was filled and signed outside the portal, upload it here already signed instead of generating/sending it for signature.',
     uploadSignedContract: 'Upload signed', uploadSignedContractTitle: 'If the contract was drafted/signed outside the portal, upload it here already signed instead of generating/sending it for signature.',
     editDeal: 'Edit', editDealTitle: 'Edit deal details', saveChanges: 'Save changes', cancel: 'Cancel',
-    editAgency: 'Edit agency', setAgency: 'Set agency',
+    clickToEdit: 'Click to edit',
+    editAgency: 'Edit agency', setAgency: 'Set agency', editProfile: 'Edit name/email',
     reset2fa: 'Reset 2FA', reset2faTitle: "Clears this account's second factor — their next login will ask them to set it up again (new QR).",
     reset2faConfirm: "Reset {name}'s two-factor authentication? They'll need to scan a new QR code on their next login.",
     reset2faDone: "Done — they'll be asked to set up 2FA again on their next login.",
@@ -723,6 +737,15 @@ const STRINGS = {
     partyEmailHint: 'If you fill this in and save, their account is created and linked right away (a temp password for you to share, plus a welcome email) — so you can send them documents to sign even if they never register on their own.',
     partyEmailLinkedHint: 'Account linked: {email}',
     partyRegisteredAlert: 'Account created. Temporary password: {password}\n\nShare it with this person through whatever channel you prefer.',
+    hasAttorneyToggle: 'Acting through an attorney-in-fact?',
+    attorneyHint: 'The attorney-in-fact is registered to this deal with the same faculties as the titular over this party (upload documents, fill out KYC, etc.).',
+    attorneyNameLabel: "Attorney-in-fact's name", attorneyNamePh: 'Full name',
+    attorneyEmailLabel: "Attorney-in-fact's email",
+    attorneyLinkedHint: 'Attorney-in-fact: {name} ({email})',
+    attorneyRemove: 'Remove attorney-in-fact',
+    attorneyBadge: 'Attorney-in-fact',
+    confirmRemoveAttorney: "Remove this attorney-in-fact from the deal? They'll no longer see or upload documents for this party (their account isn't deleted, just unlinked).",
+    attorneyRegisteredAlert: "Attorney-in-fact's account created. Temporary password: {password}\n\nShare it with this person through whatever channel you prefer.",
     partyRegisterFailedAlert: 'The party was added fine, but their account could not be created: {error}',
     partyRegisteredLine: '{name} ({email}) — temporary password: {password}',
     partyRegisterFailedLine: '{name} — could not create their account: {error}',
@@ -896,7 +919,6 @@ let dashboardExpandedGroups = {};
 let driveStatus = null;
 let escrowFormOpenFor = null;
 let activeDealId = null;
-let editingDealId = null;
 let trashedDeals = null;
 let dealMenuOpenFor = null;
 let portalRole = 'agent'; // solo se usa en isPreview para elegir "Agente" vs una parte específica
@@ -1001,7 +1023,9 @@ function adaptParty(p){
     parentHasTrustAbove: !!p.parent_has_trust_above, parentTrustName: p.parent_trust_name,
     directTrustName: p.direct_trust_name,
     owners: (p.owners || []).map(o => ({ id: o.id, name: o.name })),
-    linkedUser: p.linkedUser || null
+    linkedUser: p.linkedUser || null,
+    linkedAttorney: p.linkedAttorney || null,
+    linkedUserIds: p.linkedUserIds || []
   };
 }
 function sellerParties(deal){ return deal.parties.filter(p => p.side === 'seller'); }
@@ -1059,8 +1083,8 @@ async function loadData(){
   // admin/agente/abogado coordinan en varios idiomas, no tiene sentido
   // adivinarles uno.
   if(!localStorage.getItem('nar_lang') && ['buyer','seller'].includes(currentUser.role)){
-    const myDeal = deals.find(d => d.parties.some(p => p.linkedUser && p.linkedUser.userId === currentUser.id));
-    const myParty = myDeal && myDeal.parties.find(p => p.linkedUser && p.linkedUser.userId === currentUser.id);
+    const myDeal = deals.find(d => d.parties.some(p => p.linkedUserIds.includes(currentUser.id)));
+    const myParty = myDeal && myDeal.parties.find(p => p.linkedUserIds.includes(currentUser.id));
     if(myDeal && myParty){
       const bySide = DEFAULT_LANG_BY_SCENARIO_SIDE[myDeal.scenario];
       if(bySide && bySide[myParty.side]) lang = bySide[myParty.side];
@@ -1195,7 +1219,7 @@ function overallPct(deal){
 // agente, abogado). Se usa para la etiqueta BUYER/SELLER de cada tarjeta y
 // para saber de qué lado calcular "waiting on you".
 function myPartyInDeal(deal){
-  return deal.parties.find(p => p.linkedUser && p.linkedUser.userId === currentUser.id) || null;
+  return deal.parties.find(p => p.linkedUserIds.includes(currentUser.id)) || null;
 }
 
 function render(){
@@ -1873,7 +1897,6 @@ function renderAdmin(body){
       menuEl.querySelector(`#menu-edit-${d.id}`).onclick = async () => {
         dealMenuOpenFor = null;
         activeDealId = d.id;
-        editingDealId = d.id;
         await openDeal(d.id);
       };
       menuEl.querySelector(`#menu-status-${d.id}`).onclick = async () => {
@@ -2104,6 +2127,44 @@ function buildDashboard(){
   return wrap;
 }
 
+// Editar nombre/correo de una cuenta ya registrada (PATCH /api/users/:id/profile)
+// — se usa tanto en Equipo (agentes/abogados) como en Clientes (comprador/
+// vendedor). Mismo patrón toggle-de-formulario que el editor de agencia.
+function buildProfileEditControl(u, onSaved){
+  const editBtn = document.createElement('button');
+  editBtn.className = 'btn'; editBtn.style.cssText = 'font-size:11px; padding:3px 10px; align-self:flex-start; margin-top:4px;';
+  editBtn.textContent = t('editProfile');
+  const editWrap = document.createElement('div');
+  editWrap.style.cssText = 'display:none; gap:8px; align-items:center; flex-wrap:wrap; margin-top:4px;';
+  editWrap.innerHTML = `
+    <input type="text" class="pe-name" placeholder="${t('namePh')}" value="${escapeHtml(u.name)}" style="font-size:12px;">
+    <input type="email" class="pe-email" placeholder="${t('emailPh')}" value="${escapeHtml(u.email)}" style="font-size:12px;">
+    <button class="btn primary" style="font-size:11px;">${t('saveChanges')}</button>
+    <button class="btn" style="font-size:11px;">${t('cancel')}</button>
+    <span class="gate-error" style="margin:0;"></span>
+  `;
+  const nameEl = editWrap.querySelector('.pe-name');
+  const emailEl = editWrap.querySelector('.pe-email');
+  const [saveBtn, cancelBtn] = editWrap.querySelectorAll('button');
+  const errEl = editWrap.querySelector('.gate-error');
+  editBtn.onclick = () => { editWrap.style.display = 'flex'; editBtn.style.display = 'none'; };
+  cancelBtn.onclick = () => { editWrap.style.display = 'none'; editBtn.style.display = ''; };
+  saveBtn.onclick = async () => {
+    errEl.textContent = '';
+    const name = nameEl.value.trim();
+    const email = emailEl.value.trim();
+    if(!name || !email){ errEl.textContent = t('errNameOrEmail'); return; }
+    try{
+      await apiFetch(`/api/users/${u.id}/profile`, { method:'PATCH', body: JSON.stringify({ name, email }) });
+      await onSaved();
+    }catch(e){ errEl.textContent = e.message; }
+  };
+  const box = document.createElement('div');
+  box.appendChild(editBtn);
+  box.appendChild(editWrap);
+  return box;
+}
+
 function buildTeamSection(){
   const wrap = document.createElement('div');
 
@@ -2152,6 +2213,7 @@ function buildTeamSection(){
       top.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;';
       top.innerHTML = `<span style="font-size:13px;">${escapeHtml(u.name)} <span class="field-hint" style="margin:0;">— ${escapeHtml(u.email)} · ${roleLabel}${u.agency ? ' · ' + escapeHtml(u.agency) : ''}</span></span>`;
       row.appendChild(top);
+      row.appendChild(buildProfileEditControl(u, () => loadPendingUsers()));
 
       // Solo agentes tienen agencia — de esto depende que el KYC de LPR
       // salga automático (dealAgentIsLprAgency en routes/kyc.js), así que
@@ -2354,14 +2416,44 @@ function buildClientsSection(){
     const dealsLabel = c.deals.map(d => escapeHtml(d.property)).join(', ') || t('noDealsYet');
     const roleLabel = c.role === 'buyer' ? t('buyerLabel2') : t('sellerLabel2');
     tr.innerHTML = `
-      <td>${escapeHtml(c.name)}</td>
-      <td>${escapeHtml(c.email)}</td>
+      <td></td>
+      <td></td>
       <td></td>
       <td><span class="role-badge ${c.role}">${roleLabel}</span></td>
       <td>${dealsLabel}</td>
       <td></td>
     `;
+    const nameCell = tr.children[0];
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text'; nameInput.value = c.name; nameInput.placeholder = t('namePh');
+    nameInput.style.cssText = 'font-size:12px; padding:4px 8px; width:140px;';
+    nameCell.appendChild(nameInput);
+    const emailCell = tr.children[1];
+    const emailInput = document.createElement('input');
+    emailInput.type = 'email'; emailInput.value = c.email; emailInput.placeholder = t('emailPh');
+    emailInput.style.cssText = 'font-size:12px; padding:4px 8px; width:180px;';
+    emailCell.appendChild(emailInput);
     const actionsCell = tr.children[5];
+    const profileErr = document.createElement('div');
+    profileErr.className = 'gate-error'; profileErr.style.cssText = 'margin:0 0 4px; font-size:11px;';
+    const profileSaveBtn = document.createElement('button');
+    profileSaveBtn.className = 'btn'; profileSaveBtn.style.cssText = 'font-size:11px; margin-right:6px;'; profileSaveBtn.textContent = t('save');
+    profileSaveBtn.onclick = async () => {
+      profileErr.textContent = '';
+      const name = nameInput.value.trim();
+      const email = emailInput.value.trim();
+      if(!name || !email){ profileErr.textContent = t('errNameOrEmail'); return; }
+      profileSaveBtn.disabled = true;
+      try{
+        await apiFetch(`/api/users/${c.id}/profile`, { method:'PATCH', body: JSON.stringify({ name, email }) });
+        c.name = name; c.email = email;
+        profileSaveBtn.textContent = t('saved');
+        setTimeout(() => { profileSaveBtn.textContent = t('save'); }, 1200);
+      }catch(e){ profileErr.textContent = e.message; }
+      profileSaveBtn.disabled = false;
+    };
+    actionsCell.appendChild(profileErr);
+    actionsCell.appendChild(profileSaveBtn);
     const reset2faBtn = document.createElement('button');
     reset2faBtn.className = 'btn'; reset2faBtn.style.fontSize = '11px'; reset2faBtn.textContent = t('reset2fa');
     reset2faBtn.title = t('reset2faTitle');
@@ -2567,7 +2659,7 @@ const MAX_PARTIES_PER_SIDE = 4;
 // niveles (socios directos / entidad padre con o sin trust arriba / trust
 // directo). Se usa tanto al crear una operación (buildNewDealForm) como al
 // agregar/editar una parte de una ya existente (buildPartiesSection).
-function buildPartyFieldsBlock(allowedTypes, existing){
+function buildPartyFieldsBlock(allowedTypes, existing, dealId){
   const box = document.createElement('div');
   box.style.cssText = 'border:0.5px solid var(--line); border-radius:10px; padding:12px; margin-bottom:10px; background:var(--stone-card);';
   const typeOptions = allowedTypes.map(ty => `<option value="${ty}">${TYPE_LABEL[ty]}</option>`).join('');
@@ -2579,6 +2671,25 @@ function buildPartyFieldsBlock(allowedTypes, existing){
       <label>${t('partyEmailLabel')} <input type="email" class="pf-email" placeholder="${t('partyEmailPh')}" ${linkedUser ? 'disabled' : ''}></label>
     </div>
     <div class="field-hint" style="margin-top:-6px;">${linkedUser ? t('partyEmailLinkedHint', { email: linkedUser.email }) : t('partyEmailHint')}</div>
+    ${existing ? `
+      <div class="pf-attorney-wrap" style="margin-top:10px; padding-top:10px; border-top:0.5px dashed var(--line);">
+        ${existing.linkedAttorney ? `
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+            <div class="field-hint" style="margin:0;">${t('attorneyLinkedHint', { name: existing.linkedAttorney.name, email: existing.linkedAttorney.email })}</div>
+            <button type="button" class="btn pf-attorney-remove" style="font-size:11px;">${t('attorneyRemove')}</button>
+          </div>
+        ` : `
+          <label style="display:flex; align-items:center; gap:6px; font-size:12.5px;">
+            <input type="checkbox" class="pf-has-attorney"> ${t('hasAttorneyToggle')}
+          </label>
+          <div class="field-hint" style="margin:2px 0 0;">${t('attorneyHint')}</div>
+          <div class="pf-attorney-fields form-row" style="display:none; margin-top:6px;">
+            <label>${t('attorneyNameLabel')} <input type="text" class="pf-attorney-name" placeholder="${t('attorneyNamePh')}"></label>
+            <label>${t('attorneyEmailLabel')} <input type="email" class="pf-attorney-email" placeholder="${t('partyEmailPh')}"></label>
+          </div>
+        `}
+      </div>
+    ` : ''}
     <div class="pf-ownership" style="display:none;">
       <label>${t('ownershipStructure')} <select class="pf-mode">
         <option value="direct_owners">${t('modeDirectOwners')}</option>
@@ -2628,6 +2739,23 @@ function buildPartyFieldsBlock(allowedTypes, existing){
   modeSel.onchange = updateVisibility;
   parentTrustCheck.onchange = updateVisibility;
 
+  const hasAttorneyCheck = box.querySelector('.pf-has-attorney');
+  const attorneyFields = box.querySelector('.pf-attorney-fields');
+  if(hasAttorneyCheck){
+    hasAttorneyCheck.onchange = () => { attorneyFields.style.display = hasAttorneyCheck.checked ? 'flex' : 'none'; };
+  }
+  const attorneyRemoveBtn = box.querySelector('.pf-attorney-remove');
+  if(attorneyRemoveBtn){
+    attorneyRemoveBtn.onclick = async () => {
+      if(!confirm(t('confirmRemoveAttorney'))) return;
+      attorneyRemoveBtn.disabled = true;
+      try{
+        await apiFetch(`/api/deals/${dealId}/parties/${existing.id}`, { method:'PATCH', body: JSON.stringify({ removeAttorney: true }) });
+        await openDeal(dealId);
+      }catch(e){ alert(e.message); attorneyRemoveBtn.disabled = false; }
+    };
+  }
+
   if(existing){
     box.querySelector('.pf-name').value = existing.name || '';
     if(linkedUser) box.querySelector('.pf-email').value = linkedUser.email;
@@ -2650,6 +2778,11 @@ function buildPartyFieldsBlock(allowedTypes, existing){
     const email = emailInput.disabled ? '' : emailInput.value.trim();
     const p = { side, partyType, name };
     if(email) p.email = email;
+    if(hasAttorneyCheck && hasAttorneyCheck.checked){
+      const attorneyName = box.querySelector('.pf-attorney-name').value.trim();
+      const attorneyEmail = box.querySelector('.pf-attorney-email').value.trim();
+      if(attorneyName && attorneyEmail){ p.attorneyName = attorneyName; p.attorneyEmail = attorneyEmail; }
+    }
     if(partyType !== 'individual'){
       p.ownershipMode = modeSel.value;
       if(modeSel.value === 'direct_owners'){
@@ -2831,7 +2964,7 @@ function buildPartiesSection(deal){
       row.className = 'party-card-row';
       row.innerHTML = `
         <div>
-          <p class="party-name">${escapeHtml(p.name)} <span>(${TYPE_LABEL[p.partyType]})</span>${p.linkedUser ? ` <span class="badge" style="background:var(--jade-soft); color:var(--jade); margin:0 0 0 4px;">${t('accountLinked')}: ${escapeHtml(p.linkedUser.email)}</span>` : ''}</p>
+          <p class="party-name">${escapeHtml(p.name)} <span>(${TYPE_LABEL[p.partyType]})</span>${p.linkedUser ? ` <span class="badge" style="background:var(--jade-soft); color:var(--jade); margin:0 0 0 4px;">${t('accountLinked')}: ${escapeHtml(p.linkedUser.email)}</span>` : ''}${p.linkedAttorney ? ` <span class="badge" style="background:var(--gold-soft); color:#6B4E1E; margin:0 0 0 4px;">${t('attorneyBadge')}: ${escapeHtml(p.linkedAttorney.name)} (${escapeHtml(p.linkedAttorney.email)})</span>` : ''}</p>
           ${p.partyType !== 'individual' ? `<p class="party-meta">${escapeHtml(partyOwnershipSummary(p))}</p>` : ''}
         </div>
         <span style="display:flex; gap:6px; flex-shrink:0;">
@@ -2847,7 +2980,7 @@ function buildPartiesSection(deal){
         if(editSlot.childElementCount){ editSlot.innerHTML = ''; return; }
         const scen = deal.scenario;
         const allowed = side === 'seller' ? SCENARIOS[scen].sellerTypes : SCENARIOS[scen].buyerTypes;
-        const block = buildPartyFieldsBlock(allowed, p);
+        const block = buildPartyFieldsBlock(allowed, p, deal.id);
         block.style.marginTop = '8px';
         const saveBtn = document.createElement('button');
         saveBtn.className = 'btn primary'; saveBtn.style.fontSize = '11px'; saveBtn.textContent = t('save');
@@ -2863,6 +2996,13 @@ function buildPartiesSection(deal){
               alert(msg);
             } else if(result.emailError){
               alert(t('partyRegisterFailedAlert', { error: result.emailError }));
+            }
+            if(result.attorneyTemporaryPassword){
+              let msg = t('attorneyRegisteredAlert', { password: result.attorneyTemporaryPassword });
+              msg += result.attorneyWelcomeEmailSent ? t('welcomeEmailSentNote') : t('welcomeEmailFailedNote', { error: result.attorneyWelcomeEmailError || '' });
+              alert(msg);
+            } else if(result.attorneyError){
+              alert(t('partyRegisterFailedAlert', { error: result.attorneyError }));
             }
             await openDeal(deal.id);
           }catch(e){ errEl.textContent = e.message; }
@@ -2936,12 +3076,12 @@ function buildAdminDealDetail(deal){
   const docsPct = pctDocs(deal), tasksPct = pctTasks(deal);
   header.innerHTML = `
     <div class="deal-head-row">
-      <div class="deal-title" style="font-size:22px; margin:0;">${escapeHtml(deal.property)}</div>
+      <div class="deal-title field-editable" id="deal-title-display" title="${t('clickToEdit')}" style="font-size:22px; margin:0;">${escapeHtml(deal.property)}</div>
       <span class="badge ${s.badgeClass}">${s.labelShort}</span>
       ${deal.status==='completed' ? `<span class="badge" style="background:var(--jade-soft); color:var(--jade);">${t('dealCompletedBadge')}</span>` : ''}
     </div>
     <div class="parties-line">${sellerNamesHtml} <i class="ti ti-arrow-right" aria-hidden="true" style="color:var(--ink-faint); font-size:13px;"></i> ${buyerNamesHtml}</div>
-    <div class="location-line"><i class="ti ti-map-pin" aria-hidden="true"></i> ${DEVELOPMENT_LABEL[deal.development||'punta_mita']}</div>
+    <div class="location-line"><i class="ti ti-map-pin" aria-hidden="true"></i> <span class="field-editable" id="deal-development-display" title="${t('clickToEdit')}">${DEVELOPMENT_LABEL[deal.development||'punta_mita']}</span></div>
     ${deal.agents && deal.agents.length ? `
       <div class="location-line" style="margin-bottom:14px;">
         <i class="ti ti-users" aria-hidden="true"></i>
@@ -2950,8 +3090,8 @@ function buildAdminDealDetail(deal){
     ` : ''}
 
     <div class="stat-row">
-      <div class="stat"><span class="stat-label">${t('propertyLabelColon')}</span><span class="stat-value">${deal.currency||'USD'} ${Number(deal.price||0).toLocaleString()}${deal.furniturePrice ? ' + '+t('furnitureLabel')+' '+Number(deal.furniturePrice).toLocaleString() : ''}</span></div>
-      <div class="stat"><span class="stat-label">${t('startLabel')}</span><span class="stat-value">${deal.startDate || '—'}</span></div>
+      <div class="stat"><span class="stat-label">${t('propertyLabelColon')}</span><span class="stat-value field-editable" id="deal-price-display" title="${t('clickToEdit')}">${deal.currency||'USD'} ${Number(deal.price||0).toLocaleString()}${deal.furniturePrice ? ' + '+t('furnitureLabel')+' '+Number(deal.furniturePrice).toLocaleString() : ''}</span></div>
+      <div class="stat"><span class="stat-label">${t('startLabel')}</span><span class="stat-value field-editable" id="deal-startdate-display" title="${t('clickToEdit')}">${deal.startDate || '—'}</span></div>
       <div class="stat"><span class="stat-label">${t('escrowCompany')}</span><span class="stat-value">${deal.escrowCompany==='tla' ? 'TLA Financial Services' : 'Armour Secure'}</span></div>
     </div>
 
@@ -2981,13 +3121,77 @@ function buildAdminDealDetail(deal){
       ${deal.driveFolderUrl
         ? `<a class="btn" href="${deal.driveFolderUrl}" target="_blank"><i class="ti ti-folder" aria-hidden="true"></i> ${t('openInDrive')}</a>`
         : `<button class="btn" id="create-drive-folder-btn"><i class="ti ti-folder-plus" aria-hidden="true"></i> ${t('createDriveFolder')}</button>`}
-      <button class="btn" id="editDealBtn"><i class="ti ti-pencil" aria-hidden="true"></i> ${t('editDeal')}</button>
       <button class="btn ${deal.status==='completed' ? '' : 'success'}" id="toggleDealStatusBtn">${deal.status==='completed' ? `<i class="ti ti-rotate" aria-hidden="true"></i> ${t('reopenDeal')}` : `<i class="ti ti-check" aria-hidden="true"></i> ${t('markDealCompleted')}`}</button>
       <button class="btn danger" id="delDeal"><i class="ti ti-trash" aria-hidden="true"></i> ${t('deleteDeal')}</button>
     </div>
   `;
   wrap.appendChild(header);
-  header.querySelector('#editDealBtn').onclick = () => { editingDealId = editingDealId === deal.id ? null : deal.id; render(); };
+
+  // Edición directa en el lugar (título, desarrollo, precio/muebles/moneda,
+  // fecha de inicio) — antes había que abrir un formulario aparte más abajo
+  // para tocar cualquiera de estos campos, que quedaba lejos de lo que se
+  // estaba viendo. Cada campo se guarda solo al confirmar (blur/Enter/change),
+  // mismo patrón que Actos jurídicos y las fechas de cierre/due diligence.
+  async function saveDealField(body, revert){
+    try{
+      await apiFetch('/api/deals/' + deal.id, { method:'PATCH', body: JSON.stringify(body) });
+      await openDeal(deal.id);
+    }catch(e){ alert(e.message); if(revert) revert(); else render(); }
+  }
+  header.querySelector('#deal-title-display').onclick = function(){
+    if(this.querySelector('input')) return;
+    const current = deal.property;
+    this.innerHTML = `<input type="text" class="inline-edit-input" style="font:inherit; font-size:22px; width:min(420px,90%);" value="${escapeHtml(current)}">`;
+    const input = this.querySelector('input');
+    input.focus(); input.select();
+    const commit = () => {
+      const next = input.value.trim();
+      if(!next || next === current){ render(); return; }
+      saveDealField({ property: next }, () => render());
+    };
+    input.onblur = commit;
+    input.onkeydown = (e) => { if(e.key==='Enter') input.blur(); if(e.key==='Escape'){ input.onblur=null; render(); } };
+  };
+  header.querySelector('#deal-development-display').onclick = function(){
+    if(this.querySelector('select')) return;
+    const current = deal.development || 'punta_mita';
+    this.innerHTML = `<select class="inline-edit-input" style="font-size:13px;">${developmentOptionsHtml(current)}</select>`;
+    const select = this.querySelector('select');
+    select.focus();
+    select.onchange = () => saveDealField({ development: select.value });
+    select.onblur = () => { if(this.querySelector('select')) render(); };
+  };
+  header.querySelector('#deal-price-display').onclick = function(){
+    if(this.querySelector('input')) return;
+    this.innerHTML = `
+      <input type="number" step="0.01" min="0" class="inline-edit-input pd-price" style="width:110px; font-size:13px;" value="${deal.price||0}">
+      <input type="text" class="inline-edit-input pd-currency" style="width:44px; font-size:13px; text-transform:uppercase;" maxlength="3" value="${escapeHtml(deal.currency||'USD')}">
+      <span class="field-hint" style="margin:0 2px;">+</span>
+      <input type="number" step="0.01" min="0" class="inline-edit-input pd-furniture" style="width:90px; font-size:13px;" value="${deal.furniturePrice||0}" placeholder="${t('furnitureLabel')}">
+      <button type="button" class="btn primary pd-confirm" style="font-size:11px; padding:3px 8px;"><i class="ti ti-check" aria-hidden="true"></i></button>
+    `;
+    const priceInput = this.querySelector('.pd-price');
+    priceInput.focus(); priceInput.select();
+    const commit = () => saveDealField({
+      price: Number(this.querySelector('.pd-price').value) || 0,
+      currency: this.querySelector('.pd-currency').value.trim().toUpperCase() || 'USD',
+      furniturePrice: Number(this.querySelector('.pd-furniture').value) || 0
+    });
+    this.querySelector('.pd-confirm').onclick = commit;
+    [priceInput, this.querySelector('.pd-currency'), this.querySelector('.pd-furniture')].forEach(el => {
+      el.onkeydown = (e) => { if(e.key==='Enter') commit(); if(e.key==='Escape') render(); };
+    });
+  };
+  header.querySelector('#deal-startdate-display').onclick = function(){
+    if(this.querySelector('input')) return;
+    const current = deal.startDate || '';
+    this.innerHTML = `<input type="date" class="inline-edit-input" value="${current}">`;
+    const input = this.querySelector('input');
+    if(input.showPicker){ try{ input.showPicker(); }catch(e){} }
+    input.focus();
+    input.onchange = () => saveDealField({ startDate: input.value || null });
+    input.onblur = () => { if(input.value === current) render(); };
+  };
   header.querySelector('#toggleDealStatusBtn').onclick = async () => {
     const nextStatus = deal.status === 'completed' ? 'active' : 'completed';
     if(nextStatus === 'completed' && !confirm(t('confirmMarkCompleted'))) return;
@@ -2996,45 +3200,6 @@ function buildAdminDealDetail(deal){
       await openDeal(deal.id);
     }catch(e){ alert(e.message); }
   };
-  if(editingDealId === deal.id){
-    const editCard = document.createElement('div');
-    editCard.className = 'card';
-    editCard.innerHTML = `
-      <div style="font-weight:500; font-size:13px; margin-bottom:8px;">${t('editDealTitle')}</div>
-      <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:8px;">
-        <label style="display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--ink-soft);">${t('property')} <input type="text" id="ed-property" value="${escapeHtml(deal.property)}"></label>
-        <label style="display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--ink-soft);">${t('development')} <select id="ed-development">${developmentOptionsHtml(deal.development)}</select></label>
-        <label style="display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--ink-soft);">${t('propertyPrice')} <input type="number" step="0.01" min="0" id="ed-price" value="${deal.price||0}"></label>
-        <label style="display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--ink-soft);">${t('furnitureLabel')} <input type="number" step="0.01" min="0" id="ed-furniture" value="${deal.furniturePrice||0}"></label>
-        <label style="display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--ink-soft);">${t('currency')} <input type="text" id="ed-currency" value="${escapeHtml(deal.currency||'USD')}" maxlength="3" style="text-transform:uppercase;"></label>
-        <label style="display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--ink-soft);">${t('startLabel')} <input type="date" id="ed-startdate" value="${deal.startDate||''}"></label>
-      </div>
-      <div style="display:flex; gap:8px; margin-top:12px;">
-        <button class="btn primary" id="ed-save">${t('saveChanges')}</button>
-        <button class="btn" id="ed-cancel">${t('cancel')}</button>
-      </div>
-      <div class="gate-error" id="ed-error"></div>
-    `;
-    wrap.appendChild(editCard);
-    editCard.querySelector('#ed-cancel').onclick = () => { editingDealId = null; render(); };
-    editCard.querySelector('#ed-save').onclick = async () => {
-      const errEl = editCard.querySelector('#ed-error');
-      errEl.textContent = '';
-      const body = {
-        property: editCard.querySelector('#ed-property').value.trim(),
-        development: editCard.querySelector('#ed-development').value,
-        price: Number(editCard.querySelector('#ed-price').value) || 0,
-        furniturePrice: Number(editCard.querySelector('#ed-furniture').value) || 0,
-        currency: editCard.querySelector('#ed-currency').value.trim().toUpperCase() || 'USD',
-        startDate: editCard.querySelector('#ed-startdate').value || null
-      };
-      try{
-        await apiFetch('/api/deals/' + deal.id, { method:'PATCH', body: JSON.stringify(body) });
-        editingDealId = null;
-        await openDeal(deal.id);
-      }catch(e){ errEl.textContent = e.message; }
-    };
-  }
   const driveFolderBtn = header.querySelector('#create-drive-folder-btn');
   if(driveFolderBtn){
     driveFolderBtn.onclick = async () => {
@@ -4883,7 +5048,7 @@ function renderPortal(body){
     };
     if(portalRole === 'party' && portalPartyId) myParty = deal.parties.find(p=>p.id===portalPartyId) || null;
   } else {
-    myParty = deal.parties.find(p => p.linkedUser && p.linkedUser.userId === currentUser.id) || null;
+    myParty = deal.parties.find(p => p.linkedUserIds.includes(currentUser.id)) || null;
   }
 
   const header = document.createElement('div');

@@ -715,4 +715,47 @@ function ensureUserRoleAllowsExternalLawyer() {
 }
 ensureUserRoleAllowsExternalLawyer();
 
+// Un comprador/vendedor (persona física o moral) a veces actúa por medio de
+// un apoderado — otra cuenta, con las MISMAS facultades sobre esa parte
+// (subir documentos, llenar KYC) que quien representa. Antes deal_parties
+// solo permitía UNA cuenta ligada por parte (UNIQUE(deal_party_entity_id));
+// se cambia a UNIQUE(deal_party_entity_id, relationship) para permitir hasta
+// dos: el titular y su apoderado. El resto de la app (canAccessDeal,
+// myDealPartyEntityId, canTouchDoc en routes/deals.js, checks equivalentes
+// en routes/kyc.js) ya resuelve el acceso por fila de deal_parties, no por
+// "la" cuenta de la parte — así que el apoderado queda con acceso idéntico
+// sin tocar ninguna de esas rutas, solo con tener su propia fila aquí.
+function ensureDealPartiesAllowAttorneyInFact() {
+  const row = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='deal_parties'`).get();
+  if (row && row.sql.includes('relationship')) return;
+
+  db.pragma('foreign_keys = OFF');
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE deal_parties_migration_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        role_in_deal TEXT NOT NULL CHECK(role_in_deal IN ('buyer','seller','agent')),
+        deal_party_entity_id INTEGER REFERENCES deal_party_entities(id) ON DELETE CASCADE,
+        represents_side TEXT,
+        relationship TEXT NOT NULL DEFAULT 'titular',
+        UNIQUE(deal_id, user_id),
+        UNIQUE(deal_party_entity_id, relationship)
+      );
+      INSERT INTO deal_parties_migration_new (id, deal_id, user_id, role_in_deal, deal_party_entity_id, represents_side, relationship)
+        SELECT id, deal_id, user_id, role_in_deal, deal_party_entity_id, represents_side, 'titular' FROM deal_parties;
+      DROP TABLE deal_parties;
+      ALTER TABLE deal_parties_migration_new RENAME TO deal_parties;
+    `);
+    const violations = db.prepare('PRAGMA foreign_key_check').all();
+    if (violations.length) {
+      throw new Error('Migración de deal_parties dejaría foreign keys rotas: ' + JSON.stringify(violations));
+    }
+  })();
+  db.pragma('foreign_keys = ON');
+  console.log('[migration] deal_parties ahora acepta un apoderado (relationship=\'attorney_in_fact\') por parte');
+}
+ensureDealPartiesAllowAttorneyInFact();
+
 module.exports = db;

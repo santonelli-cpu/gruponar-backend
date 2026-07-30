@@ -28,6 +28,11 @@ const phoneSchema = z.object({
   phone: z.string().trim().max(30).optional().default('')
 }).strict();
 
+const profileSchema = z.object({
+  name: z.string().trim().min(1, 'Escribe un nombre.').max(200, 'El nombre es demasiado largo.'),
+  email: z.string().trim().toLowerCase().max(254).email('Ese correo no tiene un formato válido.')
+}).strict();
+
 // POST /api/users — solo admin crea cuentas de equipo (agente, abogado, otro
 // admin) o cuentas de cliente directas. Restringido a admin (antes cualquier
 // agente podía crear una cuenta con role:'admin' — escalamiento de
@@ -101,6 +106,22 @@ router.patch('/:id/agency', requireRole('admin'), rateLimitWrite, validateBody(a
   if (!resolved) return res.status(400).json({ error: 'Elige una agencia (o escribe cuál si no está en la lista).' });
   db.prepare('UPDATE users SET agency = ? WHERE id = ?').run(resolved, req.params.id);
   res.json({ ok: true, agency: resolved });
+});
+
+// PATCH /api/users/:id/profile — admin corrige el nombre/correo de una
+// cuenta ya registrada (agente, abogado interno/externo, comprador,
+// vendedor — cualquier rol), por ejemplo cuando alguien se equivocó al
+// registrarse o cambió de correo. No aplica a admin (para no poder
+// editarse/editar a otro admin por aquí sin querer) ni cambia la
+// contraseña — solo nombre y correo.
+router.patch('/:id/profile', requireRole('admin'), rateLimitWrite, validateBody(profileSchema), (req, res) => {
+  const user = db.prepare("SELECT id FROM users WHERE id = ? AND role != 'admin'").get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'Cuenta no encontrada.' });
+  const { name, email } = req.body;
+  const emailTaken = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email, req.params.id);
+  if (emailTaken) return res.status(409).json({ error: 'Ya existe otra cuenta con ese correo.' });
+  db.prepare('UPDATE users SET name = ?, email = ? WHERE id = ?').run(name, email, req.params.id);
+  res.json({ ok: true, name, email });
 });
 
 router.get('/known-agencies', requireRole('admin'), (req, res) => {

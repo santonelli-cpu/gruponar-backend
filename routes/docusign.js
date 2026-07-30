@@ -70,10 +70,14 @@ async function syncTaskDocToDrive(req, dealId, filename, buffer) {
 // tareas de firma ad-hoc (tasks.sign_side, ver POST /deals/:id/tasks abajo)
 // para documentos que solo le tocan a comprador o a vendedor, nunca a ambos.
 function getSigners(dealId, side) {
+  // Solo el titular de cada parte firma — el apoderado (relationship=
+  // 'attorney_in_fact', ver ensureDealPartiesAllowAttorneyInFact en
+  // db/index.js) tiene las mismas facultades sobre documentos/KYC, pero
+  // agregarlo aquí mandaría el mismo sobre a firmar dos veces por parte.
   return db.prepare(`
     SELECT u.id AS userId, u.name, u.email, dp.role_in_deal AS roleInDeal
     FROM deal_parties dp JOIN users u ON u.id = dp.user_id
-    WHERE dp.deal_id = ? AND dp.role_in_deal IN ('buyer','seller')
+    WHERE dp.deal_id = ? AND dp.role_in_deal IN ('buyer','seller') AND dp.relationship = 'titular'
       AND (? IS NULL OR dp.role_in_deal = ?)
     ORDER BY CASE dp.role_in_deal WHEN 'buyer' THEN 0 ELSE 1 END, dp.id
   `).all(dealId, side || null, side || null);

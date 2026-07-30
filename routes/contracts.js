@@ -80,12 +80,16 @@ function anchorForSigner(side, indexInSide) {
 // Firmantes reales de una operación (comprador(es) + vendedor(es) con cuenta
 // ligada), en un orden estable — el mismo orden se usa tanto para generar el
 // documento (extraSigners en fillContractTemplate) como para armar el sobre
-// de DocuSign, así los anchors coinciden entre ambos pasos.
+// de DocuSign, así los anchors coinciden entre ambos pasos. Solo el titular
+// de cada parte firma aquí — si tiene apoderado (relationship='attorney_in_fact',
+// ver ensureDealPartiesAllowAttorneyInFact en db/index.js), ese no se agrega
+// como firmante extra: mandaría el mismo contrato a firmar dos veces cuando
+// solo se espera una firma por parte.
 function loadSigners(dealId) {
   return db.prepare(`
     SELECT u.id AS userId, u.name, u.email, dp.role_in_deal AS roleInDeal
     FROM deal_parties dp JOIN users u ON u.id = dp.user_id
-    WHERE dp.deal_id = ? AND dp.role_in_deal IN ('buyer','seller')
+    WHERE dp.deal_id = ? AND dp.role_in_deal IN ('buyer','seller') AND dp.relationship = 'titular'
     ORDER BY CASE dp.role_in_deal WHEN 'buyer' THEN 0 ELSE 1 END, dp.id
   `).all(dealId);
 }
