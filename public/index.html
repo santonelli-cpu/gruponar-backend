@@ -488,8 +488,8 @@ const STRINGS = {
     noFieldsHint2: 'Guarda el Word y súbelo de nuevo como machote (puedes borrar este con el botón ⋯ de la lista si ya no lo necesitas). Mientras tanto, igual puedes generar el documento tal cual está, sin campos dinámicos.',
     generateDownloadDocx: 'Generar y descargar .docx', viewPdf: 'Ver PDF',
     portalPreviewBanner: 'Vista previa del portal de cliente — así lo ve un comprador o vendedor real.',
-    selectEllipsis: 'Selecciona...',
-    selectDealToView: 'Selecciona una operación para ver tu expediente.',
+    myDeals: 'Mis operaciones',
+    noDealsYetPortal: 'Todavía no tienes ninguna operación ligada a tu cuenta.<br>En cuanto te agreguen a una, aparecerá aquí.',
     loadingFile: 'Cargando expediente...',
     viewAs: 'Ver como', agentSeesAll: 'Agente (ve todo)',
     yourDocsChecklist: 'Tu checklist de documentos (KYC)', yourKycFile: 'Tu expediente KYC',
@@ -680,8 +680,8 @@ const STRINGS = {
     noFieldsHint2: "Save the Word file and upload it again as a template (you can delete this one with the ⋯ button on the list if you don't need it anymore). Meanwhile, you can still generate the document as-is, with no dynamic fields.",
     generateDownloadDocx: 'Generate and download .docx', viewPdf: 'View PDF',
     portalPreviewBanner: "Client portal preview — this is what a real buyer or seller sees.",
-    selectEllipsis: 'Select...',
-    selectDealToView: 'Select a deal to view your file.',
+    myDeals: 'My deals',
+    noDealsYetPortal: "You don't have any deal linked to your account yet.<br>As soon as you're added to one, it'll show up here.",
     loadingFile: 'Loading file...',
     viewAs: 'View as', agentSeesAll: 'Agent (sees everything)',
     yourDocsChecklist: 'Your document checklist (KYC)', yourKycFile: 'Your KYC file',
@@ -3925,6 +3925,30 @@ function buildContractSection(deal, isStaffView){
 }
 
 // ---------- PORTAL ----------
+
+// Tarjetas de operación para un comprador/vendedor/agente con más de una
+// operación activa (o admin/abogado en vista previa) — reemplaza el
+// dropdown plano que era la única forma de moverse entre operaciones en el
+// portal. Reusa el mismo estilo .deal-card que ya usa la lista de
+// Operaciones de admin, para que se sienta como la misma app.
+function buildPortalDealsDashboard(){
+  const grid = document.createElement('div');
+  deals.forEach(d => {
+    const s = SCENARIOS[d.scenario];
+    const card = document.createElement('div');
+    card.className = 'deal-card';
+    card.innerHTML = `
+      <div class="deal-title">${escapeHtml(d.property)}</div>
+      <div class="deal-sub">${escapeHtml(dealPartyNames(d,'seller'))} → ${escapeHtml(dealPartyNames(d,'buyer'))}</div>
+      <span class="badge ${s.badgeClass}">${s.labelShort}</span>
+      ${d.status==='completed' ? `<span class="badge" style="background:var(--jade-soft); color:var(--jade); margin-left:4px;">${t('dealCompletedBadge')}</span>` : ''}
+      <div class="deal-sub" style="margin-top:6px;">${t('documentsLabel')}: ${pctDocs(d)}% · ${t('trackerLabel')}: ${pctTasks(d)}%</div>
+    `;
+    card.onclick = () => { portalDealId = d.id; portalRole = 'agent'; portalPartyId = null; render(); };
+    grid.appendChild(card);
+  });
+  return grid;
+}
 function renderPortal(body){
   // Solo admin/agente/abogado pueden "ver como" cualquier persona — es una
   // vista previa interna. Un comprador/vendedor real siempre ve solo su
@@ -3939,32 +3963,42 @@ function renderPortal(body){
     body.appendChild(banner);
   }
 
-  const controls = document.createElement('div');
-  controls.className = 'card';
-  controls.innerHTML = `
-    <div class="form-row" style="margin-bottom:0;">
-      <label>${t('dealSingular')} <select id="p-deal"><option value="">${t('selectEllipsis')}</option>${deals.map(d=>`<option value="${d.id}">${escapeHtml(d.property)}</option>`).join('')}</select></label>
-    </div>
-  `;
-  body.appendChild(controls);
-  controls.querySelector('#p-deal').value = portalDealId || '';
-  controls.querySelector('#p-deal').onchange = e => {
-    portalDealId = Number(e.target.value) || null;
-    portalRole = 'agent'; portalPartyId = null;
-    openDeal(portalDealId);
-  };
-
-  const deal = deals.find(d=>d.id===portalDealId);
-  if(!deal){
+  if(!deals.length){
     const empty = document.createElement('div');
     empty.className = 'empty';
-    empty.innerHTML = `<i class="ti ti-folder-search" aria-hidden="true"></i><div>${t('selectDealToView')}</div>`;
+    empty.innerHTML = `<i class="ti ti-folder-search" aria-hidden="true"></i><div>${t('noDealsYetPortal')}</div>`;
     body.appendChild(empty);
     return;
   }
+
+  // Con una sola operación (el caso normal de un comprador/vendedor) no
+  // tiene caso obligarlo a elegirla de un dropdown — se abre directo. Con
+  // varias (agente con múltiples clientes, o admin/abogado en vista
+  // previa), se ve un mini-dashboard de tarjetas en vez del selector plano
+  // que antes era la única forma de moverse entre operaciones.
+  if(!portalDealId && deals.length === 1) portalDealId = deals[0].id;
+  if(portalDealId && !deals.some(d => d.id === portalDealId)) portalDealId = null;
+
+  if(!portalDealId){
+    const dt = document.createElement('div'); dt.className = 'section-title'; dt.textContent = t('myDeals');
+    body.appendChild(dt);
+    body.appendChild(buildPortalDealsDashboard());
+    return;
+  }
+
+  if(deals.length > 1){
+    const back = document.createElement('button');
+    back.className = 'crumb';
+    back.innerHTML = `<i class="ti ti-chevron-left" aria-hidden="true"></i> ${t('myDeals')}`;
+    back.onclick = () => { portalDealId = null; portalRole = 'agent'; portalPartyId = null; render(); };
+    body.appendChild(back);
+  }
+
+  const deal = deals.find(d=>d.id===portalDealId);
   const s = SCENARIOS[deal.scenario];
 
   if(!deal._loaded){
+    if(!deal._loading){ deal._loading = true; openDeal(portalDealId); }
     const loading = document.createElement('div');
     loading.className = 'empty';
     loading.innerHTML = `<i class="ti ti-loader-2" aria-hidden="true"></i><div>${t('loadingFile')}</div>`;
