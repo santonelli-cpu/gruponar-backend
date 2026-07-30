@@ -382,7 +382,6 @@ const STRINGS = {
     editAgency: 'Editar agencia', setAgency: 'Poner agencia',
     registerDirect: 'Dar de alta directo', registerDirectTitle: 'Crea la cuenta de una vez con una contraseña temporal, en vez de mandar un link de invitación por correo.',
     registerDirectDone: 'Cuenta creada y se le mandó un correo de bienvenida para que entre y ponga su propia contraseña. Si prefieres compartírsela tú directamente (teléfono, WhatsApp, en persona), aquí está la temporal:',
-    registerLinkedExistingDone: 'Ya existía una cuenta con ese correo (probablemente de otra operación) — se ligó a esta parte. No hace falta contraseña nueva ni correo de bienvenida.',
     registerDirectHint: 'La persona puede cambiarla cuando quiera desde su cuenta una vez que inicie sesión con su correo y esta contraseña.',
     temporaryPassword: 'Contraseña temporal',
     removeFromDeal: 'Quitar de esta operación', addAgentTitle: 'Agregar agente a esta operación', addAgentHint: 'Elige un agente que ya tiene cuenta — no hace falta invitarlo de nuevo.',
@@ -394,7 +393,8 @@ const STRINGS = {
     errNameOrEmail: 'Falta nombre o correo.',
     partyNamePh: 'Nombre completo o razón social', type: 'Tipo',
     partyEmailLabel: 'Correo (opcional)', partyEmailPh: 'correo@ejemplo.com',
-    partyEmailHint: 'Si lo pones, se da de alta su cuenta de una vez (contraseña temporal para compartir tú) — así se le puede mandar a firmar aunque no se registre por su cuenta.',
+    partyEmailHint: 'Si lo pones y guardas, se da de alta y liga su cuenta de una vez (contraseña temporal para compartir tú, y le llega un correo de bienvenida) — así se le puede mandar a firmar aunque no se registre por su cuenta.',
+    partyEmailLinkedHint: 'Cuenta ligada: {email}',
     partyRegisteredAlert: 'Cuenta creada. Contraseña temporal: {password}\n\nCompártela con esta persona por el canal que prefieras.',
     partyRegisterFailedAlert: 'La parte se agregó bien, pero no se pudo dar de alta su cuenta: {error}',
     partyRegisteredLine: '{name} ({email}) — contraseña temporal: {password}',
@@ -462,7 +462,7 @@ const STRINGS = {
     ddEndedBanner: 'Due diligence terminó el {date} — ya se puede avanzar con el resto del tracker.',
     ddPendingBanner: 'Due diligence termina el {date}.',
     requiresSignature: 'Requiere firma',
-    inviteHint: 'Genera un link para que una persona específica de esta operación (o un agente) cree su propia cuenta.',
+    inviteHint: 'Invita a un agente o abogado externo de esta operación a crear su propia cuenta. Para comprador/vendedor, usa la sección de "Vendedores y compradores" arriba: solo pon su correo y guarda.',
     personToInvite: 'Persona a invitar', agentThisDeal: 'Agente (esta operación)', externalLawyerThisDeal: 'Abogado externo (esta operación)',
     inviteLinkCopyShare: 'Link de invitación (cópialo y compártelo)',
     inviteEmailSent: 'Correo de invitación enviado a {email}.',
@@ -571,7 +571,6 @@ const STRINGS = {
     editAgency: 'Edit agency', setAgency: 'Set agency',
     registerDirect: 'Register directly', registerDirectTitle: 'Create the account right away with a temporary password, instead of sending an email invite link.',
     registerDirectDone: "Account created and a welcome email was sent so they can log in and set their own password. If you'd rather share it yourself (phone, WhatsApp, in person), here's the temporary one:",
-    registerLinkedExistingDone: 'An account with that email already existed (likely from another deal) — it was linked to this party. No new password or welcome email needed.',
     registerDirectHint: 'They can change it whenever they want from their account once they log in with their email and this password.',
     temporaryPassword: 'Temporary password',
     removeFromDeal: 'Remove from this deal', addAgentTitle: 'Add an agent to this deal', addAgentHint: 'Pick an agent who already has an account — no need to invite them again.',
@@ -583,7 +582,8 @@ const STRINGS = {
     errNameOrEmail: 'Missing name or email.',
     partyNamePh: 'Full name or company name', type: 'Type',
     partyEmailLabel: 'Email (optional)', partyEmailPh: 'email@example.com',
-    partyEmailHint: 'If you fill this in, their account is created right away (a temp password for you to share) — so you can send them documents to sign even if they never register on their own.',
+    partyEmailHint: 'If you fill this in and save, their account is created and linked right away (a temp password for you to share, plus a welcome email) — so you can send them documents to sign even if they never register on their own.',
+    partyEmailLinkedHint: 'Account linked: {email}',
     partyRegisteredAlert: 'Account created. Temporary password: {password}\n\nShare it with this person through whatever channel you prefer.',
     partyRegisterFailedAlert: 'The party was added fine, but their account could not be created: {error}',
     partyRegisteredLine: '{name} ({email}) — temporary password: {password}',
@@ -651,7 +651,7 @@ const STRINGS = {
     ddEndedBanner: 'Due diligence ended on {date} — you can now move ahead with the rest of the tracker.',
     ddPendingBanner: 'Due diligence ends on {date}.',
     requiresSignature: 'Requires signature',
-    inviteHint: 'Generate a link so a specific person in this deal (or an agent) can create their own account.',
+    inviteHint: 'Invite an agent or external lawyer on this deal to create their own account. For a buyer/seller, use the "Sellers and buyers" section above instead: just enter their email and save.',
     personToInvite: 'Person to invite', agentThisDeal: 'Agent (this deal)', externalLawyerThisDeal: 'External lawyer (this deal)',
     inviteLinkCopyShare: 'Invitation link (copy and share it)',
     inviteEmailSent: 'Invitation email sent to {email}.',
@@ -2037,13 +2037,14 @@ function buildPartyFieldsBlock(allowedTypes, existing){
   const box = document.createElement('div');
   box.style.cssText = 'border:0.5px solid var(--line); border-radius:10px; padding:12px; margin-bottom:10px; background:var(--stone-card);';
   const typeOptions = allowedTypes.map(ty => `<option value="${ty}">${TYPE_LABEL[ty]}</option>`).join('');
+  const linkedUser = existing && existing.linkedUser;
   box.innerHTML = `
     <div class="form-row">
       <label>${t('name')} <input type="text" class="pf-name" placeholder="${t('partyNamePh')}"></label>
       <label>${t('type')} <select class="pf-type">${typeOptions}</select></label>
-      <label>${t('partyEmailLabel')} <input type="email" class="pf-email" placeholder="${t('partyEmailPh')}"></label>
+      <label>${t('partyEmailLabel')} <input type="email" class="pf-email" placeholder="${t('partyEmailPh')}" ${linkedUser ? 'disabled' : ''}></label>
     </div>
-    <div class="field-hint" style="margin-top:-6px;">${t('partyEmailHint')}</div>
+    <div class="field-hint" style="margin-top:-6px;">${linkedUser ? t('partyEmailLinkedHint', { email: linkedUser.email }) : t('partyEmailHint')}</div>
     <div class="pf-ownership" style="display:none;">
       <label>${t('ownershipStructure')} <select class="pf-mode">
         <option value="direct_owners">${t('modeDirectOwners')}</option>
@@ -2095,6 +2096,7 @@ function buildPartyFieldsBlock(allowedTypes, existing){
 
   if(existing){
     box.querySelector('.pf-name').value = existing.name || '';
+    if(linkedUser) box.querySelector('.pf-email').value = linkedUser.email;
     if(allowedTypes.includes(existing.partyType)) typeSel.value = existing.partyType;
     if(existing.ownershipMode) modeSel.value = existing.ownershipMode;
     if(existing.owners && existing.owners[0]) box.querySelector('.pf-owner1').value = existing.owners[0].name;
@@ -2110,7 +2112,8 @@ function buildPartyFieldsBlock(allowedTypes, existing){
   box.collectParty = function(side){
     const partyType = typeSel.value;
     const name = box.querySelector('.pf-name').value.trim();
-    const email = box.querySelector('.pf-email').value.trim();
+    const emailInput = box.querySelector('.pf-email');
+    const email = emailInput.disabled ? '' : emailInput.value.trim();
     const p = { side, partyType, name };
     if(email) p.email = email;
     if(partyType !== 'individual'){
@@ -2294,7 +2297,7 @@ function buildPartiesSection(deal){
       row.className = 'party-card-row';
       row.innerHTML = `
         <div>
-          <p class="party-name">${escapeHtml(p.name)} <span>(${TYPE_LABEL[p.partyType]})</span>${p.linkedUser ? ` <span class="badge" style="background:var(--jade-soft); color:var(--jade); margin:0 0 0 4px;">${t('accountLinked')}</span>` : ''}</p>
+          <p class="party-name">${escapeHtml(p.name)} <span>(${TYPE_LABEL[p.partyType]})</span>${p.linkedUser ? ` <span class="badge" style="background:var(--jade-soft); color:var(--jade); margin:0 0 0 4px;">${t('accountLinked')}: ${escapeHtml(p.linkedUser.email)}</span>` : ''}</p>
           ${p.partyType !== 'individual' ? `<p class="party-meta">${escapeHtml(partyOwnershipSummary(p))}</p>` : ''}
         </div>
         <span style="display:flex; gap:6px; flex-shrink:0;">
@@ -2319,7 +2322,12 @@ function buildPartiesSection(deal){
         saveBtn.onclick = async () => {
           errEl.textContent = '';
           try{
-            await apiFetch(`/api/deals/${deal.id}/parties/${p.id}`, { method:'PATCH', body: JSON.stringify(block.collectParty(side)) });
+            const result = await apiFetch(`/api/deals/${deal.id}/parties/${p.id}`, { method:'PATCH', body: JSON.stringify(block.collectParty(side)) });
+            if(result.temporaryPassword){
+              alert(t('partyRegisteredAlert', { password: result.temporaryPassword }));
+            } else if(result.emailError){
+              alert(t('partyRegisterFailedAlert', { error: result.emailError }));
+            }
             await openDeal(deal.id);
           }catch(e){ errEl.textContent = e.message; }
         };
@@ -3345,25 +3353,25 @@ const DEVELOPMENT_LABEL = new Proxy(DEVELOPMENT_LABEL_I18N, {
   get(target, key){ const e = target[key]; return e ? (e[lang] || e.es) : undefined; }
 });
 
+// Solo para agentes/abogados externos — un comprador/vendedor se da de
+// alta/liga directo desde su propia tarjeta en "Sellers and buyers"
+// (buildPartyFieldsBlock, con solo poner su correo y guardar), que es la
+// única forma de hacerlo desde que esta sección confundía a los usuarios
+// (parecía que había dos caminos distintos para lo mismo).
 function buildInviteForm(deal){
   const card = document.createElement('div');
   card.className = 'card';
-  const unlinked = deal.parties.filter(p => !p.linkedUser);
-  const partyOptions = unlinked.map(p =>
-    `<option value="party:${p.id}">${escapeHtml(p.name)} (${p.side==='seller'?t('sellerLabel2'):t('buyerLabel2')} · ${TYPE_LABEL[p.partyType]})</option>`
-  ).join('');
   card.innerHTML = `
     <div class="field-hint" style="margin-top:0;">${t('inviteHint')}</div>
     <div class="form-row">
       <label>${t('personToInvite')} <select id="inv-target">
-        ${partyOptions}
         <option value="agent">${t('agentThisDeal')}</option>
         <option value="external_lawyer">${t('externalLawyerThisDeal')}</option>
       </select></label>
       <label>${t('name')} <input type="text" id="inv-name" placeholder="${t('namePh')}"></label>
       <label>${t('email')} <input type="email" id="inv-email" placeholder="${t('emailPh')}"></label>
     </div>
-    <div class="form-row" id="inv-agent-fields" style="display:none;">
+    <div class="form-row" id="inv-agent-fields">
       <label>${t('representsUnset')} <select id="inv-represents">
         <option value="">${t('representsUnset')}</option>
         <option value="seller">${t('representsSeller')}</option>
@@ -3403,34 +3411,20 @@ function buildInviteForm(deal){
     </div>
     <div class="gate-error" id="inv-error"></div>
   `;
-  if(!unlinked.length){
-    card.querySelector('#inv-target').innerHTML = `<option value="agent">${t('agentThisDeal')}</option><option value="external_lawyer">${t('externalLawyerThisDeal')}</option>`;
-  }
   const targetSel = card.querySelector('#inv-target');
   const nameInput = card.querySelector('#inv-name');
   const registerDirectBtn = card.querySelector('#inv-register-direct');
-  const agentFieldsRow = card.querySelector('#inv-agent-fields');
   const agencyFieldsSpan = card.querySelector('#inv-agency-fields');
   const agencySelect = card.querySelector('#inv-agency');
   const agencyOtherInput = card.querySelector('#inv-agency-other');
   agencySelect.onchange = () => { agencyOtherInput.style.display = agencySelect.value === 'Otro' ? '' : 'none'; };
-  const isCollaboratorTarget = () => ['agent', 'external_lawyer'].includes(targetSel.value);
-  const prefillName = () => {
-    if(targetSel.value.startsWith('party:')){
-      const party = unlinked.find(p => 'party:'+p.id === targetSel.value);
-      if(party && !nameInput.value) nameInput.value = party.name;
-    }
-    agentFieldsRow.style.display = isCollaboratorTarget() ? '' : 'none';
+  const updateAgencyVisibility = () => {
     // La agencia (LPR Luxury, etc.) solo aplica a agente de venta — un
     // abogado externo no tiene una.
     agencyFieldsSpan.style.display = targetSel.value === 'agent' ? '' : 'none';
-    // Dar de alta directo funciona para una parte específica (comprador/
-    // vendedor) o para un colaborador nuevo (sin cuenta todavía) — para uno
-    // que YA tiene cuenta se usa el dropdown de "Agentes disponibles".
-    registerDirectBtn.disabled = false;
   };
-  targetSel.onchange = prefillName;
-  prefillName();
+  targetSel.onchange = updateAgencyVisibility;
+  updateAgencyVisibility();
 
   card.querySelector('#inv-generate').onclick = async () => {
     const target = targetSel.value;
@@ -3439,12 +3433,7 @@ function buildInviteForm(deal){
     const errEl = card.querySelector('#inv-error');
     errEl.textContent = '';
     if (!name || !email) { errEl.textContent = t('errNameOrEmail'); return; }
-    const body = ['agent', 'external_lawyer'].includes(target)
-      ? { dealId: deal.id, roleInDeal: target, name, email, representsSide: card.querySelector('#inv-represents').value || null }
-      : (() => {
-          const party = unlinked.find(p => 'party:'+p.id === target);
-          return { dealId: deal.id, dealPartyEntityId: party.id, roleInDeal: party.side, name, email };
-        })();
+    const body = { dealId: deal.id, roleInDeal: target, name, email, representsSide: card.querySelector('#inv-represents').value || null };
     try {
       const { url, emailSent, emailError } = await apiFetch('/api/invites', { method: 'POST', body: JSON.stringify(body) });
       const linkInput = card.querySelector('#inv-link');
@@ -3472,23 +3461,15 @@ function buildInviteForm(deal){
     errEl.textContent = '';
     if (!name || !email) { errEl.textContent = t('errNameOrEmail'); return; }
     try {
-      let temporaryPassword, linkedExisting = false;
-      if(['agent', 'external_lawyer'].includes(target)){
-        const agency = target === 'agent' ? agencySelect.value : '';
-        const agencyOther = target === 'agent' ? agencyOtherInput.value.trim() : '';
-        if(target === 'agent' && (!agency || (agency === 'Otro' && !agencyOther))){ errEl.textContent = t('registerErrAgency'); return; }
-        const representsSide = card.querySelector('#inv-represents').value || null;
-        ({ temporaryPassword } = await apiFetch(`/api/deals/${deal.id}/agents/register`, {
-          method: 'POST', body: JSON.stringify({ name, email, role: target, agency, agencyOther, representsSide })
-        }));
-      } else {
-        const party = unlinked.find(p => 'party:'+p.id === target);
-        ({ temporaryPassword, linkedExisting } = await apiFetch(`/api/deals/${deal.id}/parties/${party.id}/register-user`, {
-          method: 'POST', body: JSON.stringify({ name, email })
-        }));
-      }
-      card.querySelector('#inv-direct-result-label').textContent = linkedExisting ? t('registerLinkedExistingDone') : t('registerDirectDone');
-      card.querySelector('#inv-direct-password-row').style.display = linkedExisting ? 'none' : '';
+      const agency = target === 'agent' ? agencySelect.value : '';
+      const agencyOther = target === 'agent' ? agencyOtherInput.value.trim() : '';
+      if(target === 'agent' && (!agency || (agency === 'Otro' && !agencyOther))){ errEl.textContent = t('registerErrAgency'); return; }
+      const representsSide = card.querySelector('#inv-represents').value || null;
+      const { temporaryPassword } = await apiFetch(`/api/deals/${deal.id}/agents/register`, {
+        method: 'POST', body: JSON.stringify({ name, email, role: target, agency, agencyOther, representsSide })
+      });
+      card.querySelector('#inv-direct-result-label').textContent = t('registerDirectDone');
+      card.querySelector('#inv-direct-password-row').style.display = '';
       card.querySelector('#inv-direct-password').value = temporaryPassword || '';
       card.querySelector('#inv-direct-result').style.display = 'block';
       await openDeal(deal.id);

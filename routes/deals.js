@@ -197,9 +197,9 @@ function insertPartyWithDocs(dealId, scenario, side, sortOrder, p) {
 }
 
 // Da de alta la cuenta de un comprador/vendedor y la liga a su parte, sin
-// envolver en su propia transacción — para poder usarse suelta
-// (register-user) o DENTRO de la transacción de crear la operación/agregar
-// una parte (better-sqlite3 no soporta transacciones anidadas). Deja que el
+// envolver en su propia transacción — para poder usarse DENTRO de la
+// transacción de crear la operación, agregar una parte, o editar una parte
+// (better-sqlite3 no soporta transacciones anidadas). Deja que el
 // comprador/vendedor pueda firmar documentos sin tener que registrarse él
 // mismo: el agente/admin comparte la contraseña temporal por el canal que
 // prefiera (teléfono, WhatsApp, en persona), y además se le manda un correo
@@ -241,7 +241,9 @@ function registerPartyUserRaw(dealId, party, name, email) {
 // contraseña) — el link es de restablecer contraseña porque la cuenta y su
 // contraseña temporal ya existen, a diferencia de la invitación de verdad.
 // Nunca lanza — un correo que falla no debe tumbar el alta de la parte.
-async function sendPartyWelcomeEmail(req, dealProperty, name, email, side) {
+// `scenario` decide el idioma (mailer.resolveClientLang) — un comprador
+// extranjero (ej. fideicomiso) no entiende un correo en español.
+async function sendPartyWelcomeEmail(req, dealProperty, name, email, side, scenario) {
   if (!mailer.isConfigured()) return;
   try {
     const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase().trim());
@@ -250,7 +252,8 @@ async function sendPartyWelcomeEmail(req, dealProperty, name, email, side) {
     const expiresAt = new Date(Date.now() + 7 * 86400000).toISOString();
     db.prepare('INSERT INTO password_resets (token, user_id, expires_at) VALUES (?,?,?)').run(token, user.id, expiresAt);
     const url = `${req.protocol}://${req.get('host')}/reset-password.html?token=${token}`;
-    await mailer.sendInviteEmail({ to: email, name, roleInDeal: side, dealProperty, url });
+    const lang = mailer.resolveClientLang(scenario, side);
+    await mailer.sendInviteEmail({ to: email, name, roleInDeal: side, dealProperty, url, lang });
   } catch (err) {
     console.error('[welcome-email] no se pudo mandar a', email, '-', err.message);
   }
@@ -365,7 +368,7 @@ router.post('/', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (re
     tryCreateDriveFolder(req, result.id, property);
     result.partyResults
       .filter(r => !r.error && !r.linkedExisting)
-      .forEach(r => sendPartyWelcomeEmail(req, property, r.partyName, r.email, r.side));
+      .forEach(r => sendPartyWelcomeEmail(req, property, r.partyName, r.email, r.side, scenario));
   } catch (err) {
     res.status(500).json({ error: err.message || 'Error al crear la operación.' });
   }
@@ -503,13 +506,18 @@ router.post('/:id/parties', requireRole('admin', 'agent', 'lawyer', 'external_la
 
   res.status(201).json({ id: partyId, temporaryPassword, emailError });
   if (p.email && p.email.trim() && !emailError && !linkedExisting) {
-    sendPartyWelcomeEmail(req, deal.property, p.name, p.email, p.side);
+    sendPartyWelcomeEmail(req, deal.property, p.name, p.email, p.side, deal.scenario);
   }
 });
 
 // PATCH /api/deals/:id/parties/:partyId — editar nombre/estructura de una
 // parte existente (ej. completar la estructura de propiedad de una
-// operación migrada, o corregir un dato).
+// operación migrada, o corregir un dato). Este es también EL lugar donde se
+// liga/da de alta la cuenta del comprador/vendedor: basta con poner su
+// correo aquí y guardar — antes existía una sección aparte ("Invite to this
+// deal") para esto y resultaba confuso, así que esa sección ahora es solo
+// para agentes/abogados externos (ver buildInviteForm en el frontend) y
+// esta es la ÚNICA forma de ligar/crear la cuenta de una parte.
 router.patch('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
@@ -520,6 +528,13 @@ router.patch('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer', 'e
   const err = validateParty(p);
   if (err) return res.status(400).json({ error: err });
 
+  // Ya ligada — no se vuelve a intentar registrar/ligar con el correo que
+  // venga en el body (cambiar la cuenta ligada de una parte no es un caso
+  // que se pida hoy; el campo de correo en el frontend se deshabilita una
+  // vez ligada, esto es un respaldo del lado del servidor).
+  const alreadyLinked = db.prepare('SELECT 1 FROM deal_parties WHERE deal_party_entity_id = ?').get(party.id);
+
+  let temporaryPassword, linkedExisting, emailError;
   db.transaction(() => {
     db.prepare(`
       UPDATE deal_party_entities SET name=?, party_type=?, ownership_mode=?, parent_entity_name=?, parent_entity_type=?, parent_has_trust_above=?, parent_trust_name=?, direct_trust_name=?
@@ -540,9 +555,20 @@ router.patch('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer', 'e
       p.owners.forEach((o, oi) => insertOwner.run(party.id, oi, o.name));
     }
     rebuildChecklistForParty(deal, party.id, p);
+
+    if (!alreadyLinked && p.email && p.email.trim()) {
+      try {
+        ({ temporaryPassword, linkedExisting } = registerPartyUserRaw(req.params.id, party, p.name, p.email));
+      } catch (regErr) {
+        emailError = regErr.message;
+      }
+    }
   })();
 
-  res.json({ ok: true });
+  res.json({ ok: true, temporaryPassword, emailError });
+  if (!alreadyLinked && p.email && p.email.trim() && !emailError && !linkedExisting) {
+    sendPartyWelcomeEmail(req, deal.property, p.name, p.email, p.side, deal.scenario);
+  }
 });
 
 // Inserta solo los documentos que falten según la estructura ACTUAL de la
@@ -617,33 +643,6 @@ router.post('/:id/parties/:partyId/fix-entity-checklist', requireRole('admin', '
   res.json({ ok: true, deleted, flagged });
 });
 
-// POST /api/deals/:id/parties/:partyId/register-user — alternativa a la
-// invitación por correo: da de alta la cuenta del comprador/vendedor de
-// una vez, con una contraseña temporal que tú le compartes por el canal que
-// prefieras (teléfono, WhatsApp, en persona) — útil cuando no quieres
-// depender de que revisen su correo y le den clic al link.
-router.post('/:id/parties/:partyId/register-user', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
-  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
-  const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id);
-  if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
-  const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
-  if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
-
-  const alreadyLinked = db.prepare('SELECT 1 FROM deal_parties WHERE deal_party_entity_id = ?').get(party.id);
-  if (alreadyLinked) return res.status(409).json({ error: 'Esa parte ya tiene una cuenta ligada.' });
-
-  const { name, email } = req.body || {};
-  if (!name || !email) return res.status(400).json({ error: 'Falta el nombre o el correo.' });
-
-  try {
-    const { userId, temporaryPassword, linkedExisting } = db.transaction(() => registerPartyUserRaw(req.params.id, party, name, email))();
-    res.status(201).json({ id: userId, name: name.trim(), email: email.toLowerCase().trim(), temporaryPassword, linkedExisting });
-    if (!linkedExisting) sendPartyWelcomeEmail(req, deal.property, name, email, party.side);
-  } catch (err) {
-    res.status(err.status || 500).json({ error: err.message });
-  }
-});
-
 // DELETE /api/deals/:id/parties/:partyId — quitar una parte agregada de más
 // (bloqueado si ya tiene trabajo real hecho, para no perderlo).
 router.delete('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
@@ -687,7 +686,8 @@ router.post('/:id/parties/:partyId/remind', requireRole('admin', 'agent', 'lawye
   if (!mailer.isConfigured()) return res.status(501).json({ error: 'Resend no está configurado todavía (falta RESEND_API_KEY).' });
   const url = `${req.protocol}://${req.get('host')}/`;
   const result = await mailer.sendDocumentReminderEmail({
-    to: linked.email, name: linked.name, dealProperty: deal.property, pendingDocNames: pending.map(p => p.name), url
+    to: linked.email, name: linked.name, dealProperty: deal.property, pendingDocNames: pending.map(p => p.name), url,
+    lang: mailer.resolveClientLang(deal.scenario, party.side)
   });
   if (!result.ok) return res.status(502).json({ error: result.error });
   db.prepare(`

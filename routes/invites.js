@@ -58,14 +58,18 @@ router.post('/', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), asy
          ['agent', 'external_lawyer'].includes(roleInDeal) ? (representsSide || null) : null);
 
   const url = `/invite.html?token=${token}`;
-  const dealProperty = dealId ? db.prepare('SELECT property FROM deals WHERE id = ?').get(dealId)?.property : null;
+  const deal = dealId ? db.prepare('SELECT property, scenario FROM deals WHERE id = ?').get(dealId) : null;
+  const dealProperty = deal ? deal.property : null;
   const absoluteUrl = `${req.protocol}://${req.get('host')}${url}`;
   // El correo es "best effort": la invitación ya quedó creada y su link es
   // usable aunque el correo falle (ej. dominio de Resend sin verificar
   // todavía) — no bloqueamos ni le devolvemos error a quien invita por eso.
+  // `lang` solo importa para comprador/vendedor (un cliente extranjero no
+  // entiende un correo en español) — para agente/abogado siempre es 'es'.
   let emailResult = { ok: false, error: 'Resend no está configurado.' };
   if (mailer.isConfigured()) {
-    emailResult = await mailer.sendInviteEmail({ to: normalizedEmail, name, roleInDeal, dealProperty, url: absoluteUrl });
+    const lang = ['buyer', 'seller'].includes(roleInDeal) && deal ? mailer.resolveClientLang(deal.scenario, roleInDeal) : 'es';
+    emailResult = await mailer.sendInviteEmail({ to: normalizedEmail, name, roleInDeal, dealProperty, url: absoluteUrl, lang });
   }
 
   res.status(201).json({ token, url, emailSent: emailResult.ok, emailError: emailResult.ok ? null : emailResult.error });
