@@ -158,7 +158,7 @@ router.post('/deals/:id/tasks/:taskId/generate-escrow-document', requireRole('ad
   const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id);
   if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
 
-  const { placeDate, purchaseAgreementDescription, depositAmount, fees, expirationDate, noticeAddress } = req.body || {};
+  const { placeDate, purchaseAgreementDescription, depositAmount, fees, expirationDate, noticeAddressSeller, noticeAddressBuyer } = req.body || {};
   // Nombres reales (todos los compradores/vendedores con cuenta ligada, no
   // solo uno por lado) para el cuerpo del documento y para la tabla de
   // firmas — el mismo orden que usa el sobre de DocuSign más abajo, así los
@@ -167,10 +167,28 @@ router.post('/deals/:id/tasks/:taskId/generate-escrow-document', requireRole('ad
   const sellerNames = signersForNames.filter(s => s.roleInDeal === 'seller').map(s => s.name);
   const buyerNames = signersForNames.filter(s => s.roleInDeal === 'buyer').map(s => s.name);
 
+  // El machote de Armour solo trae UN blanco para "Address for Notices" —
+  // legalmente hace falta el domicilio de cada parte, así que se capturan
+  // por separado y se combinan en una sola línea para esa casilla.
+  const noticeAddressParts = [];
+  if (noticeAddressSeller) noticeAddressParts.push(`Seller / Vendedor: ${noticeAddressSeller}`);
+  if (noticeAddressBuyer) noticeAddressParts.push(`Purchaser / Comprador: ${noticeAddressBuyer}`);
+  const noticeAddress = noticeAddressParts.join('   ');
+
+  // La descripción legal del inmueble ya se captura una vez para el
+  // contrato de promesa (routes/contracts.js, smartContractFields) — se
+  // reusa aquí en vez de pedirla otra vez; si todavía no se llenó ahí, el
+  // blanco del escrow se queda vacío (nunca se bloquea la generación por
+  // esto).
+  let propertyLegalDescription = '';
+  try {
+    propertyLegalDescription = JSON.parse(deal.contract_json || '{}').legalDescriptionEn || '';
+  } catch { /* contract_json corrupto o vacío — se ignora, no bloquea el escrow */ }
+
   let docxPath, pdfPath;
   try {
     docxPath = path.join(dealDir(req.params.id), `escrow-${task.id}-${Date.now()}.docx`);
-    fillArmourEscrow(deal, { placeDate, purchaseAgreementDescription, depositAmount, fees, expirationDate, noticeAddress }, docxPath, sellerNames, buyerNames);
+    fillArmourEscrow(deal, { placeDate, purchaseAgreementDescription, depositAmount, fees, expirationDate, noticeAddress, propertyLegalDescription }, docxPath, sellerNames, buyerNames);
     pdfPath = convertDocxToPdf(docxPath);
     const key = path.join(String(req.params.id), path.basename(pdfPath));
     await gcsStorage.uploadLocalFile(key, pdfPath, 'application/pdf');

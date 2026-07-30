@@ -238,6 +238,47 @@ function t(key, vars){
   if(vars) Object.keys(vars).forEach(k => { s = s.replace(new RegExp('\\{'+k+'\\}','g'), vars[k]); });
   return s;
 }
+
+// Los nombres de los documentos del checklist (data/scenario-docs.json) se
+// guardan tal cual en la base de datos, siempre en español — no tienen su
+// propio sistema de traducción como STRINGS de arriba. Antes se mostraban
+// igual sin importar el idioma del portal, lo cual es un problema real para
+// un cliente extranjero viendo el checklist en inglés. Este diccionario
+// traduce solo para mostrar (nunca se guarda ni se manda al backend), así
+// que no hace falta tocar la base de datos ni scenario-docs.json.
+const DOC_NAME_EN = {
+  'Acta constitutiva': 'Articles of incorporation',
+  'Acta de matrimonio (rep. legal, si aplica)': 'Marriage certificate (legal rep., if applicable)',
+  'Acta de matrimonio (si aplica)': 'Marriage certificate (if applicable)',
+  'Acta de nacimiento': 'Birth certificate',
+  'Acta de nacimiento (rep. legal)': 'Birth certificate (legal rep.)',
+  'Carta de Instrucción a Fiduciario (Instruction Letter to Trustee)': 'Instruction Letter to Trustee',
+  'Comprobante de domicilio': 'Proof of address',
+  'Comprobante de domicilio (rep. legal)': 'Proof of address (legal rep.)',
+  'Comprobante de pago a escrow (Proof of payment to escrow)': 'Proof of payment to escrow',
+  'Comprobante de pago al notario (Proof of payment to notary)': 'Proof of payment to notary',
+  'Constancia de Situación Fiscal': 'Tax ID certificate (Constancia de Situación Fiscal)',
+  'Constancia de Situación Fiscal (rep. legal)': 'Tax ID certificate (legal rep.)',
+  'Costos de cierre (recibo del notario)': 'Closing costs (notary)',
+  'CURP (rep. legal)': 'CURP (legal rep.)',
+  'Escritura pública': 'Public deed',
+  'Estatus migratorio': 'Immigration status',
+  'ID de cónyuge del rep. legal, si aplica': 'Spouse ID of legal rep., if applicable',
+  'ID de cónyuge, si aplica': 'Spouse ID, if applicable',
+  'Identificación de cónyuge, si aplica': 'Spouse ID, if applicable',
+  'Identificación oficial': 'Official ID',
+  'Identificación oficial (rep. legal)': 'Official ID (legal rep.)',
+  'Licencia de conducir': "Driver's license",
+  'Pasaporte': 'Passport',
+  'Pasaporte y licencia de beneficiarios sustitutos': "Passport and driver's license of substitute beneficiaries",
+  'Poder del representante legal': "Legal representative's power of attorney",
+  'Predial': 'Property tax bill',
+  'Recibo de predial': 'Property tax receipt',
+  'Último pago anual de fideicomiso': 'Last annual trust payment receipt'
+};
+function localizeDocName(name){
+  return (lang === 'en' && DOC_NAME_EN[name]) ? DOC_NAME_EN[name] : name;
+}
 function setLang(next){
   lang = next;
   localStorage.setItem('nar_lang', lang);
@@ -464,7 +505,7 @@ const STRINGS = {
     purchaseAgreementDesc: 'Descripción del contrato de compraventa',
     depositAmount: 'Monto del depósito', depositAmountPh: 'USD $310,000.00',
     fees: 'Comisiones', feesPh: 'USD $1,500.00 a cargo del comprador',
-    noticeAddress: 'Domicilio para notificaciones', generateDocument: 'Generar documento',
+    noticeAddressSeller: 'Domicilio para notificaciones (vendedor)', noticeAddressBuyer: 'Domicilio para notificaciones (comprador)', generateDocument: 'Generar documento',
     replaceFile: 'Reemplazar', uploading: 'Subiendo...',
     upcomingClosings: 'Cierres próximos', daysToCloseSingular: '{days} día para cierre', daysToClosePlural: '{days} días para cierre',
     closingToday: 'Cierra hoy', closingOverdue: 'Cierre atrasado',
@@ -653,7 +694,7 @@ const STRINGS = {
     purchaseAgreementDesc: 'Purchase agreement description',
     depositAmount: 'Deposit amount', depositAmountPh: 'USD $310,000.00',
     fees: 'Fees', feesPh: "USD $1,500.00, buyer's expense",
-    noticeAddress: 'Notice address', generateDocument: 'Generate document',
+    noticeAddressSeller: 'Notice address (seller)', noticeAddressBuyer: 'Notice address (buyer)', generateDocument: 'Generate document',
     replaceFile: 'Replace', uploading: 'Uploading...',
     upcomingClosings: 'Upcoming closings', daysToCloseSingular: '{days} day to close', daysToClosePlural: '{days} days to close',
     closingToday: 'Closes today', closingOverdue: 'Closing overdue',
@@ -1584,7 +1625,7 @@ function buildDashboard(){
         row.style.cssText = 'display:flex; align-items:center; gap:10px; padding:6px 0; border-bottom:0.5px solid var(--line);';
         row.innerHTML = `
           <span class="doc-check" style="flex-shrink:0;"></span>
-          <span style="font-size:12.5px; flex:1;">${t('docLabel')}: ${escapeHtml(doc.name)} <span class="field-hint" style="margin:0;">(${doc.partyName ? escapeHtml(doc.partyName) + ' · ' + (doc.side==='seller'?t('sellerLabel'):t('buyerLabel')) : t('propertyLabel')})</span></span>
+          <span style="font-size:12.5px; flex:1;">${t('docLabel')}: ${escapeHtml(localizeDocName(doc.name))} <span class="field-hint" style="margin:0;">(${doc.partyName ? escapeHtml(doc.partyName) + ' · ' + (doc.side==='seller'?t('sellerLabel'):t('buyerLabel')) : t('propertyLabel')})</span></span>
           ${doc.stale ? `<span class="badge" style="background:var(--oxblood-soft); color:var(--oxblood); flex-shrink:0;">${t('stale')}</span>` : ''}
         `;
         row.querySelector('.doc-check').onclick = async () => {
@@ -2840,7 +2881,7 @@ function buildDocItemLi(deal, doc, isStaffView){
   li.className = 'doc-item';
   // El sub_label ya se muestra como encabezado de grupo en
   // buildDocListForParty — aquí solo el nombre del documento.
-  const label = escapeHtml(doc.name);
+  const label = escapeHtml(localizeDocName(doc.name));
   const subCheckLabels = SUB_CHECKS_BY_DOC[doc.name] || [];
   const subChecksHtml = subCheckLabels.map(sc => `
     <label style="display:flex; align-items:center; gap:4px; font-size:11px; color:var(--ink-soft); cursor:pointer;">
@@ -2888,7 +2929,7 @@ function buildDocItemLi(deal, doc, isStaffView){
   const fileInput = li.querySelector('.doc-file-input');
   const deleteBtn = li.querySelector('.doc-delete-btn');
   if(deleteBtn) deleteBtn.onclick = async () => {
-    if(!confirm(t('deleteFileConfirm', { name: doc.name }))) return;
+    if(!confirm(t('deleteFileConfirm', { name: localizeDocName(doc.name) }))) return;
     deleteBtn.disabled = true;
     try{
       await apiFetch(`/api/deals/${deal.id}/documents/${doc.id}/file`, { method:'DELETE' });
@@ -2933,7 +2974,7 @@ function buildDocItemLi(deal, doc, isStaffView){
   };
   const removeReqBtn = li.querySelector('.doc-remove-req-btn');
   if(removeReqBtn) removeReqBtn.onclick = async () => {
-    if(!confirm(t('removeChecklistItemConfirm', { name: doc.name }))) return;
+    if(!confirm(t('removeChecklistItemConfirm', { name: localizeDocName(doc.name) }))) return;
     removeReqBtn.disabled = true;
     try{
       await apiFetch(`/api/deals/${deal.id}/documents/${doc.id}`, { method:'DELETE' });
@@ -3153,7 +3194,7 @@ function buildNotaryClosingCostsSection(deal, isStaffView){
     <div style="display:flex; align-items:center; gap:12px;">
       <div style="width:38px; height:38px; border-radius:10px; background:var(--gold-soft); color:#6B4E1E; display:flex; align-items:center; justify-content:center; flex-shrink:0;"><i class="ti ti-file-invoice" aria-hidden="true" style="font-size:18px;"></i></div>
       <div>
-        <div style="font-weight:600; font-size:14px;">${escapeHtml(quoteDoc.name)}${reviewBadgeHtml}</div>
+        <div style="font-weight:600; font-size:14px;">${escapeHtml(t('notaryClosingCostsSection'))}${reviewBadgeHtml}</div>
         <div class="field-hint" style="margin:2px 0 0;">${quoteDoc.fileUrl ? escapeHtml(quoteDoc.originalName || '') : t('notUploaded')}</div>
       </div>
     </div>
@@ -4196,7 +4237,8 @@ function buildEscrowForm(deal, task){
       <label>${t('fees')} <input type="text" data-escrow-field="fees" placeholder="${t('feesPh')}"></label>
     </div>
     <div class="form-row">
-      <label>${t('noticeAddress')} <input type="text" data-escrow-field="noticeAddress"></label>
+      <label>${t('noticeAddressSeller')} <input type="text" data-escrow-field="noticeAddressSeller"></label>
+      <label>${t('noticeAddressBuyer')} <input type="text" data-escrow-field="noticeAddressBuyer"></label>
     </div>
     <div class="gate-error" id="escrow-error"></div>
     <button class="btn primary" id="escrow-generate">${t('generateDocument')}</button>
