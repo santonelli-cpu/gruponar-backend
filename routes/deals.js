@@ -355,8 +355,13 @@ router.get('/:id', requireAuth, (req, res) => {
 // el body).
 router.patch('/:id', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
-  const { escrowCompany, closingDate, dueDiligenceEndDate, property, price, furniturePrice, currency, startDate, development } = req.body || {};
+  const { escrowCompany, closingDate, dueDiligenceEndDate, property, price, furniturePrice, currency, startDate, development, status } = req.body || {};
 
+  if (status !== undefined) {
+    if (!['active', 'completed'].includes(status)) return res.status(400).json({ error: 'status debe ser active o completed.' });
+    db.prepare("UPDATE deals SET status = ?, closed_at = ? WHERE id = ?")
+      .run(status, status === 'completed' ? new Date().toISOString() : null, req.params.id);
+  }
   if (escrowCompany !== undefined) {
     if (!['armour', 'tla'].includes(escrowCompany)) {
       return res.status(400).json({ error: 'Escrow company inválida.' });
@@ -732,6 +737,53 @@ router.post('/:id/drive-folder', requireRole('admin', 'agent', 'lawyer'), async 
   } catch (err) {
     res.status(502).json({ error: err.message || 'Error al crear la carpeta en Drive.' });
   }
+});
+
+// POST /api/deals/:id/documents — agrega un requisito de documento nuevo al
+// checklist, fuera de lo que trae la plantilla del escenario (data/
+// scenario-docs.json) — para cuando esta operación en particular necesita
+// algo especial que la lista fija no contempla. Solo staff: agregar
+// requisitos al checklist es curaduría, no algo que un comprador/vendedor
+// haga sobre sí mismo. Sin dealPartyEntityId es un documento de Propiedad.
+router.post('/:id/documents', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const { name, dealPartyEntityId, subLabel } = req.body || {};
+  if (!name || !name.trim()) return res.status(400).json({ error: 'Falta el nombre del documento.' });
+
+  let partyId = null;
+  if (dealPartyEntityId !== undefined && dealPartyEntityId !== null) {
+    const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(dealPartyEntityId, req.params.id);
+    if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
+    if (req.session.role === 'agent') {
+      const side = myRepresentsSide(req, req.params.id);
+      if (side && party.side !== side) return res.status(403).json({ error: 'No puedes agregar documentos del otro lado.' });
+    }
+    partyId = party.id;
+  }
+
+  const info = db.prepare("INSERT INTO documents (deal_id, deal_party_entity_id, sub_label, name, created_at) VALUES (?,?,?,?,datetime('now'))")
+    .run(req.params.id, partyId, (subLabel || '').trim() || null, name.trim());
+  res.status(201).json({ id: info.lastInsertRowid });
+});
+
+// DELETE /api/deals/:id/documents/:docId — quita un requisito del checklist
+// POR COMPLETO (no solo el archivo que tuviera subido — ver DELETE .../file
+// arriba para eso) — para cuando algo de la lista fija no aplica a esta
+// operación. Solo staff, mismo motivo que agregar.
+router.delete('/:id/documents/:docId', requireRole('admin', 'agent', 'lawyer'), async (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deal_id = ?').get(req.params.docId, req.params.id);
+  if (!doc) return res.status(404).json({ error: 'Documento no encontrado.' });
+  if (req.session.role === 'agent' && doc.deal_party_entity_id !== null) {
+    const side = myRepresentsSide(req, req.params.id);
+    if (side) {
+      const party = db.prepare('SELECT side FROM deal_party_entities WHERE id = ?').get(doc.deal_party_entity_id);
+      if (!party || party.side !== side) return res.status(403).json({ error: 'No puedes borrar documentos del otro lado.' });
+    }
+  }
+  db.prepare('DELETE FROM documents WHERE id = ?').run(doc.id);
+  res.json({ ok: true });
+  if (doc.file_url) gcsStorage.deleteFile(doc.file_url).catch(err => console.error('[gcs] no se pudo borrar el archivo', doc.file_url, err.message));
 });
 
 // PATCH /api/deals/:id/documents/:docId — marcar documento recibido y/o

@@ -12,12 +12,17 @@ const router = express.Router();
 const STALE_DAYS = 7;
 
 // Mismo alcance que GET /api/deals: admin/abogado ven todo; el resto solo
-// lo suyo vía deal_parties.
+// lo suyo vía deal_parties. Solo operaciones activas — una ya cerrada no
+// debe seguir apareciendo como pendiente de atención aquí (para eso está la
+// sección de "Completadas" en Operaciones).
 function visibleDealIdsSql(req) {
   if (UNRESTRICTED_ROLES.includes(req.session.role)) {
-    return { sql: 'SELECT id FROM deals', params: [] };
+    return { sql: "SELECT id FROM deals WHERE status = 'active'", params: [] };
   }
-  return { sql: 'SELECT deal_id FROM deal_parties WHERE user_id = ?', params: [req.session.userId] };
+  return {
+    sql: "SELECT deal_id FROM deal_parties WHERE user_id = ? AND deal_id IN (SELECT id FROM deals WHERE status = 'active')",
+    params: [req.session.userId]
+  };
 }
 
 // GET /api/dashboard — totales, desglose por escenario, y lista de

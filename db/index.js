@@ -132,6 +132,14 @@ ensureColumn('deal_parties', 'represents_side', 'represents_side TEXT');
 // agentes de la operación.
 ensureColumn('invites', 'represents_side', 'represents_side TEXT');
 
+// Hasta ahora una operación no tenía forma de marcarse como cerrada — solo
+// existía el % de checklist/tareas, nada decía "esto ya se cerró, déjalo de
+// lado". 'active'/'completed' sin CHECK (igual que agency/represents_side
+// arriba) porque ensureColumn solo agrega columnas simples; se valida en la
+// ruta. closed_at queda NULL mientras status='active'.
+ensureColumn('deals', 'status', "status TEXT NOT NULL DEFAULT 'active'");
+ensureColumn('deals', 'closed_at', 'closed_at TEXT');
+
 // La tarea "Cuenta de escrow aperturada" nunca traía requires_signature=1 en
 // data/scenario-tasks.json, así que la sección de "Firma electrónica" (donde
 // vive subir/generar el escrow agreement y mandarlo a firma) nunca se

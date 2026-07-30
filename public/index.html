@@ -221,6 +221,9 @@ const STRINGS = {
     sessionHint: 'Para dar de alta a un comprador o vendedor, entra a su operación y genera una invitación — ahí crean su propia contraseña. Para agentes o abogados internos, usa la pestaña "Equipo" de aquí abajo.',
     operationsTitle: 'Operaciones', newDeal: 'Nueva operación',
     emptyDeals: 'No hay operaciones activas.<br>Crea la primera con "Nueva operación".',
+    dealsFilterActive: 'Activas', dealsFilterCompleted: 'Completadas', emptyCompletedDeals: 'No hay operaciones completadas todavía.',
+    dealCompletedBadge: 'Cerrada', markDealCompleted: 'Marcar como cerrada', reopenDeal: 'Reabrir operación',
+    confirmMarkCompleted: '¿Marcar esta operación como cerrada? Se mueve a "Completadas" — puedes reabrirla cuando quieras.',
     dashboard: 'Dashboard', loadingDashboard: 'Cargando dashboard...',
     statActiveDeals: 'Operaciones activas', statDocsPending: 'Documentos pendientes', statTasksUnfinished: 'Tareas sin terminar', statAwaitingSignature: 'Esperando firma',
     awaitingSignature: 'Esperando firma', signature: 'Firma',
@@ -292,6 +295,8 @@ const STRINGS = {
     alertAutoSendFailed: 'El documento se generó, pero no se pudo enviar a firma automáticamente: {error}\nPuedes reintentar con el botón "Enviar a firma".',
     kycSignModalTitle: 'Firma del expediente KYC',
     viewFile: 'Ver archivo', attachDocument: 'Adjuntar documento', deleteFile: 'Borrar', deleteFileConfirm: '¿Borrar el archivo subido para "{name}"? Vuelve a quedar pendiente.',
+    removeChecklistItemTitle: 'Quitar este requisito del checklist', removeChecklistItemConfirm: '¿Quitar "{name}" del checklist por completo? Si ya tenía un archivo subido, también se borra.',
+    newChecklistItemPh: 'Nombre del documento nuevo...', addChecklistItem: 'Agregar',
     remindDocuments: 'Recordar documentos', sentCount: 'Enviado ({count})',
     remindNoAccountYet: 'Esta persona todavía no acepta su invitación / no tiene cuenta ligada — no hay a quién mandarle el correo todavía.',
     fixChecklist: 'Reparar checklist', fixChecklistTitle: 'Quita del checklist de esta entidad los documentos de persona física o duplicados que se agregaron por un bug ya corregido — solo aplica a operaciones creadas antes de la corrección.',
@@ -379,6 +384,9 @@ const STRINGS = {
     sessionHint: 'To onboard a buyer or seller, go into their deal and generate an invitation — that\'s where they create their own password. For agents or internal lawyers, use the "Team" tab below.',
     operationsTitle: 'Deals', newDeal: 'New deal',
     emptyDeals: 'No active deals.<br>Create the first one with "New deal".',
+    dealsFilterActive: 'Active', dealsFilterCompleted: 'Completed', emptyCompletedDeals: 'No completed deals yet.',
+    dealCompletedBadge: 'Closed', markDealCompleted: 'Mark as closed', reopenDeal: 'Reopen deal',
+    confirmMarkCompleted: 'Mark this deal as closed? It moves to "Completed" — you can reopen it anytime.',
     dashboard: 'Dashboard', loadingDashboard: 'Loading dashboard...',
     statActiveDeals: 'Active deals', statDocsPending: 'Pending documents', statTasksUnfinished: 'Unfinished tasks', statAwaitingSignature: 'Awaiting signature',
     awaitingSignature: 'Awaiting signature', signature: 'Signature',
@@ -450,6 +458,8 @@ const STRINGS = {
     alertAutoSendFailed: "The document was generated, but couldn't be sent for signature automatically: {error}\nYou can retry with the \"Send for signature\" button.",
     kycSignModalTitle: 'KYC file signature',
     viewFile: 'View file', attachDocument: 'Attach document', deleteFile: 'Delete', deleteFileConfirm: 'Delete the uploaded file for "{name}"? It goes back to pending.',
+    removeChecklistItemTitle: 'Remove this requirement from the checklist', removeChecklistItemConfirm: 'Remove "{name}" from the checklist entirely? If it had an uploaded file, that goes too.',
+    newChecklistItemPh: 'New document name...', addChecklistItem: 'Add',
     remindDocuments: 'Remind about documents', sentCount: 'Sent ({count})',
     remindNoAccountYet: "This person hasn't accepted their invitation / doesn't have a linked account yet — there's no one to email yet.",
     fixChecklist: 'Fix checklist', fixChecklistTitle: 'Removes individual-person or duplicate documents from this entity\'s checklist that were added by a now-fixed bug — only applies to deals created before the fix.',
@@ -520,6 +530,7 @@ const API_BASE = '';
 let deals = [];
 let mainTab = 'admin';
 let adminView = 'dashboard';
+let dealsListFilter = 'active';
 let dashboardData = null;
 let pendingUsers = null;
 let activeTeamMembers = null;
@@ -634,6 +645,7 @@ function adaptDealSummary(row){
     price: row.price, furniturePrice: row.furniture_price, currency: row.currency, startDate: row.start_date,
     escrowCompany: row.escrow_company || 'armour',
     closingDate: row.closing_date || '', dueDiligenceEndDate: row.due_diligence_end_date || '',
+    status: row.status || 'active', closedAt: row.closed_at || null,
     driveFolderId: row.drive_folder_id || null, driveFolderUrl: row.drive_folder_url || null,
     parties: (row.parties || []).map(adaptParty),
     agents: row.agents || [],
@@ -799,7 +811,6 @@ function renderLogin(body){
       <button class="btn primary" id="login-submit" style="width:100%;" ${loginLoading ? 'disabled' : ''}>${loginLoading ? t('loginSubmitting') : t('loginSubmit')}</button>
       <div class="field-hint" style="text-align:center; margin-top:10px;"><a href="#" id="go-forgot">${t('forgotPasswordLink')}</a></div>
       <div class="field-hint" style="text-align:center; margin-top:2px;">${t('loginNoAccount')} <a href="#" id="go-register">${t('loginCreateAccount')}</a></div>
-      <div class="gate-note"><i class="ti ti-server" aria-hidden="true"></i> ${t('gateNote', { base: API_BASE || t('sameOrigin') })}</div>
     </div>
   `;
   body.appendChild(wrap);
@@ -939,11 +950,6 @@ document.getElementById('header-logout').addEventListener('click', logout);
 
 // ---------- ADMIN ----------
 function renderAdmin(body){
-  const banner = document.createElement('div');
-  banner.className = 'banner';
-  banner.innerHTML = `<i class="ti ti-info-circle" aria-hidden="true"></i> ${t('banner')}`;
-  body.appendChild(banner);
-
   if(adminView === 'list' || adminView === 'dashboard' || adminView === 'team' || adminView === null){
     const secCard = document.createElement('div');
     secCard.className = 'card';
@@ -1006,14 +1012,27 @@ function renderAdmin(body){
   addBtn.onclick = () => { adminView = 'newDeal'; render(); };
   body.appendChild(addBtn);
 
-  if(!deals.length){
+  const activeCount = deals.filter(d => (d.status||'active') === 'active').length;
+  const completedCount = deals.filter(d => d.status === 'completed').length;
+  const filterRow = document.createElement('div');
+  filterRow.style.cssText = 'display:flex; gap:8px; margin-bottom:14px;';
+  filterRow.innerHTML = `
+    <button class="btn ${dealsListFilter==='active'?'primary':''}" id="deals-filter-active">${t('dealsFilterActive')} (${activeCount})</button>
+    <button class="btn ${dealsListFilter==='completed'?'primary':''}" id="deals-filter-completed">${t('dealsFilterCompleted')} (${completedCount})</button>
+  `;
+  body.appendChild(filterRow);
+  filterRow.querySelector('#deals-filter-active').onclick = () => { dealsListFilter = 'active'; render(); };
+  filterRow.querySelector('#deals-filter-completed').onclick = () => { dealsListFilter = 'completed'; render(); };
+
+  const visibleDeals = deals.filter(d => (d.status||'active') === dealsListFilter);
+  if(!visibleDeals.length){
     const empty = document.createElement('div');
     empty.className = 'empty';
-    empty.innerHTML = `<i class="ti ti-building-estate" aria-hidden="true"></i><div>${t('emptyDeals')}</div>`;
+    empty.innerHTML = `<i class="ti ti-building-estate" aria-hidden="true"></i><div>${dealsListFilter==='completed' ? t('emptyCompletedDeals') : t('emptyDeals')}</div>`;
     body.appendChild(empty);
     return;
   }
-  deals.forEach(d => {
+  visibleDeals.forEach(d => {
     const s = SCENARIOS[d.scenario];
     const card = document.createElement('div');
     card.className = 'deal-card';
@@ -1022,6 +1041,7 @@ function renderAdmin(body){
       <div class="deal-sub">${escapeHtml(dealPartyNames(d,'seller'))} → ${escapeHtml(dealPartyNames(d,'buyer'))} · ${d.currency||'USD'} ${Number(d.price||0).toLocaleString()}${d.furniturePrice ? ' + '+Number(d.furniturePrice).toLocaleString()+' muebles' : ''}</div>
       <span class="badge ${s.badgeClass}">${s.labelShort}</span>
       <span class="badge" style="background:var(--stone); border:0.5px solid var(--line); color:var(--ink-soft); margin-left:4px;">${DEVELOPMENT_LABEL[d.development||'punta_mita'].split(' (')[0]}</span>
+      ${d.status==='completed' ? `<span class="badge" style="background:var(--jade-soft); color:var(--jade); margin-left:4px;">${t('dealCompletedBadge')}</span>` : ''}
       <div class="deal-sub" style="margin-top:6px;">Docs: ${pctDocs(d)}% · Tracker: ${pctTasks(d)}%</div>
     `;
     card.onclick = () => { activeDealId = d.id; openDeal(d.id); };
@@ -1771,6 +1791,7 @@ function buildAdminDealDetail(deal){
   header.innerHTML = `
     <div class="deal-title" style="font-size:18px;">${escapeHtml(deal.property)}</div>
     <span class="badge ${s.badgeClass}">${s.labelShort}</span>
+    ${deal.status==='completed' ? `<span class="badge" style="background:var(--jade-soft); color:var(--jade); margin-left:4px;">${t('dealCompletedBadge')}</span>` : ''}
     <div class="deal-sub" style="margin-top:8px;">${sellerParties(deal).map(p=>`${escapeHtml(p.name)} (${TYPE_LABEL[p.partyType]})`).join(', ')} → ${buyerParties(deal).map(p=>`${escapeHtml(p.name)} (${TYPE_LABEL[p.partyType]})`).join(', ')}</div>
     <div class="deal-sub">${DEVELOPMENT_LABEL[deal.development||'punta_mita']}</div>
     <div class="deal-sub">${t('propertyLabelColon')}: ${deal.currency||'USD'} ${Number(deal.price||0).toLocaleString()}${deal.furniturePrice ? ' · '+t('furnitureLabel')+': '+Number(deal.furniturePrice).toLocaleString() : ''} · ${t('startLabel')} ${deal.startDate}</div>
@@ -1790,11 +1811,20 @@ function buildAdminDealDetail(deal){
         ? `<a class="btn" href="${deal.driveFolderUrl}" target="_blank"><i class="ti ti-folder" aria-hidden="true"></i> ${t('openInDrive')}</a>`
         : `<button class="btn" id="create-drive-folder-btn"><i class="ti ti-folder-plus" aria-hidden="true"></i> ${t('createDriveFolder')}</button>`}
       <button class="btn" id="editDealBtn"><i class="ti ti-pencil" aria-hidden="true"></i> ${t('editDeal')}</button>
+      <button class="btn" id="toggleDealStatusBtn">${deal.status==='completed' ? `<i class="ti ti-rotate" aria-hidden="true"></i> ${t('reopenDeal')}` : `<i class="ti ti-check" aria-hidden="true"></i> ${t('markDealCompleted')}`}</button>
       <button class="btn" id="delDeal"><i class="ti ti-trash" aria-hidden="true"></i> ${t('deleteDeal')}</button>
     </div>
   `;
   wrap.appendChild(header);
   header.querySelector('#editDealBtn').onclick = () => { editingDealId = editingDealId === deal.id ? null : deal.id; render(); };
+  header.querySelector('#toggleDealStatusBtn').onclick = async () => {
+    const nextStatus = deal.status === 'completed' ? 'active' : 'completed';
+    if(nextStatus === 'completed' && !confirm(t('confirmMarkCompleted'))) return;
+    try{
+      await apiFetch(`/api/deals/${deal.id}`, { method:'PATCH', body: JSON.stringify({ status: nextStatus }) });
+      await openDeal(deal.id);
+    }catch(e){ alert(e.message); }
+  };
   if(editingDealId === deal.id){
     const editCard = document.createElement('div');
     editCard.className = 'card';
@@ -2232,6 +2262,7 @@ function buildDocItemLi(deal, doc){
       ${doc.fileUrl ? `<a href="/api/deals/${deal.id}/documents/${doc.id}/file" target="_blank" class="btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px;"><i class="ti ti-eye" aria-hidden="true"></i> ${t('viewFile')}</a>` : ''}
       <button type="button" class="btn doc-upload-btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px;" title="${t('attachDocument')}"><i class="ti ti-upload" aria-hidden="true"></i> ${doc.fileUrl ? t('replaceFile') : t('upload')}</button>
       ${doc.fileUrl ? `<button type="button" class="btn doc-delete-btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px; color:var(--oxblood);" title="${t('deleteFile')}"><i class="ti ti-trash" aria-hidden="true"></i></button>` : ''}
+      ${['admin','agent','lawyer'].includes(currentUser.role) ? `<button type="button" class="btn doc-remove-req-btn" style="font-size:11px; padding:4px 8px; color:var(--oxblood);" title="${t('removeChecklistItemTitle')}"><i class="ti ti-x" aria-hidden="true"></i></button>` : ''}
       <input type="file" class="doc-file-input" style="display:none;" accept=".pdf,.jpg,.jpeg,.png,.heic">
     </span>`;
   li.querySelector('.doc-check').onclick = async () => {
@@ -2280,7 +2311,41 @@ function buildDocItemLi(deal, doc){
       uploadBtn.innerHTML = originalHtml;
     }
   };
+  const removeReqBtn = li.querySelector('.doc-remove-req-btn');
+  if(removeReqBtn) removeReqBtn.onclick = async () => {
+    if(!confirm(t('removeChecklistItemConfirm', { name: doc.name }))) return;
+    removeReqBtn.disabled = true;
+    try{
+      await apiFetch(`/api/deals/${deal.id}/documents/${doc.id}`, { method:'DELETE' });
+      await openDeal(deal.id);
+    }catch(err){ alert(err.message); removeReqBtn.disabled = false; }
+  };
   return li;
+}
+
+// Formulario chico para agregar un requisito de documento custom al
+// checklist — para property (dealPartyEntityId null) o para una parte
+// específica. Solo staff (ver buildDocItemLi arriba, mismo criterio).
+function buildAddDocumentRow(deal, dealPartyEntityId){
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex; gap:6px; align-items:center; margin-top:6px;';
+  row.innerHTML = `
+    <input type="text" class="add-doc-name" placeholder="${t('newChecklistItemPh')}" style="flex:1; font-size:12px; padding:5px 8px;">
+    <button type="button" class="btn add-doc-btn" style="font-size:11px; padding:4px 10px; white-space:nowrap;"><i class="ti ti-plus" aria-hidden="true"></i> ${t('addChecklistItem')}</button>
+  `;
+  const nameInput = row.querySelector('.add-doc-name');
+  const addBtn = row.querySelector('.add-doc-btn');
+  addBtn.onclick = async () => {
+    const name = nameInput.value.trim();
+    if(!name) return;
+    addBtn.disabled = true;
+    try{
+      await apiFetch(`/api/deals/${deal.id}/documents`, { method:'POST', body: JSON.stringify({ name, dealPartyEntityId: dealPartyEntityId || null }) });
+      await openDeal(deal.id);
+    }catch(e){ alert(e.message); addBtn.disabled = false; }
+  };
+  nameInput.onkeydown = (e) => { if(e.key === 'Enter') addBtn.click(); };
+  return row;
 }
 
 // Agrupa el checklist en Vendedores/Compradores — mismo orden en el que
@@ -2390,6 +2455,9 @@ function buildDocListForParty(deal, party){
     g.docs.forEach(doc => ul.appendChild(buildDocItemLi(deal, doc)));
     box.appendChild(ul);
   });
+  if(['admin','agent','lawyer'].includes(currentUser.role)){
+    box.appendChild(buildAddDocumentRow(deal, party.id));
+  }
   return box;
 }
 
@@ -2415,6 +2483,9 @@ function buildPropertyDocsSection(deal){
   ul.className = 'doc-list';
   docs.forEach(doc => ul.appendChild(buildDocItemLi(deal, doc)));
   box.appendChild(ul);
+  if(['admin','agent','lawyer'].includes(currentUser.role)){
+    box.appendChild(buildAddDocumentRow(deal, null));
+  }
   return box;
 }
 
