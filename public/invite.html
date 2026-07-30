@@ -31,6 +31,13 @@
       <input type="password" id="password2" placeholder="Confirma tu contraseña" autocomplete="new-password">
       <button class="btn primary" id="submit" style="width:100%;">Crear cuenta y entrar</button>
     </div>
+    <div id="totp-choice" style="display:none;">
+      <p class="gate-sub" id="totp-choose-intro" style="margin-top:0;"></p>
+      <div style="display:flex; flex-direction:column; gap:10px; margin-top:6px;">
+        <button class="btn primary" id="totp-choose-app" style="width:100%;"></button>
+        <button class="btn primary" id="totp-choose-email" style="width:100%;"></button>
+      </div>
+    </div>
     <div id="totp-form" style="display:none;">
       <p class="gate-sub" id="totp-intro" style="margin-top:0;"></p>
       <div id="totp-qr-wrap" style="display:none; text-align:center; margin-bottom:12px;">
@@ -44,8 +51,8 @@
       </label>
       <button class="btn primary" id="totp-submit" style="width:100%; margin-top:10px;">Verificar</button>
       <div class="field-hint" style="text-align:center; margin-top:10px;">
-        <a href="#" id="totp-use-email" style="display:none;"></a>
         <a href="#" id="totp-resend" style="display:none;"></a>
+        <a href="#" id="totp-change-method" style="display:none;"></a>
       </div>
     </div>
   </div>
@@ -71,7 +78,10 @@
       totpCodePh: '000000', totpSubmit: 'Verificar', totpErrCode: 'Falta el código.',
       totpUseEmailInstead: '¿Prefieres recibir el código por correo?',
       totpResendCode: 'Reenviar código', totpSending: 'Enviando...',
-      rememberDeviceLabel: 'Recordar este dispositivo por 30 días'
+      rememberDeviceLabel: 'Recordar este dispositivo por 30 días',
+      totpChooseIntro: 'Elige cómo quieres recibir tu código de verificación.',
+      totpChooseApp: 'Usar app autenticadora (QR)', totpChooseEmail: 'Recibir código por correo',
+      totpChangeMethod: 'Elegir otro método'
     },
     en: {
       createAccount: 'Create your account', loadingInvite: 'Loading invitation…',
@@ -92,7 +102,10 @@
       totpCodePh: '000000', totpSubmit: 'Verify', totpErrCode: 'Missing code.',
       totpUseEmailInstead: 'Prefer to get the code by email?',
       totpResendCode: 'Resend code', totpSending: 'Sending...',
-      rememberDeviceLabel: 'Remember this device for 30 days'
+      rememberDeviceLabel: 'Remember this device for 30 days',
+      totpChooseIntro: 'Choose how you\'d like to receive your verification code.',
+      totpChooseApp: 'Use authenticator app (QR)', totpChooseEmail: 'Get code by email',
+      totpChangeMethod: 'Choose a different method'
     }
   };
   let lang = localStorage.getItem('nar_lang') || 'es';
@@ -169,7 +182,9 @@
     }
   }
 
-  let pendingTotpMethod = null; // 'choose' | 'totp' | 'email'
+  let pendingTotpMethod = null; // 'totp' | 'email'
+  let pendingTotpSetupMode = false;
+  let totpQrCode = null, totpSecret = null;
 
   document.getElementById('submit').onclick = async () => {
     errorEl.textContent = '';
@@ -191,39 +206,61 @@
   // La cuenta ya quedó creada/ligada, pero según POST /invites/:token/accept
   // (routes/invites.js -> beginTwoFactorChallenge) todavía falta el segundo
   // factor antes de que haya sesión de verdad — ver routes/auth.js.
-  // result.method: 'choose' (ofrece las dos opciones), 'totp' o 'email'.
+  // result.method: 'choose' (primera vez, ofrece las dos opciones con
+  // botones en vez de mostrar el QR de entrada con un link chiquito para
+  // cambiar a correo), 'totp' o 'email'.
   function showTotpStep(result){
+    if (result.method === 'choose') {
+      totpQrCode = result.qrCode; totpSecret = result.secret;
+      pendingTotpSetupMode = true;
+      showTotpChoice();
+      return;
+    }
     formEl.style.display = 'none';
+    document.getElementById('totp-choice').style.display = 'none';
     subEl.textContent = '';
     titleEl.textContent = t('totpTitle');
     pendingTotpMethod = result.method;
     const totpForm = document.getElementById('totp-form');
     const qrWrap = document.getElementById('totp-qr-wrap');
-    const showQr = result.method === 'choose' || result.method === 'totp';
+    const showQr = result.method === 'totp';
     document.getElementById('totp-intro').textContent =
-      result.method === 'email' ? t('totpIntroEmailSent') : (result.method === 'choose' ? t('totpIntroSetup') : t('totpIntroVerify'));
+      result.method === 'email' ? t('totpIntroEmailSent') : (pendingTotpSetupMode ? t('totpIntroSetup') : t('totpIntroVerify'));
     qrWrap.style.display = showQr ? 'block' : 'none';
     if (showQr) {
-      document.getElementById('totp-qr').src = result.qrCode;
+      document.getElementById('totp-qr').src = totpQrCode;
       document.getElementById('totp-manual-label').textContent = t('totpManualLabel');
-      document.getElementById('totp-secret').textContent = result.secret;
+      document.getElementById('totp-secret').textContent = totpSecret;
     }
     document.getElementById('totp-code').placeholder = t('totpCodePh');
     document.getElementById('totp-code').value = '';
     document.getElementById('totp-remember-label').textContent = t('rememberDeviceLabel');
     document.getElementById('totp-submit').textContent = t('totpSubmit');
-    const useEmailBtn = document.getElementById('totp-use-email');
     const resendBtn = document.getElementById('totp-resend');
-    useEmailBtn.style.display = result.method === 'choose' ? 'inline' : 'none';
-    useEmailBtn.textContent = t('totpUseEmailInstead');
+    const changeMethodBtn = document.getElementById('totp-change-method');
     resendBtn.style.display = result.method === 'email' ? 'inline' : 'none';
     resendBtn.textContent = t('totpResendCode');
+    changeMethodBtn.style.display = pendingTotpSetupMode ? 'inline' : 'none';
+    changeMethodBtn.textContent = t('totpChangeMethod');
     totpForm.style.display = 'block';
     document.getElementById('totp-code').focus();
   }
 
-  document.getElementById('totp-use-email').onclick = async (e) => {
-    e.preventDefault();
+  function showTotpChoice(){
+    formEl.style.display = 'none';
+    document.getElementById('totp-form').style.display = 'none';
+    subEl.textContent = '';
+    titleEl.textContent = t('totpTitle');
+    document.getElementById('totp-choose-intro').textContent = t('totpChooseIntro');
+    document.getElementById('totp-choose-app').textContent = t('totpChooseApp');
+    document.getElementById('totp-choose-email').textContent = t('totpChooseEmail');
+    document.getElementById('totp-choice').style.display = 'block';
+  }
+
+  document.getElementById('totp-choose-app').onclick = () => {
+    showTotpStep({ method: 'totp' });
+  };
+  document.getElementById('totp-choose-email').onclick = async () => {
     errorEl.textContent = '';
     try {
       await apiFetch('/api/auth/email-otp', { method:'POST', body: JSON.stringify({ lang }) });
@@ -231,6 +268,10 @@
     } catch(e2) {
       errorEl.textContent = e2.message;
     }
+  };
+  document.getElementById('totp-change-method').onclick = (e) => {
+    e.preventDefault();
+    showTotpChoice();
   };
   document.getElementById('totp-resend').onclick = async (e) => {
     e.preventDefault();
