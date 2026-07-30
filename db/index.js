@@ -182,6 +182,38 @@ db.prepare(`
   )
 `).run();
 
+// "Carta de Instrucción a Fiduciario (Instruction Letter to Trustee)" se
+// agregó a data/scenario-docs.json como documento de Propiedad para cesión
+// de derechos y extinción de fideicomiso — mismo backfill puramente aditivo
+// que "Costos de cierre" arriba, para las operaciones de esos dos escenarios
+// que ya existían.
+db.prepare(`
+  INSERT INTO documents (deal_id, deal_party_entity_id, name, created_at)
+  SELECT d.id, NULL, 'Carta de Instrucción a Fiduciario (Instruction Letter to Trustee)', datetime('now')
+  FROM deals d
+  WHERE d.scenario IN ('transfer', 'trust_termination')
+    AND NOT EXISTS (
+      SELECT 1 FROM documents doc
+      WHERE doc.deal_id = d.id AND doc.deal_party_entity_id IS NULL
+        AND doc.name = 'Carta de Instrucción a Fiduciario (Instruction Letter to Trustee)'
+    )
+`).run();
+
+// "Bank trust KYC and formats signed" se quitó de data/scenario-tasks.json —
+// ese expediente ya se maneja completo por el sistema real de KYC
+// (routes/kyc.js); este task de "subir a mano y firmar" en el tracker de
+// cierre era un duplicado confuso en la tarjeta de E-signature, que debe
+// tener solo el escrow agreement. Solo borra las filas que todavía no
+// tengan ningún avance (sin archivo subido ni enviadas a firma) — las que
+// ya tengan trabajo real se dejan intactas para no perderlo.
+db.prepare(`
+  DELETE FROM tasks
+  WHERE label_es = 'KYC y formatos del fiduciario firmados'
+    AND doc_type = 'manual'
+    AND document_url IS NULL
+    AND docusign_status = 'not_sent'
+`).run();
+
 // Revisión de admin/abogado interno sobre un documento ya subido (para
 // rechazarlo si se subió mal o no es válido) — 'pending' hasta que alguien
 // lo revise; vuelve a 'pending' cada vez que se sube un archivo nuevo (ver

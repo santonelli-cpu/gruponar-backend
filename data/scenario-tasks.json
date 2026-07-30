@@ -91,12 +91,6 @@
       "es": "KYC y formatos del fiduciario enviados"
     },
     {
-      "en": "Bank trust KYC and formats signed",
-      "es": "KYC y formatos del fiduciario firmados",
-      "sign": true,
-      "docType": "manual"
-    },
-    {
       "en": "Certificate of no dues of property tax",
       "es": "Certificado de no adeudo de predial"
     },
@@ -161,12 +155,6 @@
       "es": "KYC y formatos del fiduciario enviados"
     },
     {
-      "en": "Bank trust KYC and formats signed",
-      "es": "KYC y formatos del fiduciario firmados",
-      "sign": true,
-      "docType": "manual"
-    },
-    {
       "en": "Certificate of no dues of property tax",
       "es": "Certificado de no adeudo de predial"
     },
@@ -229,12 +217,6 @@
     {
       "en": "Bank trust KYC and formats sent",
       "es": "KYC y formatos del fiduciario enviados"
-    },
-    {
-      "en": "Bank trust KYC and formats signed",
-      "es": "KYC y formatos del fiduciario firmados",
-      "sign": true,
-      "docType": "manual"
     },
     {
       "en": "Certificate of no dues of property tax",
