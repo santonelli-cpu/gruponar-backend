@@ -1052,7 +1052,11 @@ router.get('/:id/documents/:docId/file', requireAuth, async (req, res) => {
 });
 
 // PATCH /api/deals/:id/tasks/:taskId — actualizar estado del tracker.
-router.patch('/:id/tasks/:taskId', requireAuth, (req, res) => {
+// Confirmar que un paso del tracker de cierre ya se hizo es solo de
+// admin/abogado interno — antes cualquiera con acceso a la operación
+// (agente, comprador, vendedor) podía ir marcándolo, cuando en realidad es
+// quien coordina el cierre quien sabe si ese paso de verdad se completó.
+router.patch('/:id/tasks/:taskId', requireRole('admin', 'lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const { status } = req.body || {};
   if (!['pending', 'progress', 'done'].includes(status)) return res.status(400).json({ error: 'Status inválido.' });
