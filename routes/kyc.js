@@ -102,13 +102,37 @@ function dealAgentIsLprAgency(dealId, side) {
   return !!row && row.agency === 'LPR Luxury';
 }
 
+// Nacionalidad típica de cada lado según el tipo de operación — ya estaba
+// implícita en data/scenario-docs.json (CURP/RFC = mexicano, Pasaporte +
+// Estatus migratorio = extranjero) pero nunca se usaba para el idioma del
+// KYC, que por defecto siempre caía en español a menos que alguien eligiera
+// inglés a mano. Compraventa directa: ambos mexicanos. Fideicomiso
+// (constitución): vendedor mexicano, comprador extranjero (por eso necesita
+// fideicomiso). Cesión de derechos: ambos extranjeros (se ceden derechos de
+// fideicomiso entre extranjeros). Extinción de fideicomiso: vendedor
+// extranjero (sale del fideicomiso), comprador mexicano (adquiere directo).
+const DEFAULT_KYC_LANG_BY_SCENARIO_SIDE = {
+  purchase: { seller: 'es', buyer: 'es' },
+  trust: { seller: 'es', buyer: 'en' },
+  transfer: { seller: 'en', buyer: 'en' },
+  trust_termination: { seller: 'en', buyer: 'es' }
+};
+
+function defaultKycLang(deal, party) {
+  const bySide = DEFAULT_KYC_LANG_BY_SCENARIO_SIDE[deal.scenario];
+  return (bySide && bySide[party.side]) || 'es';
+}
+
 // Persona física de Armour en inglés todavía no está construida. TLA cubre
 // física (EN/ES) y moral solo en EN. `deal.escrow_company` decide entre
 // Armour/TLA; `party.party_type` decide individual vs entidad (antes venía
 // de deal.buyer_type/seller_type, ahora cada parte tiene el suyo propio);
-// `lang` lo elige quien abre el formulario. Si el agente es de LPR Luxury,
-// eso manda por encima de la escrow company (ver dealAgentIsLprAgency).
+// `lang`, si no lo manda quien llama, se resuelve solo según el tipo de
+// operación y el lado (ver defaultKycLang arriba) en vez de caer siempre en
+// español. Si el agente es de LPR Luxury, eso manda por encima de la
+// escrow company (ver dealAgentIsLprAgency).
 function resolveTemplateKey(deal, party, lang, isLprAgency) {
+  lang = lang || defaultKycLang(deal, party);
   const isIndividual = party.party_type === 'individual';
 
   if (isLprAgency) {

@@ -21,16 +21,16 @@
   *{box-sizing:border-box;}
   body{margin:0;}
   .app{background:var(--stone); color:var(--ink); font-family:'Inter',sans-serif; border-radius:18px; overflow:hidden; border:0.5px solid var(--line); box-shadow:var(--shadow-card);}
-  .head-band{background:var(--oxblood-deep); color:var(--stone); padding:20px 26px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:14px;}
-  .brand-mark{display:flex; align-items:center; gap:14px;}
-  .brand-mark img{height:38px; width:auto; display:block;}
-  .brand-text{display:flex; flex-direction:column; line-height:1.15;}
-  .brand-text .name{font-family:'Cormorant Garamond',serif; font-weight:600; font-size:21px; letter-spacing:0.5px;}
-  .brand-text .tag{font-family:'Inter',sans-serif; font-size:10px; letter-spacing:2.2px; text-transform:uppercase; color:#D9B9A9; margin-top:2px;}
-  .tabs{display:flex; gap:6px;}
-  .tab-btn{background:transparent; border:1px solid rgba(255,255,255,0.28); color:#EBD9D2; padding:7px 16px; border-radius:24px; font-size:12.5px; cursor:pointer; font-family:'Inter',sans-serif; transition:background 0.15s;}
-  .tab-btn:hover{background:rgba(255,255,255,0.08);}
-  .tab-btn.active{background:var(--stone); color:var(--oxblood-deep); border-color:var(--stone);}
+  .head-band{position:relative; background:radial-gradient(140% 180% at 12% -20%, #4E1610 0%, var(--oxblood-deep) 55%); color:var(--stone); padding:24px 28px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; border-bottom:2px solid var(--gold);}
+  .brand-mark{display:flex; align-items:center; gap:16px;}
+  .brand-mark img{height:44px; width:44px; object-fit:contain; display:block; background:rgba(246,244,240,0.08); border:1px solid rgba(246,244,240,0.22); border-radius:12px; padding:5px;}
+  .brand-text{display:flex; flex-direction:column; line-height:1.2;}
+  .brand-text .name{font-family:'Cormorant Garamond',serif; font-weight:700; font-size:23px; letter-spacing:1.2px;}
+  .brand-text .tag{font-family:'Inter',sans-serif; font-size:10px; letter-spacing:2.6px; text-transform:uppercase; color:#D9B9A9; margin-top:3px;}
+  .tabs{display:flex; gap:8px; align-items:center;}
+  .tab-btn{background:rgba(246,244,240,0.06); border:1px solid rgba(255,255,255,0.24); color:#EBD9D2; padding:8px 18px; border-radius:24px; font-size:12.5px; cursor:pointer; font-family:'Inter',sans-serif; transition:all 0.15s;}
+  .tab-btn:hover{background:rgba(255,255,255,0.14); border-color:rgba(255,255,255,0.4);}
+  .tab-btn.active{background:var(--stone); color:var(--oxblood-deep); border-color:var(--stone); font-weight:600;}
   .body-wrap{padding:24px 26px; min-height:400px;}
   .banner{background:var(--gold-soft); color:#5B4620; font-size:12px; padding:10px 14px; border-radius:10px; margin-bottom:18px; line-height:1.5;}
   .section-title{font-family:'Cormorant Garamond',serif; font-weight:600; font-size:19px; margin:0 0 12px; color:var(--oxblood-deep);}
@@ -686,6 +686,20 @@ function adaptDealDetail(row){
   return base;
 }
 
+// Mismo criterio que defaultKycLang en routes/kyc.js (duplicado a propósito,
+// como AGENCIES — no hay endpoint de catálogos): compraventa directa, ambos
+// mexicanos; fideicomiso, vendedor mexicano y comprador extranjero; cesión
+// de derechos, ambos extranjeros; extinción de fideicomiso, vendedor
+// extranjero y comprador mexicano. Se usa para que el portal le aparezca ya
+// en su idioma a un comprador/vendedor extranjero desde el primer login, en
+// vez de asumir español siempre.
+const DEFAULT_LANG_BY_SCENARIO_SIDE = {
+  purchase: { seller: 'es', buyer: 'es' },
+  trust: { seller: 'es', buyer: 'en' },
+  transfer: { seller: 'en', buyer: 'en' },
+  trust_termination: { seller: 'en', buyer: 'es' }
+};
+
 async function loadData(){
   await checkSession();
   if(!authenticated){ deals = []; render(); return; }
@@ -693,6 +707,18 @@ async function loadData(){
     const rows = await apiFetch('/api/deals');
     deals = rows.map(adaptDealSummary);
   }catch(e){ deals = []; }
+  // Solo si nunca eligió idioma a mano (el toggle ES/EN sí queda guardado
+  // permanentemente en cuanto lo usan una vez) y es comprador/vendedor —
+  // admin/agente/abogado coordinan en varios idiomas, no tiene sentido
+  // adivinarles uno.
+  if(!localStorage.getItem('nar_lang') && ['buyer','seller'].includes(currentUser.role)){
+    const myDeal = deals.find(d => d.parties.some(p => p.linkedUser && p.linkedUser.userId === currentUser.id));
+    const myParty = myDeal && myDeal.parties.find(p => p.linkedUser && p.linkedUser.userId === currentUser.id);
+    if(myDeal && myParty){
+      const bySide = DEFAULT_LANG_BY_SCENARIO_SIDE[myDeal.scenario];
+      if(bySide && bySide[myParty.side]) lang = bySide[myParty.side];
+    }
+  }
   if(['admin','agent','lawyer','external_lawyer'].includes(currentUser.role)) loadDashboard();
   if(currentUser.role === 'admin') loadPendingUsers();
   // Link directo a una operación (ej. desde el correo de "te agregamos a
