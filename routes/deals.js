@@ -297,7 +297,7 @@ router.get('/:id', requireAuth, (req, res) => {
   });
 
   const agents = db.prepare(`
-    SELECT dp.id AS dealPartyId, u.id AS userId, u.name, u.email, u.agency
+    SELECT dp.id AS dealPartyId, u.id AS userId, u.name, u.email, u.agency, dp.represents_side AS representsSide
     FROM deal_parties dp JOIN users u ON u.id = dp.user_id
     WHERE dp.deal_id = ? AND dp.role_in_deal = 'agent'
     ORDER BY u.name
@@ -314,7 +314,7 @@ router.get('/:id', requireAuth, (req, res) => {
 // el body).
 router.patch('/:id', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
-  const { escrowCompany, closingDate, dueDiligenceEndDate } = req.body || {};
+  const { escrowCompany, closingDate, dueDiligenceEndDate, property, price, furniturePrice, currency, startDate, development } = req.body || {};
 
   if (escrowCompany !== undefined) {
     if (!['armour', 'tla'].includes(escrowCompany)) {
@@ -328,6 +328,18 @@ router.patch('/:id', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
   if (dueDiligenceEndDate !== undefined) {
     db.prepare('UPDATE deals SET due_diligence_end_date = ? WHERE id = ?').run(dueDiligenceEndDate || null, req.params.id);
   }
+  // Edición de los datos básicos de la operación — no se toca `scenario`
+  // acá: cambiarlo invalidaría el checklist/tracker ya construidos, eso
+  // requeriría rearmarlos desde cero, fuera de lo que pide un simple editar.
+  if (property !== undefined) {
+    if (!property || !property.trim()) return res.status(400).json({ error: 'El nombre de la operación no puede quedar vacío.' });
+    db.prepare('UPDATE deals SET property = ? WHERE id = ?').run(property.trim(), req.params.id);
+  }
+  if (price !== undefined) db.prepare('UPDATE deals SET price = ? WHERE id = ?').run(Number(price) || 0, req.params.id);
+  if (furniturePrice !== undefined) db.prepare('UPDATE deals SET furniture_price = ? WHERE id = ?').run(Number(furniturePrice) || 0, req.params.id);
+  if (currency !== undefined) db.prepare('UPDATE deals SET currency = ? WHERE id = ?').run(currency || 'USD', req.params.id);
+  if (startDate !== undefined) db.prepare('UPDATE deals SET start_date = ? WHERE id = ?').run(startDate || null, req.params.id);
+  if (development !== undefined) db.prepare('UPDATE deals SET development = ? WHERE id = ?').run(development || 'punta_mita', req.params.id);
 
   const info = db.prepare('SELECT id FROM deals WHERE id = ?').get(req.params.id);
   if (!info) return res.status(404).json({ error: 'Operación no encontrada.' });
@@ -499,12 +511,15 @@ router.get('/:id/available-agents', requireRole('admin', 'agent', 'lawyer'), (re
 // sesión antes en la plataforma.
 router.post('/:id/agents', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
-  const { userId } = req.body || {};
+  const { userId, representsSide } = req.body || {};
+  if (representsSide !== undefined && representsSide !== null && !['buyer', 'seller'].includes(representsSide)) {
+    return res.status(400).json({ error: 'representsSide debe ser buyer o seller.' });
+  }
   const user = db.prepare("SELECT * FROM users WHERE id = ? AND role = 'agent' AND status = 'active'").get(userId);
   if (!user) return res.status(400).json({ error: 'Ese usuario no existe o no es un agente activo.' });
   const already = db.prepare('SELECT 1 FROM deal_parties WHERE deal_id = ? AND user_id = ?').get(req.params.id, userId);
   if (already) return res.status(409).json({ error: 'Ese agente ya está en esta operación.' });
-  db.prepare("INSERT INTO deal_parties (deal_id, user_id, role_in_deal) VALUES (?,?,'agent')").run(req.params.id, userId);
+  db.prepare("INSERT INTO deal_parties (deal_id, user_id, role_in_deal, represents_side) VALUES (?,?,'agent',?)").run(req.params.id, userId, representsSide || null);
   res.status(201).json({ ok: true });
 
   // Aviso por correo (best-effort, no bloquea la respuesta) — el agente ya
@@ -515,6 +530,20 @@ router.post('/:id/agents', requireRole('admin', 'agent', 'lawyer'), (req, res) =
     mailer.sendAgentAddedToDealEmail({ to: user.email, name: user.name, dealProperty: deal.property, url })
       .then(result => { if (!result.ok) console.error('[resend] no se pudo avisar al agente agregado', req.params.id, result.error); });
   }
+});
+
+// PATCH /api/deals/:id/agents/:userId — cambia a quién representa un agente
+// ya agregado (ej. se les olvidó elegirlo, o cambió de cliente).
+router.patch('/:id/agents/:userId', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const { representsSide } = req.body || {};
+  if (representsSide !== null && !['buyer', 'seller'].includes(representsSide)) {
+    return res.status(400).json({ error: 'representsSide debe ser buyer, seller, o null.' });
+  }
+  const info = db.prepare("UPDATE deal_parties SET represents_side = ? WHERE deal_id = ? AND user_id = ? AND role_in_deal = 'agent'")
+    .run(representsSide, req.params.id, req.params.userId);
+  if (!info.changes) return res.status(404).json({ error: 'Ese agente no está en esta operación.' });
+  res.json({ ok: true });
 });
 
 // DELETE /api/deals/:id/agents/:userId — quita a un agente de la operación

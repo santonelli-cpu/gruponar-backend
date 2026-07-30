@@ -1,11 +1,12 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const multer = require('multer');
 const docusign = require('docusign-esign');
 const db = require('../db');
 const { requireAuth, requireRole } = require('./auth');
 const { canAccessDeal, myDealPartyEntityId } = require('../lib/access');
-const { dealDir } = require('../lib/storage');
+const { dealDir, genFilename } = require('../lib/storage');
 const gcsStorage = require('../lib/gcsStorage');
 const driveClient = require('../lib/googleDriveClient');
 const docusignClient = require('../lib/docusignClient');
@@ -22,6 +23,12 @@ const { fillLprMoralEn, SIGNATURE_ANCHOR: LPR_MORAL_EN_ANCHOR } = require('../li
 const { convertDocxToPdf } = require('../lib/kycFill/docxFillEngine');
 
 const router = express.Router();
+
+const uploadSigned = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, file.mimetype === 'application/pdf')
+});
 
 // Registro de plantillas disponibles. Cada una: definición de campos +
 // función de llenado + anchor de firma (mismo patrón para todas).
@@ -126,12 +133,12 @@ function loadParty(dealId, partyId) {
 
 // Copia el expediente KYC generado también a la subcarpeta Vendedor/Comprador
 // de Drive — best-effort, no bloquea la generación si Drive no está listo.
-async function syncKycToDrive(req, dealId, party, filename, pdfPath) {
+async function syncKycToDrive(req, dealId, party, filename, pdfPath, bufferOverride) {
   if (!driveClient.isConfigured() || !driveClient.isConnected()) return;
   const deal = db.prepare('SELECT drive_folder_id FROM deals WHERE id = ?').get(dealId);
   if (!deal || !deal.drive_folder_id) return;
   try {
-    const buffer = fs.readFileSync(pdfPath);
+    const buffer = bufferOverride || fs.readFileSync(pdfPath);
     const subfolder = party.side === 'seller' ? 'Vendedor' : 'Comprador';
     await driveClient.uploadFileToDealSubfolder(req, deal.drive_folder_id, subfolder, filename, buffer, 'application/pdf');
   } catch (err) {
@@ -215,6 +222,51 @@ router.delete('/deals/:id/kyc/:partyId', requireRole('admin', 'agent', 'lawyer')
   }
   db.prepare('DELETE FROM kyc_submissions WHERE id = ?').run(submission.id);
   res.json({ ok: true });
+});
+
+// POST /api/deals/:id/kyc/:partyId/upload-signed — a veces el KYC de TLA se
+// llena y firma por fuera del portal (en persona, o con otro sistema) — acá
+// se sube ya firmado en vez de pasar por el flujo de generar + DocuSign.
+// Solo staff, porque es un registro administrativo de algo que ya pasó
+// afuera, no algo que la propia parte reporte de sí misma.
+router.post('/deals/:id/kyc/:partyId/upload-signed', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+  const { id, partyId } = req.params;
+  if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
+
+  const deal = loadDeal(id);
+  if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
+  const party = loadParty(id, partyId);
+  if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
+
+  uploadSigned.single('file')(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: err.message || 'Archivo inválido.' });
+    if (!req.file) return res.status(400).json({ error: 'Sube un PDF.' });
+    try {
+      const priorSubmission = getLatestSubmission(partyId);
+      const templateKey = priorSubmission ? priorSubmission.template_key : resolveTemplateKey(deal, party, req.query.lang, dealAgentIsLprAgency(id));
+      if (!templateKey) return res.status(400).json({ error: 'No se pudo determinar qué plantilla KYC le corresponde a esta parte.' });
+
+      const key = path.join(String(id), genFilename(`kyc-${templateKey}-party${partyId}-firmado.pdf`));
+      await gcsStorage.uploadBuffer(key, req.file.buffer, 'application/pdf');
+
+      const existing = getSubmission(partyId, templateKey);
+      if (existing) {
+        db.prepare("UPDATE kyc_submissions SET status = 'signed', generated_file_url = ?, updated_at = datetime('now') WHERE id = ?")
+          .run(key, existing.id);
+      } else {
+        db.prepare(`
+          INSERT INTO kyc_submissions (deal_id, deal_party_entity_id, template_key, answers_json, status, generated_file_url, created_by)
+          VALUES (?,?,?,'{}','signed',?,?)
+        `).run(id, partyId, templateKey, key, req.session.userId);
+      }
+
+      res.json({ ok: true });
+      const template = TEMPLATES[templateKey];
+      syncKycToDrive(req, id, party, `KYC ${(template && template.definition.label) || templateKey} - ${party.name} (firmado).pdf`, null, req.file.buffer);
+    } catch (uploadErr) {
+      res.status(502).json({ error: uploadErr.message || 'Error al subir el archivo.' });
+    }
+  });
 });
 
 // POST /api/deals/:id/kyc/:partyId — guarda respuestas como borrador.
@@ -314,7 +366,7 @@ router.post('/deals/:id/kyc/:partyId/generate', requireAuth, async (req, res) =>
     const pdfPath = convertDocxToPdf(docxPath);
     const key = path.join(String(id), path.basename(pdfPath));
     await gcsStorage.uploadLocalFile(key, pdfPath, 'application/pdf');
-    syncKycToDrive(req, id, party, `KYC ${template.label || submission.template_key} - ${party.name}.pdf`, pdfPath);
+    syncKycToDrive(req, id, party, `KYC ${template.definition.label || submission.template_key} - ${party.name}.pdf`, pdfPath);
     fs.rmSync(docxPath, { force: true });
     fs.rmSync(pdfPath, { force: true });
 

@@ -28,6 +28,11 @@ const upload = multer({
   limits: { fileSize: 15 * 1024 * 1024 },
   fileFilter: (req, file, cb) => cb(null, file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
 });
+const uploadSigned = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, file.mimetype === 'application/pdf')
+});
 
 // extractPlaceholders/fillContractTemplate necesitan un .docx real en disco
 // (lo desempacan con el binario `unzip`) — se baja del bucket a un temporal,
@@ -92,12 +97,12 @@ function dealContractScratchDir(dealId) {
 
 // Copia el contrato de promesa generado a la subcarpeta Propiedad de Drive
 // (es de la operación en general, no de una parte específica) — best-effort.
-async function syncContractToDrive(req, dealId, property, pdfPath) {
+async function syncContractToDrive(req, dealId, property, pdfPath, bufferOverride) {
   if (!driveClient.isConfigured() || !driveClient.isConnected()) return;
   const deal = db.prepare('SELECT drive_folder_id FROM deals WHERE id = ?').get(dealId);
   if (!deal || !deal.drive_folder_id) return;
   try {
-    const buffer = fs.readFileSync(pdfPath);
+    const buffer = bufferOverride || fs.readFileSync(pdfPath);
     await driveClient.uploadFileToDealSubfolder(req, deal.drive_folder_id, 'Propiedad', `Contrato de Promesa - ${property}.pdf`, buffer, 'application/pdf');
   } catch (err) {
     console.error('[google-drive] no se pudo copiar el contrato a Drive', dealId, err.message);
@@ -252,6 +257,30 @@ router.post('/deals/:id/contract/generate', requireRole('admin', 'lawyer'), asyn
   } finally {
     [templateLocalPath, docxPath, pdfPath].forEach(p => { if (p) fs.rmSync(p, { force: true }); });
   }
+});
+
+// POST /api/deals/:id/contract/upload-signed — a veces el contrato de
+// promesa se redacta/firma por fuera del portal — se sube ya firmado en vez
+// de generarlo y mandarlo a DocuSign desde acá.
+router.post('/deals/:id/contract/upload-signed', requireRole('admin', 'lawyer'), (req, res) => {
+  const { id } = req.params;
+  if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
+  const deal = loadDeal(id);
+  if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
+
+  uploadSigned.single('file')(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: err.message || 'Archivo inválido.' });
+    if (!req.file) return res.status(400).json({ error: 'Sube un PDF.' });
+    try {
+      const key = path.join(String(id), 'contract', genFilename('contrato-firmado.pdf'));
+      await gcsStorage.uploadBuffer(key, req.file.buffer, 'application/pdf');
+      db.prepare("UPDATE deals SET contract_status = 'signed', contract_generated_file_url = ? WHERE id = ?").run(key, id);
+      res.json({ ok: true });
+      syncContractToDrive(req, id, deal.property, null, req.file.buffer);
+    } catch (uploadErr) {
+      res.status(502).json({ error: uploadErr.message || 'Error al subir el archivo.' });
+    }
+  });
 });
 
 // GET /api/deals/:id/contract/file?format=pdf|docx — pdf: cualquiera con

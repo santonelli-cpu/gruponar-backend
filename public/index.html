@@ -225,6 +225,10 @@ const STRINGS = {
     integrationsTitle: 'Integraciones', driveHint: 'Crea la carpeta de cada operación en tu Google Drive (dentro de "Closings {year}"), con Propiedad/Vendedor/Comprador/Escrow/Notaría adentro.',
     driveNotConfigured: 'No configurado', driveConnected: 'Conectado', connectDrive: 'Conectar Google Drive', disconnect: 'Desconectar',
     openInDrive: 'Abrir carpeta en Drive', createDriveFolder: 'Crear carpetas en Drive', driveFolderCreating: 'Creando…',
+    representsUnset: 'Representa a…', representsSeller: 'Representa al vendedor', representsBuyer: 'Representa al comprador',
+    uploadSignedKyc: 'Subir ya firmado', uploadSignedKycTitle: 'Si el KYC se llenó y firmó fuera del portal, súbelo aquí ya firmado en vez de generarlo/enviarlo a firma.',
+    uploadSignedContract: 'Subir ya firmado', uploadSignedContractTitle: 'Si el contrato se redactó/firmó fuera del portal, súbelo aquí ya firmado en vez de generarlo/enviarlo a firma.',
+    editDeal: 'Editar', editDealTitle: 'Editar datos de la operación', saveChanges: 'Guardar cambios', cancel: 'Cancelar',
     removeFromDeal: 'Quitar de esta operación', addAgentTitle: 'Agregar agente a esta operación', addAgentHint: 'Elige un agente que ya tiene cuenta — no hace falta invitarlo de nuevo.',
     noAvailableAgents: 'No hay agentes activos disponibles para agregar (o ya están todos en esta operación).', add: 'Agregar', agentsInDeal: 'Agentes en esta operación', noAgentsInDeal: 'Todavía no hay ningún agente agregado a esta operación.',
     approve: 'Aprobar', inviteAgentLawyer: 'Invitar agente o abogado',
@@ -365,6 +369,10 @@ const STRINGS = {
     integrationsTitle: 'Integrations', driveHint: 'Creates each deal\'s folder in your Google Drive (inside "Closings {year}"), with Property/Seller/Buyer/Escrow/Notary inside.',
     driveNotConfigured: 'Not configured', driveConnected: 'Connected', connectDrive: 'Connect Google Drive', disconnect: 'Disconnect',
     openInDrive: 'Open folder in Drive', createDriveFolder: 'Create Drive folders', driveFolderCreating: 'Creating…',
+    representsUnset: 'Represents…', representsSeller: 'Represents the seller', representsBuyer: 'Represents the buyer',
+    uploadSignedKyc: 'Upload signed', uploadSignedKycTitle: 'If the KYC was filled and signed outside the portal, upload it here already signed instead of generating/sending it for signature.',
+    uploadSignedContract: 'Upload signed', uploadSignedContractTitle: 'If the contract was drafted/signed outside the portal, upload it here already signed instead of generating/sending it for signature.',
+    editDeal: 'Edit', editDealTitle: 'Edit deal details', saveChanges: 'Save changes', cancel: 'Cancel',
     removeFromDeal: 'Remove from this deal', addAgentTitle: 'Add an agent to this deal', addAgentHint: 'Pick an agent who already has an account — no need to invite them again.',
     noAvailableAgents: 'No active agents available to add (or they are all already on this deal).', add: 'Add', agentsInDeal: 'Agents on this deal', noAgentsInDeal: 'No agent has been added to this deal yet.',
     approve: 'Approve', inviteAgentLawyer: 'Invite agent or lawyer',
@@ -486,6 +494,7 @@ let availableAgentsCache = {};
 let driveStatus = null;
 let escrowFormOpenFor = null;
 let activeDealId = null;
+let editingDealId = null;
 let portalRole = 'agent'; // solo se usa en isPreview para elegir "Agente" vs una parte específica
 let portalPartyId = null; // qué deal_party_entities.id está previsualizando el staff
 let portalDealId = null;
@@ -1649,10 +1658,55 @@ function buildAdminDealDetail(deal){
       ${deal.driveFolderUrl
         ? `<a class="btn" href="${deal.driveFolderUrl}" target="_blank"><i class="ti ti-folder" aria-hidden="true"></i> ${t('openInDrive')}</a>`
         : `<button class="btn" id="create-drive-folder-btn"><i class="ti ti-folder-plus" aria-hidden="true"></i> ${t('createDriveFolder')}</button>`}
+      <button class="btn" id="editDealBtn"><i class="ti ti-pencil" aria-hidden="true"></i> ${t('editDeal')}</button>
       <button class="btn" id="delDeal"><i class="ti ti-trash" aria-hidden="true"></i> ${t('deleteDeal')}</button>
     </div>
   `;
   wrap.appendChild(header);
+  header.querySelector('#editDealBtn').onclick = () => { editingDealId = editingDealId === deal.id ? null : deal.id; render(); };
+  if(editingDealId === deal.id){
+    const editCard = document.createElement('div');
+    editCard.className = 'card';
+    editCard.innerHTML = `
+      <div style="font-weight:500; font-size:13px; margin-bottom:8px;">${t('editDealTitle')}</div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:8px;">
+        <label style="display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--ink-soft);">${t('property')} <input type="text" id="ed-property" value="${escapeHtml(deal.property)}"></label>
+        <label style="display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--ink-soft);">${t('development')} <select id="ed-development">
+          <option value="punta_mita" ${(deal.development||'punta_mita')==='punta_mita'?'selected':''}>${t('devPuntaMita')}</option>
+          <option value="mandarina" ${deal.development==='mandarina'?'selected':''}>${t('devMandarina')}</option>
+          <option value="general" ${deal.development==='general'?'selected':''}>${t('devGeneral')}</option>
+        </select></label>
+        <label style="display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--ink-soft);">${t('propertyPrice')} <input type="number" step="0.01" min="0" id="ed-price" value="${deal.price||0}"></label>
+        <label style="display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--ink-soft);">${t('furnitureLabel')} <input type="number" step="0.01" min="0" id="ed-furniture" value="${deal.furniturePrice||0}"></label>
+        <label style="display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--ink-soft);">${t('currency')} <input type="text" id="ed-currency" value="${escapeHtml(deal.currency||'USD')}" maxlength="3" style="text-transform:uppercase;"></label>
+        <label style="display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--ink-soft);">${t('startLabel')} <input type="date" id="ed-startdate" value="${deal.startDate||''}"></label>
+      </div>
+      <div style="display:flex; gap:8px; margin-top:12px;">
+        <button class="btn primary" id="ed-save">${t('saveChanges')}</button>
+        <button class="btn" id="ed-cancel">${t('cancel')}</button>
+      </div>
+      <div class="gate-error" id="ed-error"></div>
+    `;
+    wrap.appendChild(editCard);
+    editCard.querySelector('#ed-cancel').onclick = () => { editingDealId = null; render(); };
+    editCard.querySelector('#ed-save').onclick = async () => {
+      const errEl = editCard.querySelector('#ed-error');
+      errEl.textContent = '';
+      const body = {
+        property: editCard.querySelector('#ed-property').value.trim(),
+        development: editCard.querySelector('#ed-development').value,
+        price: Number(editCard.querySelector('#ed-price').value) || 0,
+        furniturePrice: Number(editCard.querySelector('#ed-furniture').value) || 0,
+        currency: editCard.querySelector('#ed-currency').value.trim().toUpperCase() || 'USD',
+        startDate: editCard.querySelector('#ed-startdate').value || null
+      };
+      try{
+        await apiFetch('/api/deals/' + deal.id, { method:'PATCH', body: JSON.stringify(body) });
+        editingDealId = null;
+        await openDeal(deal.id);
+      }catch(e){ errEl.textContent = e.message; }
+    };
+  }
   const driveFolderBtn = header.querySelector('#create-drive-folder-btn');
   if(driveFolderBtn){
     driveFolderBtn.onclick = async () => {
@@ -1858,6 +1912,29 @@ function buildKycSection(deal, party, isStaffView){
       }catch(e){ alert(e.message); }
     };
     actions.appendChild(signBtn);
+  }
+
+  if(isStaffView){
+    const uploadSignedBtn = document.createElement('button');
+    uploadSignedBtn.className = 'btn'; uploadSignedBtn.style.fontSize = '11px';
+    uploadSignedBtn.title = t('uploadSignedKycTitle');
+    uploadSignedBtn.innerHTML = `<i class="ti ti-upload" aria-hidden="true"></i> ${t('uploadSignedKyc')}`;
+    const uploadSignedInput = document.createElement('input');
+    uploadSignedInput.type = 'file'; uploadSignedInput.accept = '.pdf'; uploadSignedInput.style.display = 'none';
+    uploadSignedBtn.onclick = () => uploadSignedInput.click();
+    uploadSignedInput.onchange = async (e) => {
+      const file = e.target.files[0];
+      if(!file) return;
+      const original = uploadSignedBtn.innerHTML;
+      uploadSignedBtn.disabled = true; uploadSignedBtn.innerHTML = `<i class="ti ti-loader-2" aria-hidden="true"></i> ${t('uploading')}`;
+      const fd = new FormData(); fd.append('file', file);
+      try{
+        await apiUpload(`/api/deals/${deal.id}/kyc/${role}/upload-signed`, fd);
+        await loadKyc(deal.id, role);
+      }catch(err){ alert(err.message); uploadSignedBtn.disabled = false; uploadSignedBtn.innerHTML = original; }
+    };
+    actions.appendChild(uploadSignedBtn);
+    actions.appendChild(uploadSignedInput);
   }
 
   box.appendChild(actions);
@@ -2297,8 +2374,17 @@ function buildDealAgentsSection(deal){
   } else {
     deal.agents.forEach(a => {
       const row = document.createElement('div');
-      row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:0.5px solid var(--line); gap:10px;';
-      row.innerHTML = `<span style="font-size:13px;">${escapeHtml(a.name)} <span class="field-hint" style="margin:0;">— ${escapeHtml(a.email)}${a.agency ? ' · ' + escapeHtml(a.agency) : ''}</span></span>`;
+      row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:0.5px solid var(--line); gap:10px; flex-wrap:wrap;';
+      row.innerHTML = `
+        <span style="font-size:13px;">${escapeHtml(a.name)} <span class="field-hint" style="margin:0;">— ${escapeHtml(a.email)}${a.agency ? ' · ' + escapeHtml(a.agency) : ''}</span></span>
+        <span style="display:flex; align-items:center; gap:8px;">
+          <select data-represents style="font-size:11.5px; padding:2px 6px;">
+            <option value="" ${!a.representsSide?'selected':''}>${t('representsUnset')}</option>
+            <option value="seller" ${a.representsSide==='seller'?'selected':''}>${t('representsSeller')}</option>
+            <option value="buyer" ${a.representsSide==='buyer'?'selected':''}>${t('representsBuyer')}</option>
+          </select>
+        </span>
+      `;
       const rmBtn = document.createElement('button');
       rmBtn.className = 'btn'; rmBtn.style.fontSize = '11px'; rmBtn.textContent = t('removeFromDeal');
       rmBtn.onclick = async () => {
@@ -2308,7 +2394,13 @@ function buildDealAgentsSection(deal){
           await openDeal(deal.id);
         }catch(e){ alert(e.message); }
       };
-      row.appendChild(rmBtn);
+      row.querySelector('span:last-child').appendChild(rmBtn);
+      row.querySelector('[data-represents]').onchange = async (e) => {
+        try{
+          await apiFetch(`/api/deals/${deal.id}/agents/${a.userId}`, { method:'PATCH', body: JSON.stringify({ representsSide: e.target.value || null }) });
+          await openDeal(deal.id);
+        }catch(err){ alert(err.message); e.target.value = a.representsSide || ''; }
+      };
       card.appendChild(row);
     });
   }
@@ -2340,13 +2432,19 @@ function buildDealAgentsSection(deal){
       <select id="add-agent-select">
         ${avail.map(a => `<option value="${a.id}">${escapeHtml(a.name)}${a.agency ? ' — ' + escapeHtml(a.agency) : ''}</option>`).join('')}
       </select>
+      <select id="add-agent-represents">
+        <option value="">${t('representsUnset')}</option>
+        <option value="seller">${t('representsSeller')}</option>
+        <option value="buyer">${t('representsBuyer')}</option>
+      </select>
       <button class="btn primary" id="add-agent-btn" style="font-size:12px;">${t('add')}</button>
     `;
     card.appendChild(row);
     row.querySelector('#add-agent-btn').onclick = async () => {
       const userId = Number(row.querySelector('#add-agent-select').value);
+      const representsSide = row.querySelector('#add-agent-represents').value || null;
       try{
-        await apiFetch(`/api/deals/${deal.id}/agents`, { method:'POST', body: JSON.stringify({ userId }) });
+        await apiFetch(`/api/deals/${deal.id}/agents`, { method:'POST', body: JSON.stringify({ userId, representsSide }) });
         delete availableAgentsCache[deal.id];
         await openDeal(deal.id);
       }catch(e){ alert(e.message); }
@@ -2661,6 +2759,27 @@ function buildContractSection(deal, isStaffView){
     };
     actions.appendChild(sendBtn);
   }
+
+  const uploadSignedContractBtn = document.createElement('button');
+  uploadSignedContractBtn.className = 'btn'; uploadSignedContractBtn.style.fontSize = '11px';
+  uploadSignedContractBtn.title = t('uploadSignedContractTitle');
+  uploadSignedContractBtn.innerHTML = `<i class="ti ti-upload" aria-hidden="true"></i> ${t('uploadSignedContract')}`;
+  const uploadSignedContractInput = document.createElement('input');
+  uploadSignedContractInput.type = 'file'; uploadSignedContractInput.accept = '.pdf'; uploadSignedContractInput.style.display = 'none';
+  uploadSignedContractBtn.onclick = () => uploadSignedContractInput.click();
+  uploadSignedContractInput.onchange = async (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    const original = uploadSignedContractBtn.innerHTML;
+    uploadSignedContractBtn.disabled = true; uploadSignedContractBtn.innerHTML = `<i class="ti ti-loader-2" aria-hidden="true"></i> ${t('uploading')}`;
+    const fd = new FormData(); fd.append('file', file);
+    try{
+      await apiUpload(`/api/deals/${deal.id}/contract/upload-signed`, fd);
+      await loadContract(deal.id);
+    }catch(err){ alert(err.message); uploadSignedContractBtn.disabled = false; uploadSignedContractBtn.innerHTML = original; }
+  };
+  actions.appendChild(uploadSignedContractBtn);
+  actions.appendChild(uploadSignedContractInput);
 
   box.appendChild(actions);
 

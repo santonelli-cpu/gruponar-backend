@@ -119,6 +119,13 @@ ensureColumn('deals', 'contract_docusign_status', "contract_docusign_status TEXT
 ensureColumn('deals', 'drive_folder_id', 'drive_folder_id TEXT');
 ensureColumn('deals', 'drive_folder_url', 'drive_folder_url TEXT');
 
+// A qué lado representa un agente en esta operación (solo aplica cuando
+// role_in_deal='agent'; NULL para comprador/vendedor, o para agentes viejos
+// que todavía no se les asignó lado). No lleva CHECK acá porque
+// ensureColumn agrega columnas simples — la validación de 'buyer'/'seller'
+// se hace en la ruta, igual que otros campos opcionales de este estilo.
+ensureColumn('deal_parties', 'represents_side', 'represents_side TEXT');
+
 // El CHECK de deals.scenario y contract_templates.scenario tampoco se puede
 // alterar con ADD COLUMN — mismo procedimiento que ensureUserRoleAllowsLawyer.
 // Van al final, después de todos los ensureColumn de arriba, porque hay que
