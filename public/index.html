@@ -40,6 +40,7 @@
   .body-wrap{padding:24px 26px; min-height:400px;}
   .banner{background:var(--gold-soft); color:#5B4620; font-size:12px; padding:10px 14px; border-radius:10px; margin-bottom:18px; line-height:1.5;}
   .section-title{font-family:'Cormorant Garamond',serif; font-weight:600; font-size:19px; margin:0 0 12px; color:var(--oxblood-deep);}
+  .section-label{font-size:11.5px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:var(--ink-faint); margin:0 0 10px;}
   .card{background:var(--stone-card); border:0.5px solid var(--line); border-radius:14px; padding:18px 20px; margin-bottom:16px; box-shadow:var(--shadow-card);}
   .grid2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
   .form-row{display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap;}
@@ -115,6 +116,50 @@
   .task-stamp{flex-shrink:0; width:30px; height:30px; border-radius:50%; border:2px solid var(--line-strong); display:flex; align-items:center; justify-content:center; font-size:11px; cursor:pointer; background:var(--stone-card); color:var(--ink-faint);}
   .task-stamp.progress{border-color:var(--clay); color:var(--clay);}
   .task-stamp.done{border-color:var(--gold); color:var(--gold); background:var(--gold-soft);}
+
+  /* ---- Portal: dashboard de operaciones + resumen enriquecido de la operación abierta ---- */
+  .op-scroller{display:flex; gap:12px; overflow-x:auto; padding:2px 2px 8px;}
+  .op-card{flex:0 0 220px; background:var(--stone-card); border:1.5px solid var(--line); border-radius:14px; padding:14px 16px; cursor:pointer; transition:border-color 0.15s ease, background 0.15s ease;}
+  .op-card:hover{border-color:var(--gold);}
+  .op-card.active{border-color:var(--oxblood); background:var(--gold-soft);}
+  .op-card-top{display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;}
+  .op-role{font-size:10.5px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; color:var(--oxblood);}
+  .op-check{width:18px; height:18px; border-radius:50%; background:var(--oxblood); display:flex; align-items:center; justify-content:center; flex-shrink:0; color:var(--gold-soft);}
+  .op-check svg{width:11px; height:11px;}
+  .op-title{font-size:14.5px; font-weight:600; margin:0 0 3px;}
+  .op-addr{font-size:12px; color:var(--ink-soft); margin:0 0 10px;}
+  .op-bar{height:4px; background:var(--line); border-radius:999px; overflow:hidden; margin-bottom:5px;}
+  .op-bar-fill{height:100%; background:var(--oxblood); border-radius:999px;}
+  .op-pct{font-size:11px; color:var(--ink-faint);}
+
+  .stepper{display:flex; align-items:flex-start; margin:18px 0 20px;}
+  .step{flex:1; display:flex; flex-direction:column; align-items:center; position:relative; text-align:center;}
+  .step:not(:last-child)::after{content:""; position:absolute; top:13px; left:calc(50% + 20px); width:calc(100% - 40px); height:2px; background:var(--line);}
+  .step.done:not(:last-child)::after{background:var(--oxblood);}
+  .step-dot{width:26px; height:26px; border-radius:50%; background:var(--stone-card); border:2px solid var(--line-strong); display:flex; align-items:center; justify-content:center; z-index:1; margin-bottom:7px; color:var(--ink-faint); font-size:11px; font-weight:600;}
+  .step.done .step-dot{background:var(--oxblood); border-color:var(--oxblood); color:var(--gold-soft);}
+  .step.current .step-dot{border-color:var(--oxblood); color:var(--oxblood);}
+  .step-label{font-size:11px; font-weight:500; color:var(--ink-soft); max-width:92px; line-height:1.3;}
+  .step.current .step-label{color:var(--oxblood); font-weight:600;}
+
+  .stat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:18px;}
+  .stat-tile{background:var(--stone); border-radius:12px; padding:12px 14px;}
+  .stat-tile .label{font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.05em; font-weight:500; margin:0 0 4px;}
+  .stat-tile .value{font-size:16px; font-weight:600; margin:0;}
+  .stat-tile .sub{font-size:11px; color:var(--ink-faint); margin-top:2px;}
+
+  .callout{display:flex; align-items:center; justify-content:space-between; gap:16px; background:var(--gold-soft); border-left:3px solid var(--oxblood); border-radius:12px; padding:14px 16px;}
+  .callout-text{font-size:13px; color:var(--oxblood-deep); line-height:1.5;}
+  .callout-text b{font-weight:600;}
+
+  @media (max-width:640px){
+    .stat-grid{grid-template-columns:repeat(2,1fr);}
+    .stepper{flex-direction:column; align-items:stretch; gap:12px;}
+    .step{flex-direction:row; align-items:center; text-align:left; gap:10px;}
+    .step:not(:last-child)::after{display:none;}
+    .step-label{max-width:none; text-align:left;}
+    .callout{flex-direction:column; align-items:flex-start;}
+  }
   .task-en{font-weight:500; font-size:13.5px;}
   .task-es{font-size:12px; color:var(--ink-soft); font-style:italic;}
   .sign-tag{font-size:10.5px; padding:2px 8px; border-radius:10px; background:var(--oxblood-soft); color:var(--oxblood); margin-left:6px; font-weight:500;}
@@ -488,8 +533,21 @@ const STRINGS = {
     noFieldsHint2: 'Guarda el Word y súbelo de nuevo como machote (puedes borrar este con el botón ⋯ de la lista si ya no lo necesitas). Mientras tanto, igual puedes generar el documento tal cual está, sin campos dinámicos.',
     generateDownloadDocx: 'Generar y descargar .docx', viewPdf: 'Ver PDF',
     portalPreviewBanner: 'Vista previa del portal de cliente — así lo ve un comprador o vendedor real.',
-    myDeals: 'Mis operaciones',
+    yourOperations: 'Tus operaciones',
+    pctComplete: '{pct}% completo',
     noDealsYetPortal: 'Todavía no tienes ninguna operación ligada a tu cuenta.<br>En cuanto te agreguen a una, aparecerá aquí.',
+    stageOfferAccepted: 'Oferta aceptada', stageDueDiligence: 'Debida diligencia',
+    stageNotaryClosing: 'Notaría y proceso de cierre', stageReadyToSign: 'Listo para firmar', stageClosed: 'Cerrado',
+    propertyValueLabel: 'Valor de la propiedad', closingDateLabel: 'Fecha de cierre',
+    overallProgressLabel: 'Avance general', waitingOnYouLabel: 'Pendiente de ti',
+    itemsDoneLabel: '{done} de {total} completados',
+    waitingItemsCount: '{count}', uploadSingular: '{count} documento', uploadsPlural: '{count} documentos',
+    signatureSingular: '{count} firma', signaturesPlural: '{count} firmas',
+    allCaughtUp: 'Estás al día — nada pendiente de tu parte.',
+    pendingDocsLabel: 'documentos pendientes',
+    nextStepLabel: 'Siguiente paso', viewSection: 'Ver sección',
+    nextStepSignature: 'tienes un documento esperando tu firma: {name}.',
+    nextStepUpload: 'sube tu documento pendiente: {name}.',
     loadingFile: 'Cargando expediente...',
     viewAs: 'Ver como', agentSeesAll: 'Agente (ve todo)',
     yourDocsChecklist: 'Tu checklist de documentos (KYC)', yourKycFile: 'Tu expediente KYC',
@@ -680,8 +738,21 @@ const STRINGS = {
     noFieldsHint2: "Save the Word file and upload it again as a template (you can delete this one with the ⋯ button on the list if you don't need it anymore). Meanwhile, you can still generate the document as-is, with no dynamic fields.",
     generateDownloadDocx: 'Generate and download .docx', viewPdf: 'View PDF',
     portalPreviewBanner: "Client portal preview — this is what a real buyer or seller sees.",
-    myDeals: 'My deals',
+    yourOperations: 'Your operations',
+    pctComplete: '{pct}% complete',
     noDealsYetPortal: "You don't have any deal linked to your account yet.<br>As soon as you're added to one, it'll show up here.",
+    stageOfferAccepted: 'Offer accepted', stageDueDiligence: 'Due diligence',
+    stageNotaryClosing: 'Notary and closing process', stageReadyToSign: 'Ready to sign', stageClosed: 'Closed',
+    propertyValueLabel: 'Property value', closingDateLabel: 'Closing date',
+    overallProgressLabel: 'Overall progress', waitingOnYouLabel: 'Waiting on you',
+    itemsDoneLabel: '{done} of {total} items done',
+    waitingItemsCount: '{count}', uploadSingular: '{count} upload', uploadsPlural: '{count} uploads',
+    signatureSingular: '{count} signature', signaturesPlural: '{count} signatures',
+    allCaughtUp: "You're all caught up — nothing pending on your end.",
+    pendingDocsLabel: 'pending documents',
+    nextStepLabel: 'Next step', viewSection: 'View section',
+    nextStepSignature: 'you have a document waiting for your signature: {name}.',
+    nextStepUpload: 'upload your pending document: {name}.',
     loadingFile: 'Loading file...',
     viewAs: 'View as', agentSeesAll: 'Agent (sees everything)',
     yourDocsChecklist: 'Your document checklist (KYC)', yourKycFile: 'Your KYC file',
@@ -991,6 +1062,26 @@ function pctTasks(deal){
   if(!deal._loaded) return deal._counts.tasksTotal ? Math.round(deal._counts.tasksDone/deal._counts.tasksTotal*100) : 0;
   const done = deal.tasks.filter(t=>t.status==='done').length;
   return deal.tasks.length ? Math.round(done/deal.tasks.length*100) : 0;
+}
+// Un solo % que combina documentos + tracker — para la barra de una sola
+// línea de las tarjetas de operación del Portal (ahí no hace falta el
+// desglose en dos, solo un vistazo rápido de qué tan avanzada va).
+function overallPct(deal){
+  if(!deal._loaded){
+    const total = deal._counts.documentsTotal + deal._counts.tasksTotal;
+    const done = deal._counts.documentsDone + deal._counts.tasksDone;
+    return total ? Math.round(done/total*100) : 0;
+  }
+  const total = deal.documents.length + deal.tasks.length;
+  const done = deal.documents.filter(d=>d.status==='done').length + deal.tasks.filter(t=>t.status==='done').length;
+  return total ? Math.round(done/total*100) : 0;
+}
+// La parte (deal_party_entity) de esta operación ligada a la cuenta actual
+// — null si quien mira es staff sin parte transaccional propia (admin,
+// agente, abogado). Se usa para la etiqueta BUYER/SELLER de cada tarjeta y
+// para saber de qué lado calcular "waiting on you".
+function myPartyInDeal(deal){
+  return deal.parties.find(p => p.linkedUser && p.linkedUser.userId === currentUser.id) || null;
 }
 
 function render(){
@@ -3947,28 +4038,154 @@ function buildContractSection(deal, isStaffView){
 
 // ---------- PORTAL ----------
 
-// Tarjetas de operación para un comprador/vendedor/agente con más de una
-// operación activa (o admin/abogado en vista previa) — reemplaza el
-// dropdown plano que era la única forma de moverse entre operaciones en el
-// portal. Reusa el mismo estilo .deal-card que ya usa la lista de
-// Operaciones de admin, para que se sienta como la misma app.
-function buildPortalDealsDashboard(){
+// Reduce las ~12-15 tareas detalladas del tracker a 5 etapas de alto nivel
+// (igual que el mockup) — funciona para las 4 variantes de escenario porque
+// todas comparten la misma tarea inicial ("Purchase agreement signed") y
+// las mismas 3 finales (borrador de escritura, firma, entrega en notaría),
+// sin importar cuántas tareas intermedias tenga cada una.
+const CLOSING_STAGE_KEYS = ['stageOfferAccepted','stageDueDiligence','stageNotaryClosing','stageReadyToSign','stageClosed'];
+function closingStages(deal){
+  const n = deal.tasks.length;
+  if(n < 5) return null;
+  const b1 = 1, b2 = Math.min(5, n-2), b3 = n-2, b4 = n-1;
+  const ranges = [[0,b1],[b1,b2],[b2,b3],[b3,b4],[b4,n]];
+  const stages = ranges.map((r,i) => {
+    const slice = deal.tasks.slice(r[0], r[1]);
+    return { key: CLOSING_STAGE_KEYS[i], done: slice.length > 0 && slice.every(t=>t.status==='done') };
+  });
+  if(deal.status === 'completed') stages.forEach(s => { s.done = true; });
+  return stages;
+}
+function buildClosingStepper(deal){
+  const stages = closingStages(deal);
+  if(!stages) return null;
+  const currentIdx = stages.findIndex(s=>!s.done);
+  const wrap = document.createElement('div');
+  wrap.className = 'stepper';
+  stages.forEach((s, i) => {
+    const step = document.createElement('div');
+    step.className = 'step' + (s.done ? ' done' : '') + (i === currentIdx ? ' current' : '');
+    step.innerHTML = `<div class="step-dot">${s.done ? '<i class="ti ti-check" aria-hidden="true"></i>' : (i+1)}</div><span class="step-label">${t(s.key)}</span>`;
+    wrap.appendChild(step);
+  });
+  return wrap;
+}
+
+// Documentos/firmas pendientes que le tocan específicamente a ESTA parte
+// (no a la operación en general) — respeta las mismas reglas de lado que
+// buildPropertyDocsSection/buildNotaryClosingCostsSection (Propiedad es del
+// vendedor, Pagos es del comprador) para que "Waiting on you" y el aviso de
+// siguiente paso solo cuenten lo que de verdad depende de esta persona.
+function pendingItemsForParty(deal, party){
+  const uploads = deal.documents.filter(d => d.partyId === party.id && d.status !== 'done').slice();
+  if(party.side === 'seller'){
+    uploads.push(...deal.documents.filter(d => d.partyId === null && !CLOSING_COSTS_SECTION_DOC_NAMES.includes(d.name) && d.status !== 'done'));
+  }
+  if(party.side === 'buyer'){
+    uploads.push(...deal.documents.filter(d => d.partyId === null && [ESCROW_PAYMENT_PROOF_DOC_NAME, NOTARY_PAYMENT_PROOF_DOC_NAME].includes(d.name) && d.status !== 'done'));
+  }
+  const signatures = deal.tasks.filter(t => t.sign && t.docusignStatus !== 'completed' && (!t.signSide || t.signSide === party.side));
+  return { uploads, signatures };
+}
+
+function closingDaysLeftLabel(dateStr){
+  const days = Math.ceil((new Date(dateStr + 'T00:00:00') - new Date()) / 86400000);
+  if(days < 0) return t('closingOverdue');
+  if(days === 0) return t('closingToday');
+  return days === 1 ? t('daysToCloseSingular', { days }) : t('daysToClosePlural', { days });
+}
+
+// Property value / Closing date / Overall progress / Waiting on you — el
+// último tile depende de si estamos viendo la operación como una parte
+// específica (comprador/vendedor real, o staff previsualizándolo) o como
+// staff "que ve todo", donde "esperando por ti" no aplica y se muestra el
+// total de documentos pendientes de la operación en su lugar.
+function buildPortalStatGrid(deal, myParty){
   const grid = document.createElement('div');
+  grid.className = 'stat-grid';
+  const pct = overallPct(deal);
+  const totalItems = deal.documents.length + deal.tasks.length;
+  const doneItems = deal.documents.filter(d=>d.status==='done').length + deal.tasks.filter(t=>t.status==='done').length;
+  let waitingValue, waitingSub;
+  if(myParty){
+    const { uploads, signatures } = pendingItemsForParty(deal, myParty);
+    waitingValue = t('waitingItemsCount', { count: uploads.length + signatures.length });
+    const parts = [];
+    if(uploads.length) parts.push(t(uploads.length===1 ? 'uploadSingular' : 'uploadsPlural', { count: uploads.length }));
+    if(signatures.length) parts.push(t(signatures.length===1 ? 'signatureSingular' : 'signaturesPlural', { count: signatures.length }));
+    waitingSub = parts.length ? parts.join(', ') : t('allCaughtUp');
+  } else {
+    const pendingDocs = deal.documents.filter(d=>d.status!=='done').length;
+    waitingValue = t('waitingItemsCount', { count: pendingDocs });
+    waitingSub = t('pendingDocsLabel');
+  }
+  grid.innerHTML = `
+    <div class="stat-tile"><p class="label">${t('propertyValueLabel')}</p><p class="value">${deal.currency||'USD'} ${Number(deal.price||0).toLocaleString()}</p></div>
+    <div class="stat-tile"><p class="label">${t('closingDateLabel')}</p><p class="value">${deal.closingDate || '—'}</p>${deal.closingDate ? `<p class="sub">${closingDaysLeftLabel(deal.closingDate)}</p>` : ''}</div>
+    <div class="stat-tile"><p class="label">${t('overallProgressLabel')}</p><p class="value">${pct}%</p><p class="sub">${t('itemsDoneLabel', { done: doneItems, total: totalItems })}</p></div>
+    <div class="stat-tile"><p class="label">${t('waitingOnYouLabel')}</p><p class="value">${waitingValue}</p><p class="sub">${waitingSub}</p></div>
+  `;
+  return grid;
+}
+
+// Un solo aviso con lo más urgente pendiente de ESTA parte — prioriza
+// firmas (nadie más puede hacerlo por ellos) sobre subir documentos. Solo
+// tiene sentido cuando se ve una parte específica, no en "ve todo" de staff.
+function buildNextStepCallout(deal, myParty){
+  if(!myParty) return null;
+  const { uploads, signatures } = pendingItemsForParty(deal, myParty);
+  if(!signatures.length && !uploads.length) return null;
+  const box = document.createElement('div');
+  box.className = 'callout';
+  if(signatures.length){
+    const task = signatures[0];
+    box.innerHTML = `<p class="callout-text"><b>${t('nextStepLabel')}:</b> ${t('nextStepSignature', { name: escapeHtml(lang==='en' ? task.en : task.es) })}</p>`;
+  } else {
+    const doc = uploads[0];
+    const isPaymentProof = [ESCROW_PAYMENT_PROOF_DOC_NAME, NOTARY_PAYMENT_PROOF_DOC_NAME].includes(doc.name);
+    box.innerHTML = `<p class="callout-text"><b>${t('nextStepLabel')}:</b> ${t('nextStepUpload', { name: escapeHtml(localizeDocName(doc.name)) })}</p>`;
+    const anchorId = isPaymentProof ? 'portal-closing-costs-section' : 'portal-property-section';
+    const btn = document.createElement('button');
+    btn.className = 'btn primary'; btn.style.whiteSpace = 'nowrap';
+    btn.textContent = isPaymentProof ? t('viewClosingCosts') : t('viewSection');
+    btn.onclick = () => { document.getElementById(anchorId)?.scrollIntoView({ behavior:'smooth', block:'start' }); };
+    box.appendChild(btn);
+  }
+  return box;
+}
+
+// Tarjetas de operación en scroller horizontal (una fila, se desliza en vez
+// de apilarse) — para un comprador/vendedor/agente con más de una operación
+// activa, o admin/abogado en vista previa. Reemplaza el dropdown plano que
+// era la única forma de moverse entre operaciones en el portal.
+function buildPortalDealsDashboard(){
+  const scroller = document.createElement('div');
+  scroller.className = 'op-scroller';
   deals.forEach(d => {
     const s = SCENARIOS[d.scenario];
+    const myParty = myPartyInDeal(d);
+    // Si quien mira es la propia parte (comprador/vendedor real, o staff
+    // previsualizando esa parte), la etiqueta de arriba dice su lado —
+    // igual que el mockup ("BUYER"/"SELLER"). Si no (staff viendo "todo"),
+    // se queda el badge corto del escenario, que ya identifica la operación.
+    const roleLabel = myParty ? (myParty.side === 'seller' ? t('sellerLabel2') : t('buyerLabel2')) : s.labelShort;
+    const pct = overallPct(d);
     const card = document.createElement('div');
-    card.className = 'deal-card';
+    card.className = 'op-card' + (d.id === portalDealId ? ' active' : '');
     card.innerHTML = `
-      <div class="deal-title">${escapeHtml(d.property)}</div>
-      <div class="deal-sub">${escapeHtml(dealPartyNames(d,'seller'))} → ${escapeHtml(dealPartyNames(d,'buyer'))}</div>
-      <span class="badge ${s.badgeClass}">${s.labelShort}</span>
-      ${d.status==='completed' ? `<span class="badge" style="background:var(--jade-soft); color:var(--jade); margin-left:4px;">${t('dealCompletedBadge')}</span>` : ''}
-      <div class="deal-sub" style="margin-top:6px;">${t('documentsLabel')}: ${pctDocs(d)}% · ${t('trackerLabel')}: ${pctTasks(d)}%</div>
+      <div class="op-card-top">
+        <span class="op-role">${escapeHtml(roleLabel.toUpperCase())}</span>
+        ${d.id === portalDealId ? `<div class="op-check"><i class="ti ti-check" aria-hidden="true"></i></div>` : ''}
+      </div>
+      <p class="op-title">${escapeHtml(d.property)}</p>
+      <p class="op-addr">${DEVELOPMENT_LABEL[d.development||'punta_mita'].split(' (')[0]} &middot; ${escapeHtml(s.labelShort)}</p>
+      <div class="op-bar"><div class="op-bar-fill" style="width:${pct}%"></div></div>
+      <span class="op-pct">${t('pctComplete', { pct })}</span>
     `;
     card.onclick = () => { portalDealId = d.id; portalRole = 'agent'; portalPartyId = null; render(); };
-    grid.appendChild(card);
+    scroller.appendChild(card);
   });
-  return grid;
+  return scroller;
 }
 function renderPortal(body){
   // Solo admin/agente/abogado pueden "ver como" cualquier persona — es una
@@ -3993,26 +4210,18 @@ function renderPortal(body){
   }
 
   // Con una sola operación (el caso normal de un comprador/vendedor) no
-  // tiene caso obligarlo a elegirla de un dropdown — se abre directo. Con
-  // varias (agente con múltiples clientes, o admin/abogado en vista
-  // previa), se ve un mini-dashboard de tarjetas en vez del selector plano
-  // que antes era la única forma de moverse entre operaciones.
-  if(!portalDealId && deals.length === 1) portalDealId = deals[0].id;
+  // tiene caso mostrar el scroller de tarjetas — se abre directo. Con varias
+  // (agente con múltiples clientes, o admin/abogado en vista previa), el
+  // scroller queda siempre visible arriba (como en el mockup) para saltar de
+  // una a otra sin perder de vista cuál está abierta — no es un modo
+  // "dashboard" aparte que reemplaza el detalle, conviven en la misma vista.
   if(portalDealId && !deals.some(d => d.id === portalDealId)) portalDealId = null;
-
-  if(!portalDealId){
-    const dt = document.createElement('div'); dt.className = 'section-title'; dt.textContent = t('myDeals');
-    body.appendChild(dt);
-    body.appendChild(buildPortalDealsDashboard());
-    return;
-  }
+  if(!portalDealId) portalDealId = deals[0].id;
 
   if(deals.length > 1){
-    const back = document.createElement('button');
-    back.className = 'crumb';
-    back.innerHTML = `<i class="ti ti-chevron-left" aria-hidden="true"></i> ${t('myDeals')}`;
-    back.onclick = () => { portalDealId = null; portalRole = 'agent'; portalPartyId = null; render(); };
-    body.appendChild(back);
+    const dt = document.createElement('div'); dt.className = 'section-label'; dt.textContent = t('yourOperations');
+    body.appendChild(dt);
+    body.appendChild(buildPortalDealsDashboard());
   }
 
   const deal = deals.find(d=>d.id===portalDealId);
@@ -4058,15 +4267,20 @@ function renderPortal(body){
     <span class="badge ${s.badgeClass}">${s.labelShort}</span>
     <div class="deal-sub" style="margin-top:6px;">${escapeHtml(dealPartyNames(deal,'seller'))} → ${escapeHtml(dealPartyNames(deal,'buyer'))}</div>
   `;
+  const stepper = buildClosingStepper(deal);
+  if(stepper) header.appendChild(stepper);
+  header.appendChild(buildPortalStatGrid(deal, myParty));
+  const callout = buildNextStepCallout(deal, myParty);
+  if(callout) header.appendChild(callout);
   body.appendChild(header);
 
-  const pt = document.createElement('div'); pt.className='section-title'; pt.textContent=t('propertySection');
+  const pt = document.createElement('div'); pt.className='section-title'; pt.id='portal-property-section'; pt.textContent=t('propertySection');
   body.appendChild(pt);
   const pcard = document.createElement('div'); pcard.className='card';
   pcard.appendChild(buildPropertyDocsSection(deal, isPreview && !myParty, myParty && myParty.side));
   body.appendChild(pcard);
 
-  const nt = document.createElement('div'); nt.className='section-title'; nt.textContent=t('notaryClosingCostsSection');
+  const nt = document.createElement('div'); nt.className='section-title'; nt.id='portal-closing-costs-section'; nt.textContent=t('notaryClosingCostsSection');
   body.appendChild(nt);
   const ncard = document.createElement('div'); ncard.className='card';
   ncard.appendChild(buildNotaryClosingCostsSection(deal, isPreview && !myParty, myParty && myParty.side));

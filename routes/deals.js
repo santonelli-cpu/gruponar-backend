@@ -297,6 +297,18 @@ function attachParties(rows) {
   `).all(...ids);
   const byDeal = {};
   parties.forEach(p => { (byDeal[p.deal_id] ||= []).push(p); });
+  // linkedUser — el resumen (esta lista) también lo necesita: el Portal usa
+  // la cuenta ligada de cada parte para saber si quien mira es comprador o
+  // vendedor de esa operación (tarjeta BUYER/SELLER), sin tener que abrir
+  // el detalle completo de cada una primero.
+  const linkedRows = db.prepare(`
+    SELECT dp.deal_party_entity_id AS partyId, u.id AS userId, u.name, u.email
+    FROM deal_parties dp JOIN users u ON u.id = dp.user_id
+    WHERE dp.deal_id IN (${placeholders}) AND dp.deal_party_entity_id IS NOT NULL
+  `).all(...ids);
+  const linkedByParty = {};
+  linkedRows.forEach(r => { linkedByParty[r.partyId] = { userId: r.userId, name: r.name, email: r.email }; });
+  parties.forEach(p => { p.linkedUser = linkedByParty[p.id] || null; });
   rows.forEach(r => { r.parties = byDeal[r.id] || []; });
   return rows;
 }
