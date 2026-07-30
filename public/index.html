@@ -70,6 +70,34 @@
   .review-badge.approved{background:var(--jade-soft); color:var(--jade);}
   .review-badge.rejected{background:var(--oxblood-soft); color:var(--oxblood);}
   .doc-review-note{flex-basis:100%; font-size:11.5px; color:var(--oxblood); margin-top:-2px;}
+  .btn.success{background:var(--jade-soft); color:var(--jade); border-color:var(--jade-soft);}
+  .btn.success:hover{background:#DFEEE0; color:var(--jade);}
+  .btn.danger{background:var(--oxblood-soft); color:var(--oxblood); border-color:var(--oxblood-soft);}
+  .btn.danger:hover{background:#F7DDD6; color:var(--oxblood);}
+  .crumb{font-size:13px; color:var(--ink-soft); margin-bottom:14px; display:inline-flex; align-items:center; gap:4px; cursor:pointer; background:none; border:none; padding:0; font-family:'Inter',sans-serif;}
+  .crumb:hover{color:var(--ink);}
+  .deal-head-row{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:6px;}
+  .parties-line{font-size:14px; color:var(--ink); margin:0 0 4px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+  .parties-line .muted{color:var(--ink-faint); font-size:12.5px;}
+  .location-line{font-size:12.5px; color:var(--ink-soft); margin:0 0 10px; display:flex; align-items:center; gap:5px;}
+  .stat-row{display:flex; gap:32px; padding:14px 0; border-top:0.5px solid var(--line); border-bottom:0.5px solid var(--line); margin-bottom:16px; flex-wrap:wrap;}
+  .stat{display:flex; flex-direction:column; gap:3px;}
+  .stat-label{font-size:11px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:0.06em; font-weight:500;}
+  .stat-value{font-size:15px; font-weight:600;}
+  .progress-row{display:flex; gap:28px; margin-bottom:16px; flex-wrap:wrap;}
+  .progress-block{flex:1; min-width:160px;}
+  .progress-top{display:flex; justify-content:space-between; font-size:12px; margin-bottom:5px;}
+  .progress-top .progress-name{color:var(--ink-soft); font-weight:500;}
+  .progress-top .progress-pct{font-weight:600;}
+  .field-row-clean{display:flex; gap:14px; flex-wrap:wrap; margin-bottom:16px;}
+  .field-row-clean label{flex:1; min-width:160px; display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--ink-soft); font-weight:500;}
+  .party-card-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;}
+  .party-name{font-size:14px; font-weight:600; margin:0;}
+  .party-name span{font-weight:400; color:var(--ink-faint); font-size:12.5px;}
+  .party-card-row{display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:16px; padding:10px 0; border-bottom:0.5px solid var(--line);}
+  .party-card-row:last-child{border-bottom:none;}
+  .party-meta{font-size:12.5px; color:var(--ink-soft); margin:3px 0 0;}
+  .session-avatar{width:44px; height:44px; border-radius:50%; background:var(--oxblood-deep); color:var(--gold-soft); display:flex; align-items:center; justify-content:center; font-weight:600; font-size:14px; flex-shrink:0;}
   .doc-item:last-child{border-bottom:none;}
   .doc-check{width:20px; height:20px; border-radius:6px; border:1.5px solid var(--line-strong); cursor:pointer; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:12px; color:var(--jade); transition:all 0.15s;}
   .doc-check.done{background:var(--jade); border-color:var(--jade); color:#fff;}
@@ -1303,16 +1331,20 @@ function renderAdmin(body){
   if(adminView === 'list' || adminView === 'dashboard' || adminView === 'team' || adminView === 'clients' || adminView === null){
     const secCard = document.createElement('div');
     secCard.className = 'card';
+    const initials = currentUser.name.trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
     secCard.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-        <div>
-          <div style="font-size:12px; color:var(--ink-soft);">${t('activeSession')}</div>
-          <div style="font-weight:600; font-size:15px;">${escapeHtml(currentUser.name)} <span style="font-weight:400; color:var(--ink-soft); font-size:12.5px;">— ${escapeHtml(currentUser.email)}</span></div>
-          <span class="badge" style="background:var(--oxblood-soft); color:var(--oxblood);">${roleDisplayLabel(currentUser.role)}</span>
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:14px;">
+        <div style="display:flex; gap:14px;">
+          <div class="session-avatar">${escapeHtml(initials)}</div>
+          <div>
+            <div style="font-size:12px; color:var(--ink-soft);">${t('activeSession')}</div>
+            <div style="font-weight:600; font-size:15px; margin:2px 0 8px;">${escapeHtml(currentUser.name)} <span style="font-weight:400; color:var(--ink-soft); font-size:12.5px;">— ${escapeHtml(currentUser.email)}</span></div>
+            <span class="badge" style="background:var(--oxblood-soft); color:var(--oxblood);">${roleDisplayLabel(currentUser.role)}</span>
+            <div class="field-hint" style="margin-top:10px; max-width:520px;">${t('sessionHint')}</div>
+          </div>
         </div>
         <button class="btn" id="do-logout"><i class="ti ti-logout" aria-hidden="true"></i> ${t('logout')}</button>
       </div>
-      <div class="field-hint" style="margin-top:10px;">${t('sessionHint')}</div>
     `;
     body.appendChild(secCard);
     secCard.querySelector('#do-logout').onclick = logout;
@@ -2189,29 +2221,30 @@ function buildPartiesSection(deal){
   function renderSide(side, label){
     const card = document.createElement('div'); card.className = 'card';
     const header = document.createElement('div');
-    header.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;';
+    header.className = 'party-card-head';
     const parties = deal.parties.filter(p => p.side === side);
-    header.innerHTML = `<span style="font-weight:600; font-size:13px;">${label} (${parties.length})</span>`;
+    header.innerHTML = `<span class="party-name">${label} (${parties.length})</span>`;
     const addBtn = document.createElement('button');
-    addBtn.className = 'btn'; addBtn.style.fontSize = '11px'; addBtn.textContent = t('add');
+    addBtn.className = 'btn'; addBtn.style.fontSize = '12px'; addBtn.innerHTML = `<i class="ti ti-plus" aria-hidden="true"></i> ${t('add')}`;
     addBtn.disabled = parties.length >= MAX_PARTIES_PER_SIDE;
     header.appendChild(addBtn);
     card.appendChild(header);
 
     parties.forEach(p => {
       const row = document.createElement('div');
-      row.style.cssText = 'padding:8px 0; border-bottom:0.5px solid var(--line);';
+      row.className = 'party-card-row';
       row.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-          <span style="font-size:13px;">${escapeHtml(p.name)} <span class="field-hint" style="margin:0;">(${TYPE_LABEL[p.partyType]})</span>${p.linkedUser ? ` <span class="badge" style="background:var(--jade-soft); color:var(--jade);">${t('accountLinked')}</span>` : ''}</span>
-          <span style="display:flex; gap:6px;">
-            <button class="btn pty-edit" style="font-size:11px;">${t('edit')}</button>
-            ${parties.length > 1 ? `<button class="btn pty-remove" style="font-size:11px;">${t('remove')}</button>` : ''}
-          </span>
+        <div>
+          <p class="party-name">${escapeHtml(p.name)} <span>(${TYPE_LABEL[p.partyType]})</span>${p.linkedUser ? ` <span class="badge" style="background:var(--jade-soft); color:var(--jade); margin:0 0 0 4px;">${t('accountLinked')}</span>` : ''}</p>
+          ${p.partyType !== 'individual' ? `<p class="party-meta">${escapeHtml(partyOwnershipSummary(p))}</p>` : ''}
         </div>
-        ${p.partyType !== 'individual' ? `<div class="field-hint" style="margin:4px 0 0;">${escapeHtml(partyOwnershipSummary(p))}</div>` : ''}
+        <span style="display:flex; gap:6px; flex-shrink:0;">
+          <button class="btn pty-edit" style="font-size:11px;">${t('edit')}</button>
+          ${parties.length > 1 ? `<button class="btn danger pty-remove" style="font-size:11px;">${t('remove')}</button>` : ''}
+        </span>
       `;
       const editSlot = document.createElement('div');
+      editSlot.style.flexBasis = '100%';
       row.appendChild(editSlot);
 
       row.querySelector('.pty-edit').onclick = () => {
@@ -2286,38 +2319,60 @@ function buildAdminDealDetail(deal){
   const s = SCENARIOS[deal.scenario];
   const wrap = document.createElement('div');
   const back = document.createElement('button');
-  back.className = 'btn'; back.style.marginBottom='12px';
-  back.innerHTML = `<i class="ti ti-arrow-left" aria-hidden="true"></i> ${t('allDeals')}`;
+  back.className = 'crumb';
+  back.innerHTML = `<i class="ti ti-chevron-left" aria-hidden="true"></i> ${t('allDeals')}`;
   back.onclick = () => { activeDealId=null; render(); };
   wrap.appendChild(back);
 
   const header = document.createElement('div');
   header.className = 'card';
+  const sellerNamesHtml = sellerParties(deal).map(p=>`${escapeHtml(p.name)} <span class="muted">(${TYPE_LABEL[p.partyType]})</span>`).join(', ');
+  const buyerNamesHtml = buyerParties(deal).map(p=>`${escapeHtml(p.name)} <span class="muted">(${TYPE_LABEL[p.partyType]})</span>`).join(', ');
+  const docsPct = pctDocs(deal), tasksPct = pctTasks(deal);
   header.innerHTML = `
-    <div class="deal-title" style="font-size:18px;">${escapeHtml(deal.property)}</div>
-    <span class="badge ${s.badgeClass}">${s.labelShort}</span>
-    ${deal.status==='completed' ? `<span class="badge" style="background:var(--jade-soft); color:var(--jade); margin-left:4px;">${t('dealCompletedBadge')}</span>` : ''}
-    <div class="deal-sub" style="margin-top:8px;">${sellerParties(deal).map(p=>`${escapeHtml(p.name)} (${TYPE_LABEL[p.partyType]})`).join(', ')} → ${buyerParties(deal).map(p=>`${escapeHtml(p.name)} (${TYPE_LABEL[p.partyType]})`).join(', ')}</div>
-    <div class="deal-sub">${DEVELOPMENT_LABEL[deal.development||'punta_mita']}</div>
-    <div class="deal-sub">${t('propertyLabelColon')}: ${deal.currency||'USD'} ${Number(deal.price||0).toLocaleString()}${deal.furniturePrice ? ' · '+t('furnitureLabel')+': '+Number(deal.furniturePrice).toLocaleString() : ''} · ${t('startLabel')} ${deal.startDate}</div>
-    <div class="deal-sub">${t('documentsLabel')}: ${pctDocs(deal)}% ${t('completeLabel')} · ${t('trackerLabel')}: ${pctTasks(deal)}% ${t('completeLabel')}</div>
-    <div class="deal-sub" style="margin-top:6px; display:flex; align-items:center; gap:6px;">${t('escrowCompany')}
-      <select id="escrow-company-select" style="font-size:11.5px; padding:2px 6px;">
-        <option value="armour" ${deal.escrowCompany==='armour'?'selected':''}>Armour Secure</option>
-        <option value="tla" ${deal.escrowCompany==='tla'?'selected':''}>TLA Financial Services</option>
-      </select>
+    <div class="deal-head-row">
+      <div class="deal-title" style="font-size:22px; margin:0;">${escapeHtml(deal.property)}</div>
+      <span class="badge ${s.badgeClass}">${s.labelShort}</span>
+      ${deal.status==='completed' ? `<span class="badge" style="background:var(--jade-soft); color:var(--jade);">${t('dealCompletedBadge')}</span>` : ''}
     </div>
-    <div class="deal-sub" style="margin-top:6px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
-      <span style="display:flex; align-items:center; gap:6px;">${t('closingDateLabel')} <input type="date" id="closing-date-input" value="${deal.closingDate}" style="font-size:11.5px; padding:2px 6px;"></span>
-      <span style="display:flex; align-items:center; gap:6px;">${t('ddEndLabel')} <input type="date" id="dd-end-date-input" value="${deal.dueDiligenceEndDate}" style="font-size:11.5px; padding:2px 6px;"></span>
+    <div class="parties-line">${sellerNamesHtml} <i class="ti ti-arrow-right" aria-hidden="true" style="color:var(--ink-faint); font-size:13px;"></i> ${buyerNamesHtml}</div>
+    <div class="location-line"><i class="ti ti-map-pin" aria-hidden="true"></i> ${DEVELOPMENT_LABEL[deal.development||'punta_mita']}</div>
+
+    <div class="stat-row">
+      <div class="stat"><span class="stat-label">${t('propertyLabelColon')}</span><span class="stat-value">${deal.currency||'USD'} ${Number(deal.price||0).toLocaleString()}${deal.furniturePrice ? ' + '+t('furnitureLabel')+' '+Number(deal.furniturePrice).toLocaleString() : ''}</span></div>
+      <div class="stat"><span class="stat-label">${t('startLabel')}</span><span class="stat-value">${deal.startDate || '—'}</span></div>
+      <div class="stat"><span class="stat-label">${t('escrowCompany')}</span><span class="stat-value">${deal.escrowCompany==='tla' ? 'TLA Financial Services' : 'Armour Secure'}</span></div>
     </div>
-    <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+
+    <div class="progress-row">
+      <div class="progress-block">
+        <div class="progress-top"><span class="progress-name">${t('documentsLabel')}</span><span class="progress-pct">${docsPct}%</span></div>
+        <div class="progress-track"><div class="progress-fill" style="width:${docsPct}%"></div></div>
+      </div>
+      <div class="progress-block">
+        <div class="progress-top"><span class="progress-name">${t('trackerLabel')}</span><span class="progress-pct">${tasksPct}%</span></div>
+        <div class="progress-track"><div class="progress-fill" style="width:${tasksPct}%"></div></div>
+      </div>
+    </div>
+
+    <div class="field-row-clean">
+      <label>${t('escrowCompany')}
+        <select id="escrow-company-select">
+          <option value="armour" ${deal.escrowCompany==='armour'?'selected':''}>Armour Secure</option>
+          <option value="tla" ${deal.escrowCompany==='tla'?'selected':''}>TLA Financial Services</option>
+        </select>
+      </label>
+      <label>${t('closingDateLabel')} <input type="date" id="closing-date-input" value="${deal.closingDate}"></label>
+      <label>${t('ddEndLabel')} <input type="date" id="dd-end-date-input" value="${deal.dueDiligenceEndDate}"></label>
+    </div>
+
+    <div class="action-row" style="display:flex; gap:8px; flex-wrap:wrap;">
       ${deal.driveFolderUrl
         ? `<a class="btn" href="${deal.driveFolderUrl}" target="_blank"><i class="ti ti-folder" aria-hidden="true"></i> ${t('openInDrive')}</a>`
         : `<button class="btn" id="create-drive-folder-btn"><i class="ti ti-folder-plus" aria-hidden="true"></i> ${t('createDriveFolder')}</button>`}
       <button class="btn" id="editDealBtn"><i class="ti ti-pencil" aria-hidden="true"></i> ${t('editDeal')}</button>
-      <button class="btn" id="toggleDealStatusBtn">${deal.status==='completed' ? `<i class="ti ti-rotate" aria-hidden="true"></i> ${t('reopenDeal')}` : `<i class="ti ti-check" aria-hidden="true"></i> ${t('markDealCompleted')}`}</button>
-      <button class="btn" id="delDeal"><i class="ti ti-trash" aria-hidden="true"></i> ${t('deleteDeal')}</button>
+      <button class="btn ${deal.status==='completed' ? '' : 'success'}" id="toggleDealStatusBtn">${deal.status==='completed' ? `<i class="ti ti-rotate" aria-hidden="true"></i> ${t('reopenDeal')}` : `<i class="ti ti-check" aria-hidden="true"></i> ${t('markDealCompleted')}`}</button>
+      <button class="btn danger" id="delDeal"><i class="ti ti-trash" aria-hidden="true"></i> ${t('deleteDeal')}</button>
     </div>
   `;
   wrap.appendChild(header);
