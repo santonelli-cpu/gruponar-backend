@@ -84,18 +84,21 @@ function buildDocsForParty(scenario, party) {
   const docs = [];
   const add = (names, subLabel = null) => names.forEach(name => docs.push({ name, subLabel }));
 
-  add(s[side + '_individual']);
-  if (party.partyType === 'individual') return docs;
-
-  if (party.partyType === 'llc') {
-    add(s.llc_entity);
-    add(s.llc_manager);
-  } else {
-    add(s.corporation_extra);
-    add(s.legal_rep);
+  // Los documentos personales (CURP, pasaporte, actas...) solo aplican a una
+  // persona física real — antes se agregaban SIEMPRE, así que una LLC/
+  // corporation terminaba con el checklist de una persona física pegado
+  // encima del de la entidad, sin ninguna relación con quién los proveería.
+  if (party.partyType === 'individual') {
+    add(s[side + '_individual']);
+    return docs;
   }
 
+  add(party.partyType === 'llc' ? s.llc_entity : s.corporation_extra);
+
   if (party.ownershipMode === 'direct_owners') {
+    // Los socios con nombre propio son quienes aportan sus documentos
+    // personales — no hace falta pedirlos otra vez sin etiqueta a nombre
+    // de "la entidad" o de un "representante" genérico.
     (party.owners || []).forEach(owner => add(s.llc_members, `Socio: ${owner.name}`));
   } else if (party.ownershipMode === 'parent_entity') {
     const parentDocs = party.parentEntityType === 'llc' ? s.llc_entity : s.corporation_extra;
@@ -103,8 +106,12 @@ function buildDocsForParty(scenario, party) {
     if (party.parentHasTrustAbove) {
       add(TRUST_DOCS, `Trust arriba de ${party.parentEntityName}`);
     }
+    // Sin un socio con nombre propio en esta estructura, alguien tiene que
+    // firmar y aportar sus documentos personales a nombre de la entidad.
+    add(party.partyType === 'llc' ? s.llc_manager : s.legal_rep, 'Representante legal');
   } else if (party.ownershipMode === 'direct_trust') {
     add(TRUST_DOCS, `Trust: ${party.directTrustName}`);
+    add(party.partyType === 'llc' ? s.llc_manager : s.legal_rep, 'Representante legal');
   }
   // ownershipMode null/no especificado todavía: solo los documentos propios
   // de la entidad, sin nada de estructura — la UI debe marcarlo como

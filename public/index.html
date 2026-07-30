@@ -278,6 +278,7 @@ const STRINGS = {
     kycSignModalTitle: 'Firma del expediente KYC',
     viewFile: 'Ver archivo', attachDocument: 'Adjuntar documento',
     remindDocuments: 'Recordar documentos', sentCount: 'Enviado ({count})',
+    remindNoAccountYet: 'Esta persona todavía no acepta su invitación / no tiene cuenta ligada — no hay a quién mandarle el correo todavía.',
     incompleteEntityWarning: 'Falta completar la estructura de propiedad de esta entidad — hazlo en "Vendedores y compradores" arriba para que el checklist incluya los documentos de sus dueños.',
     closingProgress: 'Avance del cierre',
     ddEndedBanner: 'Due diligence terminó el {date} — ya se puede avanzar con el resto del tracker.',
@@ -422,6 +423,7 @@ const STRINGS = {
     kycSignModalTitle: 'KYC file signature',
     viewFile: 'View file', attachDocument: 'Attach document',
     remindDocuments: 'Remind about documents', sentCount: 'Sent ({count})',
+    remindNoAccountYet: "This person hasn't accepted their invitation / doesn't have a linked account yet — there's no one to email yet.",
     incompleteEntityWarning: 'This entity\'s ownership structure still needs to be completed — do it in "Sellers and buyers" above so the checklist includes its owners\' documents.',
     closingProgress: 'Closing progress',
     ddEndedBanner: 'Due diligence ended on {date} — you can now move ahead with the rest of the tracker.',
@@ -2160,17 +2162,25 @@ function buildDocListForParty(deal, party){
   const hLabel = document.createElement('span');
   hLabel.textContent = `${party.name} (${sideLabel} · ${TYPE_LABEL[party.partyType]})`;
   h.appendChild(hLabel);
-  if(['admin','agent','lawyer'].includes(currentUser.role) && party.linkedUser){
+  if(['admin','agent','lawyer'].includes(currentUser.role)){
     const remindBtn = document.createElement('button');
     remindBtn.className = 'btn'; remindBtn.style.cssText = 'font-size:11px; padding:3px 10px;';
     remindBtn.textContent = t('remindDocuments');
-    remindBtn.onclick = async () => {
+    if(!party.linkedUser){
+      // Sin cuenta ligada todavía no hay a quién mandarle el correo — se
+      // deja visible pero deshabilitado (con el motivo en el título) en vez
+      // de desaparecer sin explicación, que es justo lo que confundía antes.
       remindBtn.disabled = true;
-      try{
-        const r = await apiFetch(`/api/deals/${deal.id}/parties/${party.id}/remind`, { method:'POST' });
-        remindBtn.textContent = t('sentCount', { count: r.count });
-      }catch(e){ alert(e.message); remindBtn.disabled = false; }
-    };
+      remindBtn.title = t('remindNoAccountYet');
+    } else {
+      remindBtn.onclick = async () => {
+        remindBtn.disabled = true;
+        try{
+          const r = await apiFetch(`/api/deals/${deal.id}/parties/${party.id}/remind`, { method:'POST' });
+          remindBtn.textContent = t('sentCount', { count: r.count });
+        }catch(e){ alert(e.message); remindBtn.disabled = false; }
+      };
+    }
     h.appendChild(remindBtn);
   }
   box.appendChild(h);
