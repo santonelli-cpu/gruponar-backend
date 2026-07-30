@@ -852,7 +852,11 @@ router.post('/:id/drive-folder', requireRole('admin', 'agent', 'lawyer', 'extern
 // algo especial que la lista fija no contempla. Solo staff: agregar
 // requisitos al checklist es curaduría, no algo que un comprador/vendedor
 // haga sobre sí mismo. Sin dealPartyEntityId es un documento de Propiedad.
-router.post('/:id/documents', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
+// Comprador/vendedor también puede agregar un requisito extra a su propio
+// checklist (ej. un comprobante más de los que ya se sabe que siempre hay
+// más de uno) — antes solo staff podía, y el cliente tenía que pedírselo a
+// un admin/agente para algo tan simple como "necesito otra fila".
+router.post('/:id/documents', requireRole('admin', 'agent', 'lawyer', 'external_lawyer', 'buyer', 'seller'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const { name, dealPartyEntityId, subLabel } = req.body || {};
   if (!name || !name.trim()) return res.status(400).json({ error: 'Falta el nombre del documento.' });
@@ -864,6 +868,11 @@ router.post('/:id/documents', requireRole('admin', 'agent', 'lawyer', 'external_
     if (AGENT_LIKE_ROLES.includes(req.session.role)) {
       const side = myRepresentsSide(req, req.params.id);
       if (side && party.side !== side) return res.status(403).json({ error: 'No puedes agregar documentos del otro lado.' });
+    }
+    // Un comprador/vendedor real solo puede agregar a SU PROPIA parte, nunca
+    // a la de alguien más del mismo o del otro lado.
+    if (['buyer', 'seller'].includes(req.session.role) && party.id !== myDealPartyEntityId(req, req.params.id)) {
+      return res.status(403).json({ error: 'No puedes agregar documentos de otra parte.' });
     }
     partyId = party.id;
   }

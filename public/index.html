@@ -430,7 +430,7 @@ const STRINGS = {
     sellersAndBuyers: 'Vendedores y compradores', propertySection: 'Propiedad', docsChecklist: 'Checklist de documentos (KYC)',
     notaryClosingCostsSection: 'Gastos de cierre (notario)',
     viewClosingCosts: 'Ver costos de cierre', closingCostsNotReady: 'Todavía no están listos los costos de cierre.',
-    paymentProofsLabel: 'Comprobantes de pago',
+    paymentProofsLabel: 'Pagos',
     kycFile: 'Expediente KYC (firma electrónica)', closingTracker: 'Tracker de cierre', inviteToThisDeal: 'Invitar a esta operación',
     contractPromise: 'Contrato de promesa',
     loadingEllipsis: 'cargando...', formLanguage: 'Idioma del formulario', spanish: 'Español', english: 'English',
@@ -622,7 +622,7 @@ const STRINGS = {
     sellersAndBuyers: 'Sellers and buyers', propertySection: 'Property', docsChecklist: 'Document checklist (KYC)',
     notaryClosingCostsSection: 'Closing costs (notary)',
     viewClosingCosts: 'View closing costs', closingCostsNotReady: "Closing costs aren't ready yet.",
-    paymentProofsLabel: 'Payment proofs',
+    paymentProofsLabel: 'Payments',
     kycFile: 'KYC file (e-signature)', closingTracker: 'Closing tracker', inviteToThisDeal: 'Invite to this deal',
     contractPromise: 'Purchase Agreement',
     loadingEllipsis: 'loading...', formLanguage: 'Form language', spanish: 'Español', english: 'English',
@@ -2898,7 +2898,11 @@ function openKycSigningModal(url, dealId, role, kind){
   window.addEventListener('message', onMessage);
 }
 
-function buildDocItemLi(deal, doc, isStaffView){
+// `readOnly` — para cuando alguien puede VER un documento pero no le toca a
+// él subirlo (ej. el vendedor viendo los comprobantes de pago del
+// comprador: puede consultarlos, pero no es requisito suyo y no debe poder
+// subir/reemplazar/borrar ni marcarlo como hecho).
+function buildDocItemLi(deal, doc, isStaffView, readOnly){
   const li = document.createElement('li');
   li.className = 'doc-item';
   // El sub_label ya se muestra como encabezado de grupo en
@@ -2917,20 +2921,20 @@ function buildDocItemLi(deal, doc, isStaffView){
   const reviewBadgeHtml = doc.fileUrl
     ? `<span class="review-badge ${doc.reviewStatus}">${t(doc.reviewStatus === 'approved' ? 'reviewApproved' : doc.reviewStatus === 'rejected' ? 'reviewRejected' : 'reviewPending')}</span>`
     : '';
-  li.innerHTML = `<span class="doc-check ${doc.status==='done'?'done':''}">${doc.status==='done'?'<i class=\"ti ti-check\" aria-hidden=\"true\"></i>':''}</span><span>${label}</span>
+  li.innerHTML = `<span class="doc-check ${doc.status==='done'?'done':''}" ${readOnly ? 'style="cursor:default;"' : ''}>${doc.status==='done'?'<i class=\"ti ti-check\" aria-hidden=\"true\"></i>':''}</span><span>${label}</span>
     <span style="margin-left:auto; display:flex; align-items:center; gap:8px;">
       ${subChecksHtml}
       ${reviewBadgeHtml}
-      ${doc.fileUrl ? `<a href="/api/deals/${deal.id}/documents/${doc.id}/file" target="_blank" class="btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px;"><i class="ti ti-eye" aria-hidden="true"></i> ${t('viewFile')}</a>` : ''}
-      <button type="button" class="btn doc-upload-btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px;" title="${t('attachDocument')}"><i class="ti ti-upload" aria-hidden="true"></i> ${doc.fileUrl ? t('replaceFile') : t('upload')}</button>
-      ${doc.fileUrl ? `<button type="button" class="btn doc-delete-btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px; color:var(--oxblood);" title="${t('deleteFile')}"><i class="ti ti-trash" aria-hidden="true"></i></button>` : ''}
+      ${doc.fileUrl ? `<a href="/api/deals/${deal.id}/documents/${doc.id}/file" target="_blank" class="btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px;"><i class="ti ti-eye" aria-hidden="true"></i> ${t('viewFile')}</a>` : (readOnly ? `<span class="field-hint" style="margin:0;">${t('notUploaded')}</span>` : '')}
+      ${!readOnly ? `<button type="button" class="btn doc-upload-btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px;" title="${t('attachDocument')}"><i class="ti ti-upload" aria-hidden="true"></i> ${doc.fileUrl ? t('replaceFile') : t('upload')}</button>` : ''}
+      ${!readOnly && doc.fileUrl ? `<button type="button" class="btn doc-delete-btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px; color:var(--oxblood);" title="${t('deleteFile')}"><i class="ti ti-trash" aria-hidden="true"></i></button>` : ''}
       ${canReview && doc.fileUrl && doc.reviewStatus !== 'approved' ? `<button type="button" class="btn doc-approve-btn" style="font-size:11px; padding:4px 10px; color:var(--jade); border-color:var(--jade);">${t('approveDocument')}</button>` : ''}
       ${canReview && doc.fileUrl && doc.reviewStatus !== 'rejected' ? `<button type="button" class="btn doc-reject-btn" style="font-size:11px; padding:4px 10px; color:var(--oxblood);">${t('rejectDocument')}</button>` : ''}
       ${isStaffView ? `<button type="button" class="btn doc-remove-req-btn" style="font-size:11px; padding:4px 8px; color:var(--oxblood);" title="${t('removeChecklistItemTitle')}"><i class="ti ti-x" aria-hidden="true"></i></button>` : ''}
       <input type="file" class="doc-file-input" style="display:none;" accept=".pdf,.jpg,.jpeg,.png,.heic">
     </span>
     ${doc.reviewStatus === 'rejected' && doc.reviewNote ? `<span class="doc-review-note"><b>${t('reviewRejectedNote')}:</b> ${escapeHtml(doc.reviewNote)}</span>` : ''}`;
-  li.querySelector('.doc-check').onclick = async () => {
+  if(!readOnly) li.querySelector('.doc-check').onclick = async () => {
     const next = doc.status==='done' ? 'pending' : 'done';
     try{
       await apiFetch(`/api/deals/${deal.id}/documents/${doc.id}`, { method:'PATCH', body: JSON.stringify({status: next}) });
@@ -2976,7 +2980,7 @@ function buildDocItemLi(deal, doc, isStaffView){
       await openDeal(deal.id);
     }catch(err){ alert(err.message); rejectBtn.disabled = false; }
   };
-  uploadBtn.onclick = () => fileInput.click();
+  if(uploadBtn) uploadBtn.onclick = () => fileInput.click();
   fileInput.onchange = async (e) => {
     const file = e.target.files[0];
     if(!file) return;
@@ -3155,9 +3159,12 @@ function buildDocListForParty(deal, party, isStaffView){
     g.docs.forEach(doc => ul.appendChild(buildDocItemLi(deal, doc, isStaffView)));
     box.appendChild(ul);
   });
-  if(isStaffView){
-    box.appendChild(buildAddDocumentRow(deal, party.id));
-  }
+  // El "+" para agregar un requisito extra al checklist (ej. un comprobante
+  // más que el machote no previó) también lo puede usar el propio
+  // comprador/vendedor, no solo staff — antes solo isStaffView lo veía, y
+  // la única forma de agregar algo era pedirle a un admin/agente que lo
+  // hiciera por él.
+  box.appendChild(buildAddDocumentRow(deal, party.id));
   return box;
 }
 
@@ -3170,17 +3177,19 @@ const NOTARY_CLOSING_DOC_NAME = 'Costos de cierre (recibo del notario)';
 const ESCROW_PAYMENT_PROOF_DOC_NAME = 'Comprobante de pago a escrow (Proof of payment to escrow)';
 const NOTARY_PAYMENT_PROOF_DOC_NAME = 'Comprobante de pago al notario (Proof of payment to notary)';
 const CLOSING_COSTS_SECTION_DOC_NAMES = [NOTARY_CLOSING_DOC_NAME, ESCROW_PAYMENT_PROOF_DOC_NAME, NOTARY_PAYMENT_PROOF_DOC_NAME];
-function buildPropertyDocsSection(deal, isStaffView){
+// Escritura pública / predial son del VENDEDOR (dueño de la propiedad) — un
+// comprador real (viewerSide === 'buyer') solo puede consultarlos, nunca
+// subirlos ni agregar un requisito nuevo: no son suyos, no los tiene.
+function buildPropertyDocsSection(deal, isStaffView, viewerSide){
+  const readOnly = !isStaffView && viewerSide === 'buyer';
   const docs = deal.documents.filter(d => d.partyId === null && !CLOSING_COSTS_SECTION_DOC_NAMES.includes(d.name));
   const box = document.createElement('div');
   box.style.marginBottom = '14px';
   const ul = document.createElement('ul');
   ul.className = 'doc-list';
-  docs.forEach(doc => ul.appendChild(buildDocItemLi(deal, doc, isStaffView)));
+  docs.forEach(doc => ul.appendChild(buildDocItemLi(deal, doc, isStaffView, readOnly)));
   box.appendChild(ul);
-  if(isStaffView){
-    box.appendChild(buildAddDocumentRow(deal, null));
-  }
+  if(!readOnly) box.appendChild(buildAddDocumentRow(deal, null));
   return box;
 }
 
@@ -3192,7 +3201,7 @@ function buildPropertyDocsSection(deal, isStaffView){
 // notario) sí son requisitos de verdad que el comprador tiene que subir,
 // así que esos se ven como checklist normal, con su propio botón de
 // aprobar/rechazar y su "+" por si hay más de un comprobante.
-function buildNotaryClosingCostsSection(deal, isStaffView){
+function buildNotaryClosingCostsSection(deal, isStaffView, viewerSide){
   const box = document.createElement('div');
   const quoteDoc = deal.documents.find(d => d.partyId === null && d.name === NOTARY_CLOSING_DOC_NAME);
   if(!quoteDoc) return box;
@@ -3294,6 +3303,11 @@ function buildNotaryClosingCostsSection(deal, isStaffView){
     box.appendChild(hint);
   }
 
+  // El pago de los costos de cierre es obligación del comprador, no del
+  // vendedor — el vendedor sí puede consultar los comprobantes que suba el
+  // comprador (quiere ver que se pagó), pero nunca subir/agregar los suyos:
+  // no es un requisito de su lado.
+  const proofsReadOnly = !isStaffView && viewerSide === 'seller';
   const proofsTitle = document.createElement('div');
   proofsTitle.style.cssText = 'font-weight:500; font-size:12.5px; color:var(--ink-soft); margin-bottom:6px;';
   proofsTitle.textContent = t('paymentProofsLabel');
@@ -3301,11 +3315,9 @@ function buildNotaryClosingCostsSection(deal, isStaffView){
   const proofDocs = deal.documents.filter(d => d.partyId === null && [ESCROW_PAYMENT_PROOF_DOC_NAME, NOTARY_PAYMENT_PROOF_DOC_NAME].includes(d.name));
   const ul = document.createElement('ul');
   ul.className = 'doc-list';
-  proofDocs.forEach(doc => ul.appendChild(buildDocItemLi(deal, doc, isStaffView)));
+  proofDocs.forEach(doc => ul.appendChild(buildDocItemLi(deal, doc, isStaffView, proofsReadOnly)));
   box.appendChild(ul);
-  if(isStaffView){
-    box.appendChild(buildAddDocumentRow(deal, null));
-  }
+  if(!proofsReadOnly) box.appendChild(buildAddDocumentRow(deal, null));
   return box;
 }
 
@@ -4042,13 +4054,13 @@ function renderPortal(body){
   const pt = document.createElement('div'); pt.className='section-title'; pt.textContent=t('propertySection');
   body.appendChild(pt);
   const pcard = document.createElement('div'); pcard.className='card';
-  pcard.appendChild(buildPropertyDocsSection(deal, isPreview && !myParty));
+  pcard.appendChild(buildPropertyDocsSection(deal, isPreview && !myParty, myParty && myParty.side));
   body.appendChild(pcard);
 
   const nt = document.createElement('div'); nt.className='section-title'; nt.textContent=t('notaryClosingCostsSection');
   body.appendChild(nt);
   const ncard = document.createElement('div'); ncard.className='card';
-  ncard.appendChild(buildNotaryClosingCostsSection(deal, isPreview && !myParty));
+  ncard.appendChild(buildNotaryClosingCostsSection(deal, isPreview && !myParty, myParty && myParty.side));
   body.appendChild(ncard);
 
   if(myParty){
