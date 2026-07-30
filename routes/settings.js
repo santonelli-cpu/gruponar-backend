@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const { requireRole } = require('./auth');
+const { requireAuth, requireRole } = require('./auth');
 
 const router = express.Router();
 
@@ -14,7 +14,7 @@ const router = express.Router();
 // un solo dato de referencia.
 const NOTARY_PAYMENT_NOTE_KEY = 'notary_payment_note';
 
-router.get('/notary-payment-note', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
+router.get('/notary-payment-note', requireAuth, (req, res) => {
   const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(NOTARY_PAYMENT_NOTE_KEY);
   res.json({ note: row ? row.value : '' });
 });

@@ -85,21 +85,17 @@ const TEMPLATES = {
   }
 };
 
-// Si el agente que representa el lado de esta parte es de agencia LPR
-// Luxury, esa parte ADEMÁS del expediente de la escrow company también
-// necesita el de LPR (ver getLatestSubmission/kind — es un expediente
-// aparte, no lo reemplaza). Puede haber un agente distinto por lado
-// (comprador y vendedor), así que se busca primero el agente que
-// específicamente representa ESE lado; si nadie ha elegido lado todavía
-// (deals viejos, un solo agente sin representsSide), se usa ese como
-// respaldo para no romper el comportamiento anterior.
-function dealAgentIsLprAgency(dealId, side) {
+// Si CUALQUIER agente de esta operación es de agencia LPR Luxury, TODAS las
+// partes (comprador y vendedor, sin importar a cuál de los dos represente
+// ese agente) además del expediente de la escrow company también necesitan
+// el de LPR (ver getLatestSubmission/kind — es un expediente aparte, no lo
+// reemplaza).
+function dealAgentIsLprAgency(dealId) {
   const row = db.prepare(`
-    SELECT u.agency FROM deal_parties dp JOIN users u ON u.id = dp.user_id
-    WHERE dp.deal_id = ? AND dp.role_in_deal = 'agent' AND (dp.represents_side = ? OR dp.represents_side IS NULL)
-    ORDER BY (dp.represents_side IS NULL) ASC LIMIT 1
-  `).get(dealId, side);
-  return !!row && row.agency === 'LPR Luxury';
+    SELECT 1 FROM deal_parties dp JOIN users u ON u.id = dp.user_id
+    WHERE dp.deal_id = ? AND dp.role_in_deal = 'agent' AND u.agency = 'LPR Luxury' LIMIT 1
+  `).get(dealId);
+  return !!row;
 }
 
 // Nacionalidad típica de cada lado según el tipo de operación — ya estaba
@@ -229,7 +225,7 @@ router.get('/deals/:id/kyc/:partyId', requireAuth, (req, res) => {
   // ?kind=lpr pide el expediente ADICIONAL de LPR Luxury (además del de la
   // escrow company, no en vez de) — ver getLatestSubmission. Solo existe
   // cuando el agente de la operación es de esa agencia.
-  const isLprAgency = dealAgentIsLprAgency(id, party.side);
+  const isLprAgency = dealAgentIsLprAgency(id);
   const kind = req.query.kind === 'lpr' ? 'lpr' : 'escrow';
   if (kind === 'lpr' && !isLprAgency) return res.status(404).json({ error: 'Esta operación no tiene un agente de LPR Luxury.' });
 

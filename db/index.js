@@ -182,6 +182,15 @@ db.prepare(`
   )
 `).run();
 
+// Revisión de admin/abogado interno sobre un documento ya subido (para
+// rechazarlo si se subió mal o no es válido) — 'pending' hasta que alguien
+// lo revise; vuelve a 'pending' cada vez que se sube un archivo nuevo (ver
+// routes/deals.js) porque la revisión anterior ya no aplica a ese archivo.
+ensureColumn('documents', 'review_status', "review_status TEXT NOT NULL DEFAULT 'pending'");
+ensureColumn('documents', 'review_note', 'review_note TEXT');
+ensureColumn('documents', 'reviewed_by', 'reviewed_by INTEGER');
+ensureColumn('documents', 'reviewed_at', 'reviewed_at TEXT');
+
 // El CHECK de deals.scenario y contract_templates.scenario tampoco se puede
 // alterar con ADD COLUMN — mismo procedimiento que ensureUserRoleAllowsLawyer.
 // Van al final, después de todos los ensureColumn de arriba, porque hay que

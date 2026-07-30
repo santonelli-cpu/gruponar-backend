@@ -863,6 +863,26 @@ router.patch('/:id/documents/:docId', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// PATCH /api/deals/:id/documents/:docId/review — admin/abogado interno
+// aprueba o rechaza el archivo ya subido (por si se subió mal o no es
+// válido). Solo admin/lawyer, nunca agente/abogado externo — son quienes
+// suben/gestionan documentos por el cliente, no quienes los validan.
+router.patch('/:id/documents/:docId/review', requireRole('admin', 'lawyer'), (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deal_id = ?').get(req.params.docId, req.params.id);
+  if (!doc) return res.status(404).json({ error: 'Documento no encontrado.' });
+  if (!doc.file_url) return res.status(400).json({ error: 'Este documento todavía no tiene archivo subido.' });
+  const { reviewStatus, reviewNote } = req.body || {};
+  if (!['pending', 'approved', 'rejected'].includes(reviewStatus)) {
+    return res.status(400).json({ error: 'reviewStatus inválido.' });
+  }
+  db.prepare(`
+    UPDATE documents SET review_status = ?, review_note = ?, reviewed_by = ?, reviewed_at = datetime('now')
+    WHERE id = ? AND deal_id = ?
+  `).run(reviewStatus, reviewStatus === 'rejected' ? (reviewNote || null) : null, req.session.userId, req.params.docId, req.params.id);
+  res.json({ ok: true });
+});
+
 // POST /api/deals/:id/documents/:docId/file — subir el archivo de un documento del checklist.
 router.post('/:id/documents/:docId/file', requireAuth, (req, res, next) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
@@ -879,7 +899,9 @@ router.post('/:id/documents/:docId/file', requireAuth, (req, res, next) => {
       await gcsStorage.uploadBuffer(key, req.file.buffer, req.file.mimetype);
       db.prepare(`
         UPDATE documents SET file_url=?, original_name=?, mime_type=?, size_bytes=?, status='done',
-          uploaded_by=?, uploaded_at=datetime('now') WHERE id=? AND deal_id=?
+          uploaded_by=?, uploaded_at=datetime('now'),
+          review_status='pending', review_note=NULL, reviewed_by=NULL, reviewed_at=NULL
+        WHERE id=? AND deal_id=?
       `).run(key, req.file.originalname, req.file.mimetype, req.file.size, req.session.userId, req.params.docId, req.params.id);
       res.json({ ok: true });
       syncDocumentToDrive(req, req.params.id, doc.deal_party_entity_id, `${doc.name}${doc.sub_label ? ' - ' + doc.sub_label : ''} - ${req.file.originalname}`, req.file.buffer, req.file.mimetype);
@@ -903,7 +925,9 @@ router.delete('/:id/documents/:docId/file', requireAuth, async (req, res) => {
   if (!doc.file_url) return res.status(400).json({ error: 'Este documento no tiene archivo subido.' });
   db.prepare(`
     UPDATE documents SET file_url=NULL, original_name=NULL, mime_type=NULL, size_bytes=NULL, status='pending',
-      uploaded_by=NULL, uploaded_at=NULL WHERE id=? AND deal_id=?
+      uploaded_by=NULL, uploaded_at=NULL,
+      review_status='pending', review_note=NULL, reviewed_by=NULL, reviewed_at=NULL
+    WHERE id=? AND deal_id=?
   `).run(req.params.docId, req.params.id);
   res.json({ ok: true });
   gcsStorage.deleteFile(doc.file_url).catch(err => console.error('[gcs] no se pudo borrar el archivo', doc.file_url, err.message));

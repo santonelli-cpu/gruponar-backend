@@ -57,7 +57,12 @@
   .badge.scn-transfer{background:var(--clay-soft); color:#7A3417;}
   .badge.scn-trust-termination{background:var(--oxblood-soft); color:var(--oxblood);}
   .doc-list{list-style:none; padding:0; margin:0;}
-  .doc-item{display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:0.5px solid var(--line); font-size:13px;}
+  .doc-item{display:flex; align-items:center; flex-wrap:wrap; gap:10px; padding:9px 0; border-bottom:0.5px solid var(--line); font-size:13px;}
+  .review-badge{font-size:10.5px; padding:3px 10px; border-radius:20px; font-weight:500; white-space:nowrap;}
+  .review-badge.pending{background:var(--stone); border:0.5px solid var(--line); color:var(--ink-soft);}
+  .review-badge.approved{background:var(--jade-soft); color:var(--jade);}
+  .review-badge.rejected{background:var(--oxblood-soft); color:var(--oxblood);}
+  .doc-review-note{flex-basis:100%; font-size:11.5px; color:var(--oxblood); margin-top:-2px;}
   .doc-item:last-child{border-bottom:none;}
   .doc-check{width:20px; height:20px; border-radius:6px; border:1.5px solid var(--line-strong); cursor:pointer; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:12px; color:var(--jade); transition:all 0.15s;}
   .doc-check.done{background:var(--jade); border-color:var(--jade); color:#fff;}
@@ -247,7 +252,7 @@ const STRINGS = {
     logout: 'Cerrar sesión',
     checkingSession: 'Verificando sesión...', loginGateSub: 'Ingresa con tu correo y contraseña para continuar.',
     gateBrandEyebrow: 'Coordinación de cierres', gateBrandHeadline: 'Un cierre. Todas las partes. Un solo lugar.',
-    gateBrandBody: 'Firma, comparte y da seguimiento a cada documento del cierre en un solo lugar seguro, hecho para cerrar más rápido y con total confianza.',
+    gateBrandBody: 'Cada documento, cada firma y cada etapa de la operación, cuidadosamente coordinados.',
     gateBrandPrivacy: 'Aviso de privacidad',
     gateWelcomeBack: 'Bienvenido de nuevo', emailLabel: 'Correo electrónico', passwordLabel: 'Contraseña',
     showPassword: 'Mostrar', hidePassword: 'Ocultar',
@@ -342,6 +347,11 @@ const STRINGS = {
     viewFile: 'Ver archivo', attachDocument: 'Adjuntar documento', deleteFile: 'Borrar', deleteFileConfirm: '¿Borrar el archivo subido para "{name}"? Vuelve a quedar pendiente.',
     removeChecklistItemTitle: 'Quitar este requisito del checklist', removeChecklistItemConfirm: '¿Quitar "{name}" del checklist por completo? Si ya tenía un archivo subido, también se borra.',
     newChecklistItemPh: 'Nombre del documento nuevo...', addChecklistItem: 'Agregar',
+    addChecklistItemTitle: 'Agregar un documento al checklist',
+    reviewPending: 'Pendiente de revisión', reviewApproved: 'Aprobado', reviewRejected: 'Rechazado',
+    approveDocument: 'Aprobar', rejectDocument: 'Rechazar',
+    rejectReasonPrompt: 'Motivo del rechazo (lo va a ver quien lo subió):',
+    reviewRejectedNote: 'Motivo',
     remindDocuments: 'Recordar documentos', sentCount: 'Enviado ({count})',
     remindNoAccountYet: 'Esta persona todavía no acepta su invitación / no tiene cuenta ligada — no hay a quién mandarle el correo todavía.',
     fixChecklist: 'Reparar checklist', fixChecklistTitle: 'Quita del checklist de esta entidad los documentos de persona física o duplicados que se agregaron por un bug ya corregido — solo aplica a operaciones creadas antes de la corrección.',
@@ -421,7 +431,7 @@ const STRINGS = {
     logout: 'Log out',
     checkingSession: 'Checking session...', loginGateSub: 'Sign in with your email and password to continue.',
     gateBrandEyebrow: 'Closing coordination', gateBrandHeadline: 'One closing. Every party. One place.',
-    gateBrandBody: 'Sign, share, and track every closing document in one secure place, built to help you close faster with total confidence.',
+    gateBrandBody: 'A private workspace where every document, signature and milestone comes together with clarity and purpose.',
     gateBrandPrivacy: 'Privacy notice',
     gateWelcomeBack: 'Welcome back', emailLabel: 'Email address', passwordLabel: 'Password',
     showPassword: 'Show', hidePassword: 'Hide',
@@ -516,6 +526,11 @@ const STRINGS = {
     viewFile: 'View file', attachDocument: 'Attach document', deleteFile: 'Delete', deleteFileConfirm: 'Delete the uploaded file for "{name}"? It goes back to pending.',
     removeChecklistItemTitle: 'Remove this requirement from the checklist', removeChecklistItemConfirm: 'Remove "{name}" from the checklist entirely? If it had an uploaded file, that goes too.',
     newChecklistItemPh: 'New document name...', addChecklistItem: 'Add',
+    addChecklistItemTitle: 'Add a document to the checklist',
+    reviewPending: 'Pending review', reviewApproved: 'Approved', reviewRejected: 'Rejected',
+    approveDocument: 'Approve', rejectDocument: 'Reject',
+    rejectReasonPrompt: 'Reason for rejecting (whoever uploaded it will see this):',
+    reviewRejectedNote: 'Reason',
     remindDocuments: 'Remind about documents', sentCount: 'Sent ({count})',
     remindNoAccountYet: "This person hasn't accepted their invitation / doesn't have a linked account yet — there's no one to email yet.",
     fixChecklist: 'Fix checklist', fixChecklistTitle: 'Removes individual-person or duplicate documents from this entity\'s checklist that were added by a now-fixed bug — only applies to deals created before the fix.',
@@ -592,6 +607,15 @@ let pendingUsers = null;
 let activeTeamMembers = null;
 let kycCache = {};
 let kycFormOpenFor = null;
+
+// Agregar/quitar un agente (o cambiar a qué lado representa) puede cambiar
+// si una parte necesita el expediente extra de LPR Luxury (ver
+// dealAgentIsLprAgency en routes/kyc.js) — sin esto, buildKycSection sigue
+// sirviendo el kycCache viejo (sin lprRequired) hasta un refresh manual.
+function clearKycCacheForDeal(dealId){
+  const prefix = dealId + '-';
+  Object.keys(kycCache).forEach(k => { if(k.startsWith(prefix)) delete kycCache[k]; });
+}
 let contractCache = {};
 let availableAgentsCache = {};
 let notaryPaymentNote = undefined;
@@ -659,7 +683,8 @@ function adaptDoc(d){
   return {
     id: d.id, name: d.name, subLabel: d.sub_label, status: d.status,
     fileUrl: d.file_url, originalName: d.original_name, partyId: d.deal_party_entity_id,
-    subChecks: d.sub_checks_json ? JSON.parse(d.sub_checks_json) : {}
+    subChecks: d.sub_checks_json ? JSON.parse(d.sub_checks_json) : {},
+    reviewStatus: d.review_status || 'pending', reviewNote: d.review_note || null
   };
 }
 const AGENCIES = ['LPR Luxury', 'Applegate Realtors', 'JPM Real Estate', 'Interamerican'];
@@ -2236,7 +2261,7 @@ function buildAdminDealDetail(deal){
   wrap.appendChild(propTitle);
   const propCard = document.createElement('div');
   propCard.className = 'card';
-  propCard.appendChild(buildPropertyDocsSection(deal));
+  propCard.appendChild(buildPropertyDocsSection(deal, true));
   wrap.appendChild(propCard);
 
   const docsTitle = document.createElement('div');
@@ -2244,7 +2269,7 @@ function buildAdminDealDetail(deal){
   wrap.appendChild(docsTitle);
   const docsCard = document.createElement('div');
   docsCard.className = 'card';
-  docsCard.appendChild(buildDocsBySideGrouping(deal));
+  docsCard.appendChild(buildDocsBySideGrouping(deal, true));
   wrap.appendChild(docsCard);
 
   const kycTitle = document.createElement('div');
@@ -2565,7 +2590,7 @@ function openKycSigningModal(url, dealId, role, kind){
   window.addEventListener('message', onMessage);
 }
 
-function buildDocItemLi(deal, doc){
+function buildDocItemLi(deal, doc, isStaffView){
   const li = document.createElement('li');
   li.className = 'doc-item';
   // El sub_label ya se muestra como encabezado de grupo en
@@ -2576,15 +2601,27 @@ function buildDocItemLi(deal, doc){
     <label style="display:flex; align-items:center; gap:4px; font-size:11px; color:var(--ink-soft); cursor:pointer;">
       <input type="checkbox" class="sub-check" data-label="${escapeHtml(sc)}" ${doc.subChecks[sc]?'checked':''}> ${escapeHtml(sc)}
     </label>`).join('');
+  // Aprobar/rechazar el archivo ya subido es solo de admin/abogado interno
+  // (nunca agente/abogado externo, y nunca en la vista previa "como esta
+  // parte" — isStaffView ya viene en false ahí). El badge de estado sí lo ve
+  // todo el mundo, para que quien subió el documento sepa si quedó bien.
+  const canReview = isStaffView && ['admin','lawyer'].includes(currentUser.role);
+  const reviewBadgeHtml = doc.fileUrl
+    ? `<span class="review-badge ${doc.reviewStatus}">${t(doc.reviewStatus === 'approved' ? 'reviewApproved' : doc.reviewStatus === 'rejected' ? 'reviewRejected' : 'reviewPending')}</span>`
+    : '';
   li.innerHTML = `<span class="doc-check ${doc.status==='done'?'done':''}">${doc.status==='done'?'<i class=\"ti ti-check\" aria-hidden=\"true\"></i>':''}</span><span>${label}</span>
     <span style="margin-left:auto; display:flex; align-items:center; gap:8px;">
       ${subChecksHtml}
+      ${reviewBadgeHtml}
       ${doc.fileUrl ? `<a href="/api/deals/${deal.id}/documents/${doc.id}/file" target="_blank" class="btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px;"><i class="ti ti-eye" aria-hidden="true"></i> ${t('viewFile')}</a>` : ''}
       <button type="button" class="btn doc-upload-btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px;" title="${t('attachDocument')}"><i class="ti ti-upload" aria-hidden="true"></i> ${doc.fileUrl ? t('replaceFile') : t('upload')}</button>
       ${doc.fileUrl ? `<button type="button" class="btn doc-delete-btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px; color:var(--oxblood);" title="${t('deleteFile')}"><i class="ti ti-trash" aria-hidden="true"></i></button>` : ''}
-      ${['admin','agent','lawyer','external_lawyer'].includes(currentUser.role) ? `<button type="button" class="btn doc-remove-req-btn" style="font-size:11px; padding:4px 8px; color:var(--oxblood);" title="${t('removeChecklistItemTitle')}"><i class="ti ti-x" aria-hidden="true"></i></button>` : ''}
+      ${canReview && doc.fileUrl && doc.reviewStatus !== 'approved' ? `<button type="button" class="btn doc-approve-btn" style="font-size:11px; padding:4px 10px; color:var(--jade); border-color:var(--jade);">${t('approveDocument')}</button>` : ''}
+      ${canReview && doc.fileUrl && doc.reviewStatus !== 'rejected' ? `<button type="button" class="btn doc-reject-btn" style="font-size:11px; padding:4px 10px; color:var(--oxblood);">${t('rejectDocument')}</button>` : ''}
+      ${isStaffView ? `<button type="button" class="btn doc-remove-req-btn" style="font-size:11px; padding:4px 8px; color:var(--oxblood);" title="${t('removeChecklistItemTitle')}"><i class="ti ti-x" aria-hidden="true"></i></button>` : ''}
       <input type="file" class="doc-file-input" style="display:none;" accept=".pdf,.jpg,.jpeg,.png,.heic">
-    </span>`;
+    </span>
+    ${doc.reviewStatus === 'rejected' && doc.reviewNote ? `<span class="doc-review-note"><b>${t('reviewRejectedNote')}:</b> ${escapeHtml(doc.reviewNote)}</span>` : ''}`;
   li.querySelector('.doc-check').onclick = async () => {
     const next = doc.status==='done' ? 'pending' : 'done';
     try{
@@ -2612,6 +2649,24 @@ function buildDocItemLi(deal, doc){
       await apiFetch(`/api/deals/${deal.id}/documents/${doc.id}/file`, { method:'DELETE' });
       await openDeal(deal.id);
     }catch(err){ alert(err.message); deleteBtn.disabled = false; }
+  };
+  const approveBtn = li.querySelector('.doc-approve-btn');
+  if(approveBtn) approveBtn.onclick = async () => {
+    approveBtn.disabled = true;
+    try{
+      await apiFetch(`/api/deals/${deal.id}/documents/${doc.id}/review`, { method:'PATCH', body: JSON.stringify({ reviewStatus: 'approved' }) });
+      await openDeal(deal.id);
+    }catch(err){ alert(err.message); approveBtn.disabled = false; }
+  };
+  const rejectBtn = li.querySelector('.doc-reject-btn');
+  if(rejectBtn) rejectBtn.onclick = async () => {
+    const reviewNote = prompt(t('rejectReasonPrompt'), '');
+    if(reviewNote === null) return;
+    rejectBtn.disabled = true;
+    try{
+      await apiFetch(`/api/deals/${deal.id}/documents/${doc.id}/review`, { method:'PATCH', body: JSON.stringify({ reviewStatus: 'rejected', reviewNote }) });
+      await openDeal(deal.id);
+    }catch(err){ alert(err.message); rejectBtn.disabled = false; }
   };
   uploadBtn.onclick = () => fileInput.click();
   fileInput.onchange = async (e) => {
@@ -2648,13 +2703,30 @@ function buildDocItemLi(deal, doc){
 // específica. Solo staff (ver buildDocItemLi arriba, mismo criterio).
 function buildAddDocumentRow(deal, dealPartyEntityId){
   const row = document.createElement('div');
-  row.style.cssText = 'display:flex; gap:6px; align-items:center; margin-top:6px;';
+  row.style.cssText = 'margin-top:6px;';
   row.innerHTML = `
-    <input type="text" class="add-doc-name" placeholder="${t('newChecklistItemPh')}" style="flex:1; font-size:12px; padding:5px 8px;">
-    <button type="button" class="btn add-doc-btn" style="font-size:11px; padding:4px 10px; white-space:nowrap;"><i class="ti ti-plus" aria-hidden="true"></i> ${t('addChecklistItem')}</button>
+    <button type="button" class="btn add-doc-toggle" title="${t('addChecklistItemTitle')}" style="font-size:13px; padding:4px 9px; line-height:1;"><i class="ti ti-plus" aria-hidden="true"></i></button>
+    <div class="add-doc-form" style="display:none; gap:6px; align-items:center; margin-top:6px;">
+      <input type="text" class="add-doc-name" placeholder="${t('newChecklistItemPh')}" style="flex:1; font-size:12px; padding:5px 8px;">
+      <button type="button" class="btn primary add-doc-btn" style="font-size:11px; padding:4px 10px; white-space:nowrap;">${t('addChecklistItem')}</button>
+      <button type="button" class="btn add-doc-cancel" title="${t('close')}" style="font-size:11px; padding:4px 8px;"><i class="ti ti-x" aria-hidden="true"></i></button>
+    </div>
   `;
+  const toggleBtn = row.querySelector('.add-doc-toggle');
+  const form = row.querySelector('.add-doc-form');
   const nameInput = row.querySelector('.add-doc-name');
   const addBtn = row.querySelector('.add-doc-btn');
+  const cancelBtn = row.querySelector('.add-doc-cancel');
+  toggleBtn.onclick = () => {
+    toggleBtn.style.display = 'none';
+    form.style.display = 'flex';
+    nameInput.focus();
+  };
+  cancelBtn.onclick = () => {
+    form.style.display = 'none';
+    toggleBtn.style.display = 'inline-flex';
+    nameInput.value = '';
+  };
   addBtn.onclick = async () => {
     const name = nameInput.value.trim();
     if(!name) return;
@@ -2664,7 +2736,7 @@ function buildAddDocumentRow(deal, dealPartyEntityId){
       await openDeal(deal.id);
     }catch(e){ alert(e.message); addBtn.disabled = false; }
   };
-  nameInput.onkeydown = (e) => { if(e.key === 'Enter') addBtn.click(); };
+  nameInput.onkeydown = (e) => { if(e.key === 'Enter') addBtn.click(); if(e.key === 'Escape') cancelBtn.click(); };
   return row;
 }
 
@@ -2672,7 +2744,7 @@ function buildAddDocumentRow(deal, dealPartyEntityId){
 // eventualmente se van a organizar las carpetas de Drive (Propiedad /
 // Vendedor / Comprador / Escrow / Notaría), aunque esas dos últimas todavía
 // no tienen un checklist de documentos propio en la plataforma.
-function buildDocsBySideGrouping(deal){
+function buildDocsBySideGrouping(deal, isStaffView){
   const wrap = document.createElement('div');
   [['seller', t('sellers')], ['buyer', t('buyers')]].forEach(([side, label]) => {
     const parties = deal.parties.filter(p => p.side === side);
@@ -2681,12 +2753,12 @@ function buildDocsBySideGrouping(deal){
     sub.style.cssText = 'font-family:\'Cormorant Garamond\',serif; font-weight:600; font-size:15px; color:var(--ink-soft); margin:4px 0 8px;';
     sub.textContent = label;
     wrap.appendChild(sub);
-    parties.forEach(p => wrap.appendChild(buildDocListForParty(deal, p)));
+    parties.forEach(p => wrap.appendChild(buildDocListForParty(deal, p, isStaffView)));
   });
   return wrap;
 }
 
-function buildDocListForParty(deal, party){
+function buildDocListForParty(deal, party, isStaffView){
   const box = document.createElement('div');
   box.style.marginBottom = '14px';
   const sideLabel = party.side === 'seller' ? t('sellerLabel2') : t('buyerLabel2');
@@ -2695,7 +2767,7 @@ function buildDocListForParty(deal, party){
   const hLabel = document.createElement('span');
   hLabel.textContent = `${party.name} (${sideLabel} · ${TYPE_LABEL[party.partyType]})`;
   h.appendChild(hLabel);
-  if(['admin','agent','lawyer','external_lawyer'].includes(currentUser.role)){
+  if(isStaffView){
     const remindBtn = document.createElement('button');
     remindBtn.className = 'btn'; remindBtn.style.cssText = 'font-size:11px; padding:3px 10px;';
     remindBtn.textContent = t('remindDocuments');
@@ -2772,10 +2844,10 @@ function buildDocListForParty(deal, party){
     }
     const ul = document.createElement('ul');
     ul.className = 'doc-list';
-    g.docs.forEach(doc => ul.appendChild(buildDocItemLi(deal, doc)));
+    g.docs.forEach(doc => ul.appendChild(buildDocItemLi(deal, doc, isStaffView)));
     box.appendChild(ul);
   });
-  if(['admin','agent','lawyer','external_lawyer'].includes(currentUser.role)){
+  if(isStaffView){
     box.appendChild(buildAddDocumentRow(deal, party.id));
   }
   return box;
@@ -2784,7 +2856,7 @@ function buildDocListForParty(deal, party){
 // Documentos de LA PROPIEDAD (Escritura pública, Predial) — una sola vez
 // por operación, no ligados a ningún vendedor/comprador en particular
 // (documents.deal_party_entity_id es NULL para estos).
-function buildPropertyDocsSection(deal){
+function buildPropertyDocsSection(deal, isStaffView){
   const docs = deal.documents.filter(d => d.partyId === null);
   const box = document.createElement('div');
   box.style.marginBottom = '14px';
@@ -2801,9 +2873,9 @@ function buildPropertyDocsSection(deal){
   }
   const ul = document.createElement('ul');
   ul.className = 'doc-list';
-  docs.forEach(doc => ul.appendChild(buildDocItemLi(deal, doc)));
+  docs.forEach(doc => ul.appendChild(buildDocItemLi(deal, doc, isStaffView)));
   box.appendChild(ul);
-  if(['admin','agent','lawyer','external_lawyer'].includes(currentUser.role)){
+  if(isStaffView){
     box.appendChild(buildAddDocumentRow(deal, null));
   }
   return box;
@@ -3057,6 +3129,7 @@ function buildDealAgentsSection(deal){
         try{
           await apiFetch(`/api/deals/${deal.id}/agents/${a.userId}`, { method:'DELETE' });
           delete availableAgentsCache[deal.id];
+          clearKycCacheForDeal(deal.id);
           await openDeal(deal.id);
         }catch(e){ alert(e.message); }
       };
@@ -3064,6 +3137,7 @@ function buildDealAgentsSection(deal){
       row.querySelector('[data-represents]').onchange = async (e) => {
         try{
           await apiFetch(`/api/deals/${deal.id}/agents/${a.userId}`, { method:'PATCH', body: JSON.stringify({ representsSide: e.target.value || null }) });
+          clearKycCacheForDeal(deal.id);
           await openDeal(deal.id);
         }catch(err){ alert(err.message); e.target.value = a.representsSide || ''; }
       };
@@ -3112,6 +3186,7 @@ function buildDealAgentsSection(deal){
       try{
         await apiFetch(`/api/deals/${deal.id}/agents`, { method:'POST', body: JSON.stringify({ userId, representsSide }) });
         delete availableAgentsCache[deal.id];
+        clearKycCacheForDeal(deal.id);
         await openDeal(deal.id);
       }catch(e){ alert(e.message); }
     };
@@ -3530,14 +3605,14 @@ function renderPortal(body){
   const pt = document.createElement('div'); pt.className='section-title'; pt.textContent=t('propertySection');
   body.appendChild(pt);
   const pcard = document.createElement('div'); pcard.className='card';
-  pcard.appendChild(buildPropertyDocsSection(deal));
+  pcard.appendChild(buildPropertyDocsSection(deal, isPreview && !myParty));
   body.appendChild(pcard);
 
   if(myParty){
     const secTitle = document.createElement('div'); secTitle.className='section-title'; secTitle.textContent=t('yourDocsChecklist');
     body.appendChild(secTitle);
     const card = document.createElement('div'); card.className='card';
-    card.appendChild(buildDocListForParty(deal, myParty));
+    card.appendChild(buildDocListForParty(deal, myParty, false));
     body.appendChild(card);
 
     const kt = document.createElement('div'); kt.className='section-title'; kt.textContent=t('yourKycFile');
@@ -3549,7 +3624,7 @@ function renderPortal(body){
     const secTitle = document.createElement('div'); secTitle.className='section-title'; secTitle.textContent=t('allPartiesChecklist');
     body.appendChild(secTitle);
     const card = document.createElement('div'); card.className='card';
-    card.appendChild(buildDocsBySideGrouping(deal));
+    card.appendChild(buildDocsBySideGrouping(deal, isPreview));
     body.appendChild(card);
   }
 
