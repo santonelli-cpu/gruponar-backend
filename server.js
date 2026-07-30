@@ -15,6 +15,7 @@ const dashboardRouter = require('./routes/dashboard');
 const kycRouter = require('./routes/kyc');
 const contractsRouter = require('./routes/contracts');
 const googleDriveRouter = require('./routes/googleDrive');
+const settingsRouter = require('./routes/settings');
 const { runAutomaticReminders } = require('./lib/reminders');
 
 const app = express();
@@ -61,6 +62,7 @@ app.use('/api/dashboard', dashboardRouter);
 app.use('/api', kycRouter);
 app.use('/api', contractsRouter);
 app.use('/api/google-drive', googleDriveRouter);
+app.use('/api/settings', settingsRouter);
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 

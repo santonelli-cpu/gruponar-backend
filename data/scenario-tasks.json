@@ -6,7 +6,8 @@
     },
     {
       "en": "Escrow account opened (optional)",
-      "es": "Cuenta de escrow aperturada"
+      "es": "Cuenta de escrow aperturada",
+      "sign": true
     },
     {
       "en": "Documents received and KYC filled",
@@ -56,7 +57,8 @@
     },
     {
       "en": "Escrow account opened (optional)",
-      "es": "Cuenta de escrow aperturada"
+      "es": "Cuenta de escrow aperturada",
+      "sign": true
     },
     {
       "en": "Documents received and KYC filled",
@@ -123,7 +125,8 @@
     },
     {
       "en": "Escrow account opened (optional)",
-      "es": "Cuenta de escrow aperturada"
+      "es": "Cuenta de escrow aperturada",
+      "sign": true
     },
     {
       "en": "Documents received and KYC filled",
@@ -190,7 +193,8 @@
     },
     {
       "en": "Escrow account opened (optional)",
-      "es": "Cuenta de escrow aperturada"
+      "es": "Cuenta de escrow aperturada",
+      "sign": true
     },
     {
       "en": "Documents received and KYC filled",

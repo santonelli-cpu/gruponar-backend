@@ -126,6 +126,41 @@ ensureColumn('deals', 'drive_folder_url', 'drive_folder_url TEXT');
 // se hace en la ruta, igual que otros campos opcionales de este estilo.
 ensureColumn('deal_parties', 'represents_side', 'represents_side TEXT');
 
+// Igual que arriba pero en la invitación misma — para poder elegir a qué
+// lado va a representar un agente NUEVO desde el propio formulario de
+// invitar, en vez de tener que ir a elegirlo después en la sección de
+// agentes de la operación.
+ensureColumn('invites', 'represents_side', 'represents_side TEXT');
+
+// La tarea "Cuenta de escrow aperturada" nunca traía requires_signature=1 en
+// data/scenario-tasks.json, así que la sección de "Firma electrónica" (donde
+// vive subir/generar el escrow agreement y mandarlo a firma) nunca se
+// mostraba para ella — el botón no faltaba, la tarea nunca calificaba para
+// tenerlo. Esto arregla el template para operaciones nuevas (routes/deals.js
+// las inserta desde ahí); el UPDATE de abajo corrige, una sola vez, las
+// operaciones que ya existían con la tarea sin la bandera.
+db.prepare(`
+  UPDATE tasks SET requires_signature = 1
+  WHERE requires_signature = 0 AND label_es = 'Cuenta de escrow aperturada'
+`).run();
+
+// "Costos de cierre (recibo del notario)" se agregó a data/scenario-docs.json
+// como documento de Propiedad — insertPropertyDocs (routes/deals.js) solo
+// corre al CREAR una operación, así que las que ya existían nunca lo
+// reciben solas. Igual que el resto de estos backfills, es puramente
+// aditivo: solo inserta el documento si todavía no existe para esa
+// operación, nunca toca ni borra nada que ya esté ahí.
+db.prepare(`
+  INSERT INTO documents (deal_id, deal_party_entity_id, name, created_at)
+  SELECT d.id, NULL, 'Costos de cierre (recibo del notario)', datetime('now')
+  FROM deals d
+  WHERE NOT EXISTS (
+    SELECT 1 FROM documents doc
+    WHERE doc.deal_id = d.id AND doc.deal_party_entity_id IS NULL
+      AND doc.name = 'Costos de cierre (recibo del notario)'
+  )
+`).run();
+
 // El CHECK de deals.scenario y contract_templates.scenario tampoco se puede
 // alterar con ADD COLUMN — mismo procedimiento que ensureUserRoleAllowsLawyer.
 // Van al final, después de todos los ensureColumn de arriba, porque hay que

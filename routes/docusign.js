@@ -41,16 +41,36 @@ async function syncTaskDocToDrive(req, dealId, filename, buffer) {
 
 // Comprador y vendedor son quienes firman los documentos de cierre (escritura,
 // KYC del fiduciario, escrow) — son las únicas tareas marcadas
-// requires_signature hoy. Comprador siempre primero (routingOrder '1') y
-// vendedor después ('2') — DocuSign no habilita la firma del vendedor hasta
-// que el comprador complete la suya.
+// requires_signature hoy. Comprador(es) siempre primero (routingOrder '1') y
+// vendedor(es) después ('2') — DocuSign no habilita la firma del vendedor
+// hasta que el/los comprador(es) completen la suya. dp.id como desempate deja
+// un orden estable cuando hay más de un firmante del mismo lado.
 function getSigners(dealId) {
   return db.prepare(`
     SELECT u.id AS userId, u.name, u.email, dp.role_in_deal AS roleInDeal
     FROM deal_parties dp JOIN users u ON u.id = dp.user_id
     WHERE dp.deal_id = ? AND dp.role_in_deal IN ('buyer','seller')
-    ORDER BY CASE dp.role_in_deal WHEN 'buyer' THEN 0 ELSE 1 END
+    ORDER BY CASE dp.role_in_deal WHEN 'buyer' THEN 0 ELSE 1 END, dp.id
   `).all(dealId);
+}
+
+// Ancla de firma por lado — misma convención que routes/contracts.js y
+// lib/kycFill/signatureBlock.js (el bloque de firmas del escrow se genera
+// con estos mismos anchors), así un documento con más de un firmante por
+// lado no encima varias firmas en el mismo punto.
+const SIGNATURE_ANCHOR_BUYER = '/sig1/';
+const SIGNATURE_ANCHOR_SELLER = '/sig2/';
+
+function anchorForSigner(side, indexInSide) {
+  const base = side === 'buyer' ? SIGNATURE_ANCHOR_BUYER : SIGNATURE_ANCHOR_SELLER;
+  return indexInSide === 0 ? base : base.replace(/\/$/, `_${indexInSide + 1}/`);
+}
+
+// Índice de cada firmante dentro de su propio lado (0 = primero, usa el
+// anchor base; 1+ = firmantes extra, usan el anchor con sufijo _2/_3/...).
+function withSideIndex(signers) {
+  const counters = { buyer: 0, seller: 0 };
+  return signers.map(s => ({ ...s, sideIndex: counters[s.roleInDeal]++ }));
 }
 
 // POST /api/deals/:id/tasks/:taskId/document — admin/agente/abogado sube el
@@ -91,10 +111,18 @@ router.post('/deals/:id/tasks/:taskId/generate-escrow-document', requireRole('ad
   if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
 
   const { placeDate, purchaseAgreementDescription, depositAmount, fees, expirationDate, noticeAddress } = req.body || {};
+  // Nombres reales (todos los compradores/vendedores con cuenta ligada, no
+  // solo uno por lado) para el cuerpo del documento y para la tabla de
+  // firmas — el mismo orden que usa el sobre de DocuSign más abajo, así los
+  // anchors del documento generado coinciden con los firmantes reales.
+  const signersForNames = getSigners(req.params.id);
+  const sellerNames = signersForNames.filter(s => s.roleInDeal === 'seller').map(s => s.name);
+  const buyerNames = signersForNames.filter(s => s.roleInDeal === 'buyer').map(s => s.name);
+
   let docxPath, pdfPath;
   try {
     docxPath = path.join(dealDir(req.params.id), `escrow-${task.id}-${Date.now()}.docx`);
-    fillArmourEscrow(deal, { placeDate, purchaseAgreementDescription, depositAmount, fees, expirationDate, noticeAddress }, docxPath);
+    fillArmourEscrow(deal, { placeDate, purchaseAgreementDescription, depositAmount, fees, expirationDate, noticeAddress }, docxPath, sellerNames, buyerNames);
     pdfPath = convertDocxToPdf(docxPath);
     const key = path.join(String(req.params.id), path.basename(pdfPath));
     await gcsStorage.uploadLocalFile(key, pdfPath, 'application/pdf');
@@ -128,7 +156,7 @@ router.post('/deals/:id/tasks/:taskId/send-for-signature', requireRole('admin', 
     return res.status(400).json({ error: 'Sube el documento a firmar de esta tarea primero.' });
   }
 
-  const signers = getSigners(req.params.id);
+  const signers = withSideIndex(getSigners(req.params.id));
   if (!signers.length) {
     return res.status(400).json({ error: 'Esta operación no tiene comprador ni vendedor con cuenta ligada todavía.' });
   }
@@ -149,16 +177,21 @@ router.post('/deals/:id/tasks/:taskId/send-for-signature', requireRole('admin', 
           email: p.email,
           name: p.name,
           recipientId: String(i + 1),
-          // Firma secuencial: comprador (routingOrder '1') firma antes que
-          // vendedor ('2'). Si el sobre solo tiene un firmante (ej. KYC),
-          // todos comparten el mismo routingOrder y no cambia nada.
+          // Firma secuencial: comprador(es) (routingOrder '1') firman antes
+          // que vendedor(es) ('2'). Si el sobre solo tiene un firmante (ej.
+          // KYC), todos comparten el mismo routingOrder y no cambia nada.
           routingOrder: p.roleInDeal === 'buyer' ? '1' : '2',
           // clientUserId (cualquier string no vacío) es lo que le dice a
           // DocuSign que este firmante usa firma EMBEBIDA (nuestro iframe)
           // en vez de mandarle un correo — omitirlo rompe todo el flujo.
           clientUserId: String(p.userId),
           tabs: {
-            signHereTabs: [{ anchorString: '/sig' + (i + 1) + '/', anchorUnits: 'pixels', anchorXOffset: '0', anchorYOffset: '0', optional: 'true' }]
+            // Anchor por lado + índice dentro del lado — con un solo
+            // comprador/vendedor coincide con el anchor de siempre
+            // (/sig1/, /sig2/); con más de uno por lado, cada firmante
+            // extra cae en su propio punto (/sig1_2/, /sig2_2/...), igual
+            // que el contrato de promesa y el escrow agreement generado.
+            signHereTabs: [{ anchorString: anchorForSigner(p.roleInDeal, p.sideIndex), anchorUnits: 'pixels', anchorXOffset: '0', anchorYOffset: '0', optional: 'true' }]
           }
         }))
       },

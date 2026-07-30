@@ -57,6 +57,19 @@ router.post('/register', rateLimitRegister, (req, res) => {
     .run(name, normalizedEmail, hash, role, resolvedAgency);
 
   res.status(201).json({ ok: true, message: 'Cuenta creada. Un administrador debe aprobarla antes de que puedas iniciar sesión.' });
+
+  // Best-effort — un correo que falla no debe tumbar el registro, que ya
+  // quedó guardado. Se manda a TODOS los admins activos, no a uno fijo.
+  if (mailer.isConfigured()) {
+    const admins = db.prepare("SELECT email FROM users WHERE role = 'admin' AND status = 'active'").all();
+    const url = `${req.protocol}://${req.get('host')}/`;
+    admins.forEach(a => {
+      mailer.sendPendingApprovalEmail({
+        to: a.email, applicantName: name, applicantEmail: normalizedEmail,
+        applicantRole: role, applicantAgency: resolvedAgency, url
+      });
+    });
+  }
 });
 
 // POST /api/auth/login  { email, password }

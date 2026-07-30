@@ -4,9 +4,26 @@ const multer = require('multer');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const db = require('../db');
-const { requireAuth, requireRole } = require('./auth');
+const { requireAuth, requireRole, resolveAgency } = require('./auth');
 const { genFilename } = require('../lib/storage');
-const { canAccessDeal, myRoleInDeal, myDealPartyEntityId, UNRESTRICTED_ROLES } = require('../lib/access');
+const { canAccessDeal, myRoleInDeal, myDealPartyEntityId, myRepresentsSide, UNRESTRICTED_ROLES } = require('../lib/access');
+
+// Comprador/vendedor solo puede tocar documentos de su propia parte; un
+// agente que ya eligió a qué lado representa solo los de ese lado; los de
+// la Propiedad (deal_party_entity_id NULL) son de cualquiera con acceso a
+// la operación; admin/abogado sin restricción.
+function canTouchDoc(req, dealId, doc) {
+  if (doc.deal_party_entity_id === null) return true;
+  const role = myRoleInDeal(req, dealId);
+  if (['admin', 'lawyer'].includes(role)) return true;
+  if (role === 'agent') {
+    const side = myRepresentsSide(req, dealId);
+    if (!side) return true;
+    const party = db.prepare('SELECT side FROM deal_party_entities WHERE id = ?').get(doc.deal_party_entity_id);
+    return !!party && party.side === side;
+  }
+  return myDealPartyEntityId(req, dealId) === doc.deal_party_entity_id;
+}
 const mailer = require('../lib/email');
 const driveClient = require('../lib/googleDriveClient');
 const gcsStorage = require('../lib/gcsStorage');
@@ -306,7 +323,7 @@ router.get('/:id', requireAuth, (req, res) => {
   });
 
   const agents = db.prepare(`
-    SELECT dp.id AS dealPartyId, u.id AS userId, u.name, u.email, u.agency, dp.represents_side AS representsSide
+    SELECT dp.id AS dealPartyId, u.id AS userId, u.name, u.email, u.agency, u.status, dp.represents_side AS representsSide
     FROM deal_parties dp JOIN users u ON u.id = dp.user_id
     WHERE dp.deal_id = ? AND dp.role_in_deal = 'agent'
     ORDER BY u.name
@@ -314,7 +331,22 @@ router.get('/:id', requireAuth, (req, res) => {
 
   const documents = db.prepare('SELECT * FROM documents WHERE deal_id = ?').all(deal.id);
   const tasks = db.prepare('SELECT * FROM tasks WHERE deal_id = ? ORDER BY sort_order').all(deal.id);
-  res.json({ ...deal, parties, agents, documents, tasks });
+
+  // Un agente que ya eligió a qué lado representa solo ve las partes (y sus
+  // documentos) de ese lado — el otro lado puede tener su propio agente y no
+  // deben verse entre sí. Los documentos de la Propiedad (deal_party_entity_id
+  // NULL) no son de nadie en particular, siguen visibles para cualquiera con
+  // acceso a la operación.
+  let visibleParties = parties;
+  let visibleDocuments = documents;
+  const side = myRepresentsSide(req, deal.id);
+  if (side) {
+    const visiblePartyIds = new Set(parties.filter(p => p.side === side).map(p => p.id));
+    visibleParties = parties.filter(p => visiblePartyIds.has(p.id));
+    visibleDocuments = documents.filter(d => d.deal_party_entity_id === null || visiblePartyIds.has(d.deal_party_entity_id));
+  }
+
+  res.json({ ...deal, parties: visibleParties, agents, documents: visibleDocuments, tasks });
 });
 
 // PATCH /api/deals/:id — cambia la escrow company y/o las fechas clave
@@ -444,6 +476,46 @@ router.post('/:id/parties/:partyId/rebuild-checklist', requireRole('admin', 'age
   res.json({ ok: true });
 });
 
+// POST /api/deals/:id/parties/:partyId/fix-entity-checklist — versión en
+// vivo del script scripts/cleanup-llc-entity-checklist.js, para operaciones
+// creadas ANTES de corregir el bug de "Corrige checklist duplicado de
+// LLC/corporation": una parte LLC/corporation tenía pegado también el set
+// de documentos de persona física, sin ninguna etiqueta que lo distinguiera
+// del checklist real de la entidad. rebuild-checklist arriba solo AGREGA lo
+// que falte — nunca quita lo que sobra — así que esas operaciones viejas
+// necesitan este endpoint para borrar lo que sobra.
+//
+// Nunca borra un documento que ya tenga archivo subido (status='done') — se
+// devuelve en "flagged" para que el admin lo revise a mano (puede que en
+// realidad sea de un socio y haya que reasignarlo, no perderlo).
+router.post('/:id/parties/:partyId/fix-entity-checklist', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
+  if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
+  if (!['llc', 'corporation'].includes(party.party_type)) {
+    return res.status(400).json({ error: 'Esto solo aplica a partes tipo LLC/corporation.' });
+  }
+  const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id);
+  const s = SCENARIO_DOCS[deal.scenario];
+  const correctNames = new Set(party.party_type === 'llc' ? s.llc_entity : s.corporation_extra);
+
+  const unlabeledDocs = db.prepare('SELECT id, name, status FROM documents WHERE deal_party_entity_id = ? AND sub_label IS NULL').all(party.id);
+  const wrongDocs = unlabeledDocs.filter(d => !correctNames.has(d.name));
+
+  const deleted = [];
+  const flagged = [];
+  wrongDocs.forEach(d => {
+    if (d.status === 'done') {
+      flagged.push(d.name);
+    } else {
+      db.prepare('DELETE FROM documents WHERE id = ?').run(d.id);
+      deleted.push(d.name);
+    }
+  });
+
+  res.json({ ok: true, deleted, flagged });
+});
+
 // POST /api/deals/:id/parties/:partyId/register-user — alternativa a la
 // invitación por correo: da de alta la cuenta del comprador/vendedor de
 // una vez, con una contraseña temporal que tú le compartes por el canal que
@@ -534,35 +606,41 @@ router.post('/:id/parties/:partyId/remind', requireRole('admin', 'agent', 'lawye
   res.json({ ok: true, count: pending.length });
 });
 
-// GET /api/deals/:id/available-agents — agentes activos (ya con cuenta,
-// aprobados) que todavía NO están ligados a esta operación — para el
-// dropdown de "agregar agente" en el detalle de la operación, en vez de
-// tener que generar una invitación nueva para alguien que ya es parte del
-// equipo. Los abogados no aparecen acá: ya ven todas las operaciones
+// GET /api/deals/:id/available-agents — agentes (con cuenta, activos O
+// pendientes de aprobación) que todavía NO están ligados a esta operación —
+// para el dropdown de "agregar agente" en el detalle de la operación, en vez
+// de tener que generar una invitación nueva para alguien que ya es parte del
+// equipo. Se incluyen los pendientes porque a veces hay que asignar al
+// agente a la operación antes de que un admin le apruebe la cuenta (no
+// pueden iniciar sesión mientras siga pendiente, pero sí quedar asignados
+// desde ya) — status se manda para que la UI lo marque como "pendiente".
+// Los abogados no aparecen acá: ya ven todas las operaciones
 // (UNRESTRICTED_ROLES en lib/access.js), no hace falta ligarlos por deal.
 router.get('/:id/available-agents', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const agents = db.prepare(`
-    SELECT id, name, email, agency FROM users
-    WHERE role = 'agent' AND status = 'active'
+    SELECT id, name, email, agency, status FROM users
+    WHERE role = 'agent' AND status IN ('active', 'pending')
       AND id NOT IN (SELECT user_id FROM deal_parties WHERE deal_id = ? AND role_in_deal = 'agent')
-    ORDER BY name
+    ORDER BY status = 'pending', name
   `).all(req.params.id);
   res.json(agents);
 });
 
 // POST /api/deals/:id/agents — liga a esta operación un agente que YA tiene
 // cuenta (elegido del dropdown de available-agents), sin pasar por el flujo
-// de invitación/contraseña — solo tiene sentido para alguien que ya inició
-// sesión antes en la plataforma.
+// de invitación/contraseña — solo tiene sentido para alguien que ya se
+// registró antes en la plataforma. Se permite aunque su cuenta siga
+// 'pending' de aprobación (queda asignado desde ya; solo puede iniciar
+// sesión una vez que un admin lo apruebe, esa regla no cambia).
 router.post('/:id/agents', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const { userId, representsSide } = req.body || {};
   if (representsSide !== undefined && representsSide !== null && !['buyer', 'seller'].includes(representsSide)) {
     return res.status(400).json({ error: 'representsSide debe ser buyer o seller.' });
   }
-  const user = db.prepare("SELECT * FROM users WHERE id = ? AND role = 'agent' AND status = 'active'").get(userId);
-  if (!user) return res.status(400).json({ error: 'Ese usuario no existe o no es un agente activo.' });
+  const user = db.prepare("SELECT * FROM users WHERE id = ? AND role = 'agent' AND status IN ('active', 'pending')").get(userId);
+  if (!user) return res.status(400).json({ error: 'Ese usuario no existe o no es un agente.' });
   const already = db.prepare('SELECT 1 FROM deal_parties WHERE deal_id = ? AND user_id = ?').get(req.params.id, userId);
   if (already) return res.status(409).json({ error: 'Ese agente ya está en esta operación.' });
   db.prepare("INSERT INTO deal_parties (deal_id, user_id, role_in_deal, represents_side) VALUES (?,?,'agent',?)").run(req.params.id, userId, representsSide || null);
@@ -576,6 +654,42 @@ router.post('/:id/agents', requireRole('admin', 'agent', 'lawyer'), (req, res) =
     mailer.sendAgentAddedToDealEmail({ to: user.email, name: user.name, dealProperty: deal.property, url })
       .then(result => { if (!result.ok) console.error('[resend] no se pudo avisar al agente agregado', req.params.id, result.error); });
   }
+});
+
+// POST /api/deals/:id/agents/register — alternativa a la invitación por
+// correo para un agente que TODAVÍA NO tiene ninguna cuenta (ni pendiente):
+// lo da de alta ya activo (no pasa por aprobación, quien lo está agregando
+// ya es staff) y lo liga a esta operación de una vez, con una contraseña
+// temporal que se comparte por el canal que prefieras.
+router.post('/:id/agents/register', requireRole('admin', 'agent', 'lawyer'), (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const { name, email, agency, agencyOther, representsSide } = req.body || {};
+  if (!name || !email) return res.status(400).json({ error: 'Falta el nombre o el correo.' });
+  if (representsSide !== undefined && representsSide !== null && !['buyer', 'seller'].includes(representsSide)) {
+    return res.status(400).json({ error: 'representsSide debe ser buyer o seller.' });
+  }
+  const resolvedAgency = resolveAgency(agency, agencyOther);
+  if (!resolvedAgency) return res.status(400).json({ error: 'Elige la agencia del agente (o escribe cuál si no está en la lista).' });
+
+  const normalizedEmail = email.toLowerCase().trim();
+  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
+  if (existing) {
+    return res.status(409).json({ error: 'Ya existe una cuenta con ese correo — agrégalo desde el dropdown de "Agentes disponibles" en vez de darlo de alta otra vez.' });
+  }
+
+  const password = crypto.randomBytes(6).toString('base64url');
+  const hash = bcrypt.hashSync(password, 12);
+
+  const registerTx = db.transaction(() => {
+    const info = db.prepare("INSERT INTO users (name, email, password_hash, role, status, agency) VALUES (?,?,?,?,'active',?)")
+      .run(name.trim(), normalizedEmail, hash, 'agent', resolvedAgency);
+    db.prepare("INSERT INTO deal_parties (deal_id, user_id, role_in_deal, represents_side) VALUES (?,?,'agent',?)")
+      .run(req.params.id, info.lastInsertRowid, representsSide || null);
+    return info.lastInsertRowid;
+  });
+
+  const userId = registerTx();
+  res.status(201).json({ id: userId, name: name.trim(), email: normalizedEmail, agency: resolvedAgency, temporaryPassword: password });
 });
 
 // PATCH /api/deals/:id/agents/:userId — cambia a quién representa un agente
@@ -625,6 +739,9 @@ router.post('/:id/drive-folder', requireRole('admin', 'agent', 'lawyer'), async 
 // requisitos (notarizado/apostillado/traducido) ya llegaron.
 router.patch('/:id/documents/:docId', requireAuth, (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deal_id = ?').get(req.params.docId, req.params.id);
+  if (!doc) return res.status(404).json({ error: 'Documento no encontrado.' });
+  if (!canTouchDoc(req, req.params.id, doc)) return res.status(403).json({ error: 'No puedes modificar documentos de otra parte.' });
   const { status, subChecks } = req.body || {};
   if (status !== undefined) {
     if (!['pending', 'done'].includes(status)) return res.status(400).json({ error: 'Status inválido.' });
@@ -632,8 +749,6 @@ router.patch('/:id/documents/:docId', requireAuth, (req, res) => {
       .run(status, req.session.userId, req.params.docId, req.params.id);
   }
   if (subChecks !== undefined) {
-    const doc = db.prepare('SELECT name, sub_checks_json FROM documents WHERE id = ? AND deal_id = ?').get(req.params.docId, req.params.id);
-    if (!doc) return res.status(404).json({ error: 'Documento no encontrado.' });
     const allowed = SUB_CHECKS_BY_DOC[doc.name];
     if (!allowed) return res.status(400).json({ error: 'Este documento no lleva casillas de notarizado/apostillado/traducido.' });
     if (Object.keys(subChecks).some(k => !allowed.includes(k))) {
@@ -651,14 +766,7 @@ router.post('/:id/documents/:docId/file', requireAuth, (req, res, next) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deal_id = ?').get(req.params.docId, req.params.id);
   if (!doc) return res.status(404).json({ error: 'Documento no encontrado.' });
-  // Comprador/vendedor solo puede subir documentos de su propia parte (no
-  // la de otro comprador/vendedor del mismo lado); los de la Propiedad
-  // (deal_party_entity_id NULL) no son de nadie en particular, cualquiera
-  // con acceso a la operación puede subirlos; admin/agente/abogado sin
-  // restricción.
-  const role = myRoleInDeal(req, req.params.id);
-  const myPartyId = myDealPartyEntityId(req, req.params.id);
-  if (doc.deal_party_entity_id !== null && !['admin', 'agent', 'lawyer'].includes(role) && myPartyId !== doc.deal_party_entity_id) {
+  if (!canTouchDoc(req, req.params.id, doc)) {
     return res.status(403).json({ error: 'No puedes subir documentos de otra parte.' });
   }
   upload.single('file')(req, res, async (err) => {
@@ -679,15 +787,33 @@ router.post('/:id/documents/:docId/file', requireAuth, (req, res, next) => {
   });
 });
 
+// DELETE /api/deals/:id/documents/:docId/file — quita el archivo subido y
+// regresa el documento a 'pending' (en vez de solo poder reemplazarlo). Usa
+// la misma regla de acceso que subirlo: comprador/vendedor solo el de su
+// propia parte, staff sin restricción.
+router.delete('/:id/documents/:docId/file', requireAuth, async (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deal_id = ?').get(req.params.docId, req.params.id);
+  if (!doc) return res.status(404).json({ error: 'Documento no encontrado.' });
+  if (!canTouchDoc(req, req.params.id, doc)) {
+    return res.status(403).json({ error: 'No puedes borrar documentos de otra parte.' });
+  }
+  if (!doc.file_url) return res.status(400).json({ error: 'Este documento no tiene archivo subido.' });
+  db.prepare(`
+    UPDATE documents SET file_url=NULL, original_name=NULL, mime_type=NULL, size_bytes=NULL, status='pending',
+      uploaded_by=NULL, uploaded_at=NULL WHERE id=? AND deal_id=?
+  `).run(req.params.docId, req.params.id);
+  res.json({ ok: true });
+  gcsStorage.deleteFile(doc.file_url).catch(err => console.error('[gcs] no se pudo borrar el archivo', doc.file_url, err.message));
+});
+
 // GET /api/deals/:id/documents/:docId/file — descarga autenticada del archivo subido.
 router.get('/:id/documents/:docId/file', requireAuth, async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deal_id = ?').get(req.params.docId, req.params.id);
   if (!doc || !doc.file_url) return res.status(404).json({ error: 'Archivo no encontrado.' });
 
-  const role = myRoleInDeal(req, req.params.id);
-  const myPartyId = myDealPartyEntityId(req, req.params.id);
-  if (doc.deal_party_entity_id !== null && !['admin', 'agent', 'lawyer'].includes(role) && myPartyId !== doc.deal_party_entity_id) {
+  if (!canTouchDoc(req, req.params.id, doc)) {
     return res.status(403).json({ error: 'No puedes ver documentos de otra parte.' });
   }
 

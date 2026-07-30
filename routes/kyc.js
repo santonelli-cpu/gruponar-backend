@@ -5,7 +5,7 @@ const multer = require('multer');
 const docusign = require('docusign-esign');
 const db = require('../db');
 const { requireAuth, requireRole } = require('./auth');
-const { canAccessDeal, myDealPartyEntityId } = require('../lib/access');
+const { canAccessDeal, myDealPartyEntityId, myRepresentsSide } = require('../lib/access');
 const { dealDir, genFilename } = require('../lib/storage');
 const gcsStorage = require('../lib/gcsStorage');
 const driveClient = require('../lib/googleDriveClient');
@@ -85,17 +85,20 @@ const TEMPLATES = {
   }
 };
 
-// Si el agente ligado a esta operación es de agencia LPR Luxury, sus
-// clientes llenan el KYC de LPR en vez del de la escrow company — LPR pide
-// su propio expediente independientemente de con qué escrow se trabaje.
-// Puede haber como máximo 1 agente por operación (deal_parties no permite
-// más de un usuario con role_in_deal='agent' ligado al mismo tiempo en la
-// práctica, aunque el esquema no lo fuerce), así que un solo LIMIT 1 basta.
-function dealAgentIsLprAgency(dealId) {
+// Si el agente que representa el lado de esta parte es de agencia LPR
+// Luxury, esa parte ADEMÁS del expediente de la escrow company también
+// necesita el de LPR (ver getLatestSubmission/kind — es un expediente
+// aparte, no lo reemplaza). Puede haber un agente distinto por lado
+// (comprador y vendedor), así que se busca primero el agente que
+// específicamente representa ESE lado; si nadie ha elegido lado todavía
+// (deals viejos, un solo agente sin representsSide), se usa ese como
+// respaldo para no romper el comportamiento anterior.
+function dealAgentIsLprAgency(dealId, side) {
   const row = db.prepare(`
     SELECT u.agency FROM deal_parties dp JOIN users u ON u.id = dp.user_id
-    WHERE dp.deal_id = ? AND dp.role_in_deal = 'agent' LIMIT 1
-  `).get(dealId);
+    WHERE dp.deal_id = ? AND dp.role_in_deal = 'agent' AND (dp.represents_side = ? OR dp.represents_side IS NULL)
+    ORDER BY (dp.represents_side IS NULL) ASC LIMIT 1
+  `).get(dealId, side);
   return !!row && row.agency === 'LPR Luxury';
 }
 
@@ -154,8 +157,18 @@ function getSubmission(partyId, templateKey) {
 // Para rutas posteriores al guardado inicial (generar, enviar a firma,
 // firmar, verificar estado) — ya existe una fila con un template_key fijo,
 // no hace falta volver a resolver por idioma/compañía.
-function getLatestSubmission(partyId) {
-  return db.prepare('SELECT * FROM kyc_submissions WHERE deal_party_entity_id = ? ORDER BY id DESC LIMIT 1')
+//
+// `kind` distingue entre el expediente de la escrow company ('escrow',
+// default) y el de LPR Luxury ('lpr') — cuando el agente es de LPR, una
+// misma parte necesita AMBOS expedientes por separado (cada quien pide el
+// suyo, no es el mismo formulario reetiquetado), así que puede haber dos
+// filas simultáneas en kyc_submissions para el mismo deal_party_entity_id:
+// una con template_key tipo armour-.../tla-... y otra lpr-... . Filtrar por
+// prefijo evita que "la más reciente" de una pise a la otra.
+function getLatestSubmission(partyId, kind) {
+  kind = kind || 'escrow';
+  const op = kind === 'lpr' ? 'LIKE' : 'NOT LIKE';
+  return db.prepare(`SELECT * FROM kyc_submissions WHERE deal_party_entity_id = ? AND template_key ${op} 'lpr-%' ORDER BY id DESC LIMIT 1`)
     .get(partyId);
 }
 
@@ -165,7 +178,13 @@ function getLatestSubmission(partyId) {
 // puede tocar el suyo, no el de otra persona del mismo lado.
 function canWorkOnKyc(req, dealId, partyId) {
   if (!canAccessDeal(req, dealId)) return false;
-  if (['admin', 'agent', 'lawyer'].includes(req.session.role)) return true;
+  if (['admin', 'lawyer'].includes(req.session.role)) return true;
+  if (req.session.role === 'agent') {
+    const side = myRepresentsSide(req, dealId);
+    if (!side) return true; // todavía no eligió lado — no restringe (compatibilidad)
+    const party = db.prepare('SELECT side FROM deal_party_entities WHERE id = ?').get(partyId);
+    return !!party && party.side === side;
+  }
   return myDealPartyEntityId(req, dealId) === Number(partyId);
 }
 
@@ -182,9 +201,16 @@ router.get('/deals/:id/kyc/:partyId', requireAuth, (req, res) => {
   // Si ya hay un borrador/expediente guardado, seguimos con ese idioma tal
   // cual (no lo cambia un ?lang= distinto a medio llenar); si no existe
   // todavía, ?lang= (o el idioma por defecto de la plantilla) decide cuál.
-  const isLprAgency = dealAgentIsLprAgency(id);
-  const existing = getLatestSubmission(partyId);
-  const templateKey = existing ? existing.template_key : resolveTemplateKey(deal, party, req.query.lang, isLprAgency);
+  //
+  // ?kind=lpr pide el expediente ADICIONAL de LPR Luxury (además del de la
+  // escrow company, no en vez de) — ver getLatestSubmission. Solo existe
+  // cuando el agente de la operación es de esa agencia.
+  const isLprAgency = dealAgentIsLprAgency(id, party.side);
+  const kind = req.query.kind === 'lpr' ? 'lpr' : 'escrow';
+  if (kind === 'lpr' && !isLprAgency) return res.status(404).json({ error: 'Esta operación no tiene un agente de LPR Luxury.' });
+
+  const existing = getLatestSubmission(partyId, kind);
+  const templateKey = existing ? existing.template_key : resolveTemplateKey(deal, party, req.query.lang, kind === 'lpr');
   if (!templateKey || !TEMPLATES[templateKey]) {
     return res.status(501).json({ error: 'Todavía no hay una plantilla KYC construida para esta combinación de compañía/tipo de persona/idioma.' });
   }
@@ -200,7 +226,8 @@ router.get('/deals/:id/kyc/:partyId', requireAuth, (req, res) => {
     docusignStatus: submission ? submission.docusign_status : 'not_sent',
     generatedFileUrl: submission && submission.generated_file_url ? true : false,
     availableTemplates: Object.keys(TEMPLATES)
-      .filter(k => resolveTemplateKey(deal, party, 'es', isLprAgency) === k || resolveTemplateKey(deal, party, 'en', isLprAgency) === k)
+      .filter(k => resolveTemplateKey(deal, party, 'es', kind === 'lpr') === k || resolveTemplateKey(deal, party, 'en', kind === 'lpr') === k),
+    lprRequired: kind === 'escrow' ? isLprAgency : undefined
   });
 });
 
@@ -212,7 +239,8 @@ router.delete('/deals/:id/kyc/:partyId', requireRole('admin', 'agent', 'lawyer')
   const { id, partyId } = req.params;
   if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
 
-  const submission = getLatestSubmission(partyId);
+  const kind = req.query.kind === 'lpr' ? 'lpr' : 'escrow';
+  const submission = getLatestSubmission(partyId, kind);
   if (!submission) return res.json({ ok: true });
   if (!['draft', 'generated'].includes(submission.status)) {
     return res.status(400).json({ error: 'Este expediente ya se envió a firma, no se puede reiniciar.' });
@@ -242,8 +270,9 @@ router.post('/deals/:id/kyc/:partyId/upload-signed', requireRole('admin', 'agent
     if (err) return res.status(400).json({ error: err.message || 'Archivo inválido.' });
     if (!req.file) return res.status(400).json({ error: 'Sube un PDF.' });
     try {
-      const priorSubmission = getLatestSubmission(partyId);
-      const templateKey = priorSubmission ? priorSubmission.template_key : resolveTemplateKey(deal, party, req.query.lang, dealAgentIsLprAgency(id));
+      const kind = req.query.kind === 'lpr' ? 'lpr' : 'escrow';
+      const priorSubmission = getLatestSubmission(partyId, kind);
+      const templateKey = priorSubmission ? priorSubmission.template_key : resolveTemplateKey(deal, party, req.query.lang, kind === 'lpr');
       if (!templateKey) return res.status(400).json({ error: 'No se pudo determinar qué plantilla KYC le corresponde a esta parte.' });
 
       const key = path.join(String(id), genFilename(`kyc-${templateKey}-party${partyId}-firmado.pdf`));
@@ -279,8 +308,9 @@ router.post('/deals/:id/kyc/:partyId', requireAuth, (req, res) => {
   const party = loadParty(id, partyId);
   if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
 
-  const priorSubmission = getLatestSubmission(partyId);
-  const templateKey = priorSubmission ? priorSubmission.template_key : resolveTemplateKey(deal, party, req.body?.lang, dealAgentIsLprAgency(id));
+  const kind = req.query.kind === 'lpr' ? 'lpr' : 'escrow';
+  const priorSubmission = getLatestSubmission(partyId, kind);
+  const templateKey = priorSubmission ? priorSubmission.template_key : resolveTemplateKey(deal, party, req.body?.lang, kind === 'lpr');
   if (!templateKey || !TEMPLATES[templateKey]) return res.status(501).json({ error: 'Plantilla no disponible todavía.' });
 
   const { answers } = req.body || {};
@@ -315,7 +345,7 @@ async function sendKycEnvelope(deal, party, submission, template) {
   const documentBase64 = (await gcsStorage.downloadToBuffer(submission.generated_file_url)).toString('base64');
 
   const envelopeDefinition = {
-    emailSubject: `Firma requerida: Expediente KYC — ${deal.property}`,
+    emailSubject: `Firma requerida: ${template.definition.label || 'Expediente KYC'} — ${deal.property}`,
     documents: [{ documentBase64, name: 'Expediente KYC.pdf', fileExtension: 'pdf', documentId: '1' }],
     recipients: {
       signers: [{
@@ -353,7 +383,8 @@ router.post('/deals/:id/kyc/:partyId/generate', requireAuth, async (req, res) =>
   const party = loadParty(id, partyId);
   if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
 
-  const submission = getLatestSubmission(partyId);
+  const kind = req.query.kind === 'lpr' ? 'lpr' : 'escrow';
+  const submission = getLatestSubmission(partyId, kind);
   if (!submission) return res.status(400).json({ error: 'Guarda el formulario antes de generar el documento.' });
   const template = TEMPLATES[submission.template_key];
   if (!template) return res.status(500).json({ error: 'Plantilla desconocida para este expediente.' });
@@ -396,7 +427,8 @@ router.get('/deals/:id/kyc/:partyId/file', requireAuth, async (req, res) => {
   const { id, partyId } = req.params;
   if (!canWorkOnKyc(req, id, partyId)) return res.status(403).json({ error: 'No autorizado.' });
 
-  const submission = getLatestSubmission(partyId);
+  const kind = req.query.kind === 'lpr' ? 'lpr' : 'escrow';
+  const submission = getLatestSubmission(partyId, kind);
   if (!submission || !submission.generated_file_url) return res.status(404).json({ error: 'Todavía no se ha generado el documento.' });
 
   if (!await gcsStorage.existsFile(submission.generated_file_url)) return res.status(404).json({ error: 'Archivo no encontrado.' });
@@ -427,7 +459,8 @@ router.post('/deals/:id/kyc/:partyId/send-for-signature', requireRole('admin', '
   const party = loadParty(id, partyId);
   if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
 
-  const submission = getLatestSubmission(partyId);
+  const kind = req.query.kind === 'lpr' ? 'lpr' : 'escrow';
+  const submission = getLatestSubmission(partyId, kind);
   if (!submission || submission.status !== 'generated') {
     return res.status(400).json({ error: 'Genera el documento antes de enviarlo a firma.' });
   }
@@ -451,7 +484,8 @@ router.post('/deals/:id/kyc/:partyId/signing-url', requireAuth, async (req, res)
     return res.status(403).json({ error: 'Solo puedes firmar tu propio expediente.' });
   }
 
-  const submission = getLatestSubmission(partyId);
+  const kind = req.query.kind === 'lpr' ? 'lpr' : 'escrow';
+  const submission = getLatestSubmission(partyId, kind);
   if (!submission || !submission.docusign_envelope_id) return res.status(400).json({ error: 'Este expediente todavía no se ha enviado a firma.' });
 
   const me = db.prepare('SELECT name, email FROM users WHERE id = ?').get(req.session.userId);
@@ -480,7 +514,8 @@ router.get('/deals/:id/kyc/:partyId/status', requireAuth, async (req, res) => {
   const { id, partyId } = req.params;
   if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
 
-  const submission = getLatestSubmission(partyId);
+  const kind = req.query.kind === 'lpr' ? 'lpr' : 'escrow';
+  const submission = getLatestSubmission(partyId, kind);
   if (!submission || !submission.docusign_envelope_id) {
     return res.json({ docusignStatus: submission ? submission.docusign_status : 'not_sent' });
   }

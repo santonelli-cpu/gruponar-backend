@@ -23,9 +23,12 @@ const rateLimitAccept = createRateLimiter({ windowMs: 15 * 60 * 1000, maxAttempt
 // su propia parte. Para agente/abogado, sin dealId/partyEntityId es una
 // invitación de equipo (se une a la firma en general).
 router.post('/', requireRole('admin', 'agent', 'lawyer'), async (req, res) => {
-  const { dealId, dealPartyEntityId, roleInDeal, name, email } = req.body || {};
+  const { dealId, dealPartyEntityId, roleInDeal, name, email, representsSide } = req.body || {};
   if (!['buyer', 'seller', 'agent', 'lawyer'].includes(roleInDeal) || !name || !email) {
     return res.status(400).json({ error: 'Datos inválidos.' });
+  }
+  if (representsSide !== undefined && representsSide !== null && !['buyer', 'seller'].includes(representsSide)) {
+    return res.status(400).json({ error: 'representsSide debe ser buyer o seller.' });
   }
   if (['buyer', 'seller'].includes(roleInDeal)) {
     if (!dealId || !dealPartyEntityId) {
@@ -48,10 +51,11 @@ router.post('/', requireRole('admin', 'agent', 'lawyer'), async (req, res) => {
 
   const normalizedEmail = email.toLowerCase().trim();
   db.prepare(`
-    INSERT INTO invites (token, deal_id, deal_party_entity_id, role_in_deal, email, name, created_by, expires_at)
-    VALUES (?,?,?,?,?,?,?,?)
+    INSERT INTO invites (token, deal_id, deal_party_entity_id, role_in_deal, email, name, created_by, expires_at, represents_side)
+    VALUES (?,?,?,?,?,?,?,?,?)
   `).run(token, dealId || null, ['buyer', 'seller'].includes(roleInDeal) ? dealPartyEntityId : null,
-         roleInDeal, normalizedEmail, name, req.session.userId, expiresAt);
+         roleInDeal, normalizedEmail, name, req.session.userId, expiresAt,
+         roleInDeal === 'agent' ? (representsSide || null) : null);
 
   const url = `/invite.html?token=${token}`;
   const dealProperty = dealId ? db.prepare('SELECT property FROM deals WHERE id = ?').get(dealId)?.property : null;
@@ -139,8 +143,8 @@ router.post('/:token/accept', rateLimitAccept, (req, res) => {
       user = { id: info.lastInsertRowid, name: invite.name, email: invite.email, role: invite.role_in_deal };
     }
     if (invite.deal_id) {
-      db.prepare('INSERT OR IGNORE INTO deal_parties (deal_id, user_id, role_in_deal, deal_party_entity_id) VALUES (?,?,?,?)')
-        .run(invite.deal_id, user.id, invite.role_in_deal, partyEntityId || null);
+      db.prepare('INSERT OR IGNORE INTO deal_parties (deal_id, user_id, role_in_deal, deal_party_entity_id, represents_side) VALUES (?,?,?,?,?)')
+        .run(invite.deal_id, user.id, invite.role_in_deal, partyEntityId || null, invite.represents_side || null);
     }
     db.prepare('UPDATE invites SET used_at = datetime(\'now\'), used_by_user_id = ? WHERE id = ?')
       .run(user.id, invite.id);

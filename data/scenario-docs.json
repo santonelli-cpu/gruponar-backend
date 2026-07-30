@@ -2,7 +2,8 @@
   "purchase": {
     "property": [
       "Escritura pública",
-      "Predial"
+      "Predial",
+      "Costos de cierre (recibo del notario)"
     ],
     "seller_individual": [
       "CURP",
@@ -10,7 +11,8 @@
       "Comprobante de domicilio",
       "Identificación oficial",
       "Acta de nacimiento",
-      "Acta de matrimonio (si aplica)"
+      "Acta de matrimonio (si aplica)",
+      "ID de cónyuge, si aplica"
     ],
     "buyer_individual": [
       "CURP",
@@ -18,7 +20,8 @@
       "Comprobante de domicilio",
       "Identificación oficial",
       "Acta de nacimiento",
-      "Acta de matrimonio (si aplica)"
+      "Acta de matrimonio (si aplica)",
+      "ID de cónyuge, si aplica"
     ],
     "corporation_extra": [
       "Acta constitutiva",
@@ -30,7 +33,8 @@
       "Comprobante de domicilio (rep. legal)",
       "Identificación oficial (rep. legal)",
       "Acta de nacimiento (rep. legal)",
-      "Acta de matrimonio (rep. legal, si aplica)"
+      "Acta de matrimonio (rep. legal, si aplica)",
+      "ID de cónyuge del rep. legal, si aplica"
     ],
     "llc_entity": [
       "Articles of organization",
@@ -40,17 +44,23 @@
       "EIN Letter"
     ],
     "llc_members": [
-      "Passport and driver's license (scanned PDF only, DL must be front and back)",
+      "Passport (scanned PDF)",
+      "Driver's license (scanned PDF, front and back)",
       "SSN card/Tax ID (scanned copy)",
       "Proof of address, no older than 2 months (electricity, water, gas receipts)",
+      "Birth certificate",
       "Marriage certificate (if applicable)",
+      "Spouse ID (if applicable)",
       "Wire instructions"
     ],
     "llc_manager": [
-      "Passport and driver's license (scanned PDF only, DL must be front and back)",
+      "Passport (scanned PDF)",
+      "Driver's license (scanned PDF, front and back)",
       "SSN card/Tax ID (scanned copy)",
       "Proof of address, no older than 2 months (electricity, water, gas receipts)",
+      "Birth certificate",
       "Marriage certificate (if applicable)",
+      "Spouse ID (if applicable)",
       "Wire instructions",
       "Proof of manager's authority (Constancia de facultades del gerente)"
     ]
@@ -58,7 +68,8 @@
   "trust": {
     "property": [
       "Escritura pública",
-      "Predial"
+      "Predial",
+      "Costos de cierre (recibo del notario)"
     ],
     "seller_individual": [
       "CURP",
@@ -66,7 +77,8 @@
       "Comprobante de domicilio",
       "Identificación oficial",
       "Acta de nacimiento",
-      "Acta de matrimonio (si aplica)"
+      "Acta de matrimonio (si aplica)",
+      "ID de cónyuge, si aplica"
     ],
     "buyer_individual": [
       "Pasaporte",
@@ -74,6 +86,7 @@
       "Tax ID / Seguro Social",
       "Acta de nacimiento",
       "Acta de matrimonio (si aplica)",
+      "Identificación de cónyuge, si aplica",
       "Licencia de conducir",
       "Estatus migratorio",
       "Pasaporte y licencia de beneficiarios sustitutos"
@@ -88,7 +101,8 @@
       "Comprobante de domicilio (rep. legal)",
       "Identificación oficial (rep. legal)",
       "Acta de nacimiento (rep. legal)",
-      "Acta de matrimonio (rep. legal, si aplica)"
+      "Acta de matrimonio (rep. legal, si aplica)",
+      "ID de cónyuge del rep. legal, si aplica"
     ],
     "llc_entity": [
       "Articles of organization",
@@ -98,17 +112,23 @@
       "EIN Letter"
     ],
     "llc_members": [
-      "Passport and driver's license (scanned PDF only, DL must be front and back)",
+      "Passport (scanned PDF)",
+      "Driver's license (scanned PDF, front and back)",
       "SSN card/Tax ID (scanned copy)",
       "Proof of address, no older than 2 months (electricity, water, gas receipts)",
+      "Birth certificate",
       "Marriage certificate (if applicable)",
+      "Spouse ID (if applicable)",
       "Wire instructions"
     ],
     "llc_manager": [
-      "Passport and driver's license (scanned PDF only, DL must be front and back)",
+      "Passport (scanned PDF)",
+      "Driver's license (scanned PDF, front and back)",
       "SSN card/Tax ID (scanned copy)",
       "Proof of address, no older than 2 months (electricity, water, gas receipts)",
+      "Birth certificate",
       "Marriage certificate (if applicable)",
+      "Spouse ID (if applicable)",
       "Wire instructions",
       "Proof of manager's authority (Constancia de facultades del gerente)"
     ]
@@ -116,7 +136,8 @@
   "transfer": {
     "property": [
       "Escritura pública",
-      "Recibo de predial"
+      "Recibo de predial",
+      "Costos de cierre (recibo del notario)"
     ],
     "seller_individual": [
       "Pasaporte",
@@ -124,6 +145,7 @@
       "Tax ID / Seguro Social",
       "Acta de nacimiento",
       "Acta de matrimonio (si aplica)",
+      "Identificación de cónyuge, si aplica",
       "Licencia de conducir",
       "Estatus migratorio",
       "Último pago anual de fideicomiso"
@@ -134,6 +156,7 @@
       "Tax ID / Seguro Social",
       "Acta de nacimiento",
       "Acta de matrimonio (si aplica)",
+      "Identificación de cónyuge, si aplica",
       "Licencia de conducir",
       "Estatus migratorio",
       "Pasaporte y licencia de beneficiarios sustitutos"
@@ -148,7 +171,8 @@
       "Comprobante de domicilio (rep. legal)",
       "Identificación oficial (rep. legal)",
       "Acta de nacimiento (rep. legal)",
-      "Acta de matrimonio (rep. legal, si aplica)"
+      "Acta de matrimonio (rep. legal, si aplica)",
+      "ID de cónyuge del rep. legal, si aplica"
     ],
     "llc_entity": [
       "Articles of organization",
@@ -158,17 +182,23 @@
       "EIN Letter"
     ],
     "llc_members": [
-      "Passport and driver's license (scanned PDF only, DL must be front and back)",
+      "Passport (scanned PDF)",
+      "Driver's license (scanned PDF, front and back)",
       "SSN card/Tax ID (scanned copy)",
       "Proof of address, no older than 2 months (electricity, water, gas receipts)",
+      "Birth certificate",
       "Marriage certificate (if applicable)",
+      "Spouse ID (if applicable)",
       "Wire instructions"
     ],
     "llc_manager": [
-      "Passport and driver's license (scanned PDF only, DL must be front and back)",
+      "Passport (scanned PDF)",
+      "Driver's license (scanned PDF, front and back)",
       "SSN card/Tax ID (scanned copy)",
       "Proof of address, no older than 2 months (electricity, water, gas receipts)",
+      "Birth certificate",
       "Marriage certificate (if applicable)",
+      "Spouse ID (if applicable)",
       "Wire instructions",
       "Proof of manager's authority (Constancia de facultades del gerente)"
     ]
@@ -176,7 +206,8 @@
   "trust_termination": {
     "property": [
       "Escritura pública",
-      "Recibo de predial"
+      "Recibo de predial",
+      "Costos de cierre (recibo del notario)"
     ],
     "seller_individual": [
       "Pasaporte",
@@ -184,6 +215,7 @@
       "Tax ID / Seguro Social",
       "Acta de nacimiento",
       "Acta de matrimonio (si aplica)",
+      "Identificación de cónyuge, si aplica",
       "Licencia de conducir",
       "Estatus migratorio",
       "Último pago anual de fideicomiso"
@@ -194,7 +226,8 @@
       "Comprobante de domicilio",
       "Identificación oficial",
       "Acta de nacimiento",
-      "Acta de matrimonio (si aplica)"
+      "Acta de matrimonio (si aplica)",
+      "ID de cónyuge, si aplica"
     ],
     "corporation_extra": [
       "Acta constitutiva",
@@ -206,7 +239,8 @@
       "Comprobante de domicilio (rep. legal)",
       "Identificación oficial (rep. legal)",
       "Acta de nacimiento (rep. legal)",
-      "Acta de matrimonio (rep. legal, si aplica)"
+      "Acta de matrimonio (rep. legal, si aplica)",
+      "ID de cónyuge del rep. legal, si aplica"
     ],
     "llc_entity": [
       "Articles of organization",
@@ -216,17 +250,23 @@
       "EIN Letter"
     ],
     "llc_members": [
-      "Passport and driver's license (scanned PDF only, DL must be front and back)",
+      "Passport (scanned PDF)",
+      "Driver's license (scanned PDF, front and back)",
       "SSN card/Tax ID (scanned copy)",
       "Proof of address, no older than 2 months (electricity, water, gas receipts)",
+      "Birth certificate",
       "Marriage certificate (if applicable)",
+      "Spouse ID (if applicable)",
       "Wire instructions"
     ],
     "llc_manager": [
-      "Passport and driver's license (scanned PDF only, DL must be front and back)",
+      "Passport (scanned PDF)",
+      "Driver's license (scanned PDF, front and back)",
       "SSN card/Tax ID (scanned copy)",
       "Proof of address, no older than 2 months (electricity, water, gas receipts)",
+      "Birth certificate",
       "Marriage certificate (if applicable)",
+      "Spouse ID (if applicable)",
       "Wire instructions",
       "Proof of manager's authority (Constancia de facultades del gerente)"
     ]

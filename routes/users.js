@@ -2,7 +2,7 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const db = require('../db');
-const { requireRole } = require('./auth');
+const { requireRole, resolveAgency, KNOWN_AGENCIES } = require('./auth');
 
 const router = express.Router();
 
@@ -47,6 +47,28 @@ router.patch('/:id/approve', requireRole('admin'), (req, res) => {
   const info = db.prepare("UPDATE users SET status = 'active' WHERE id = ? AND status = 'pending'").run(req.params.id);
   if (!info.changes) return res.status(404).json({ error: 'No hay una cuenta pendiente con ese id.' });
   res.json({ ok: true });
+});
+
+// PATCH /api/users/:id/agency — la agencia normalmente la elige el agente al
+// registrarse/aceptar su invitación, pero no había forma de corregirla
+// después (ej. si se equivocó, cambió de agencia, o quedó en NULL porque se
+// dio de alta directo con POST /api/users de arriba). Reusa el mismo
+// catálogo/lógica de "Otro" que el registro, para no tener dos fuentes de
+// verdad de qué cuenta como agencia conocida — importa que quede bien
+// puesta porque de esto depende que el KYC de LPR salga automático
+// (routes/kyc.js dealAgentIsLprAgency).
+router.patch('/:id/agency', requireRole('admin'), (req, res) => {
+  const user = db.prepare("SELECT id FROM users WHERE id = ? AND role = 'agent'").get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'No hay un agente con ese id.' });
+  const { agency, agencyOther } = req.body || {};
+  const resolved = resolveAgency(agency, agencyOther);
+  if (!resolved) return res.status(400).json({ error: 'Elige una agencia (o escribe cuál si no está en la lista).' });
+  db.prepare('UPDATE users SET agency = ? WHERE id = ?').run(resolved, req.params.id);
+  res.json({ ok: true, agency: resolved });
+});
+
+router.get('/known-agencies', requireRole('admin'), (req, res) => {
+  res.json(KNOWN_AGENCIES);
 });
 
 module.exports = router;
