@@ -5,7 +5,7 @@ const { authenticator } = require('otplib');
 const qrcode = require('qrcode');
 const db = require('../db');
 const { createRateLimiter } = require('../lib/rateLimit');
-const { isValidEmail } = require('../lib/validate');
+const { validateBody, z } = require('../lib/validateBody');
 const { getClientIp } = require('../lib/clientIp');
 const mailer = require('../lib/email');
 
@@ -33,6 +33,54 @@ const PASSWORD_RESET_TTL_HOURS = 1;
 const REMEMBER_DEVICE_COOKIE = 'nar_remember';
 const REMEMBER_DEVICE_TTL_DAYS = 30;
 
+const EMAIL_MSG = 'Ese correo no tiene un formato válido.';
+// bcrypt solo usa los primeros 72 bytes de la contraseña — sin el tope
+// máximo, una contraseña más larga se recorta en silencio (queda "menos
+// segura" de lo que la persona cree) y cualquiera podría mandar un string
+// enorme solo para hacer trabajar de más al servidor al hashearlo.
+const PASSWORD_MSG_MIN = 'La contraseña debe tener al menos 8 caracteres.';
+const PASSWORD_MSG_MAX = 'La contraseña no puede tener más de 72 caracteres.';
+const emailField = () => z.string().trim().toLowerCase().max(254).email(EMAIL_MSG);
+const newPasswordField = () => z.string().min(8, PASSWORD_MSG_MIN).max(72, PASSWORD_MSG_MAX);
+
+const registerSchema = z.object({
+  name: z.string().trim().min(1, 'Escribe tu nombre.').max(200, 'El nombre es demasiado largo.'),
+  email: emailField(),
+  password: newPasswordField(),
+  role: z.enum(['agent', 'lawyer', 'external_lawyer']),
+  agency: z.string().trim().max(200).optional(),
+  agencyOther: z.string().trim().max(200).optional()
+}).strict();
+
+const loginSchema = z.object({
+  email: emailField(),
+  password: z.string().min(1, 'Falta la contraseña.').max(72),
+  lang: z.enum(['es', 'en']).optional()
+}).strict();
+
+const emailOtpSchema = z.object({
+  lang: z.enum(['es', 'en']).optional()
+}).strict();
+
+const totpSchema = z.object({
+  code: z.string().trim().min(1, 'Falta el código.').max(20),
+  method: z.enum(['totp', 'email']).optional(),
+  remember: z.boolean().optional()
+}).strict();
+
+// Sin .email() a propósito: este endpoint responde el mismo mensaje
+// genérico sin importar si el correo existe, está mal escrito o viene
+// vacío (para no filtrar qué correos tienen cuenta) — solo se valida tipo
+// y largo, el "¿tiene forma de correo?" lo resuelve solo el SELECT de abajo
+// (uno mal formado simplemente no hace match con ningún usuario).
+const forgotPasswordSchema = z.object({
+  email: z.string().trim().toLowerCase().max(254).optional()
+}).strict();
+
+const resetPasswordSchema = z.object({
+  password: newPasswordField()
+}).strict();
+
 // Agencias con las que trabaja Grupo Nar — un agente que no es de ninguna de
 // estas elige "Otro" y escribe la suya. Solo aplica a role='agent' (un
 // abogado/empleado interno no tiene agencia). Ver también APOSTILLE... no,
@@ -57,39 +105,19 @@ function logAccess(userId, action, req) {
 // status='pending' hasta que un admin lo apruebe (PATCH /api/users/:id/approve)
 // — 'lawyer' ve TODAS las operaciones sin restricción, así que no puede
 // entrar de inmediato sin que alguien lo revise primero.
-router.post('/register', rateLimitRegister, (req, res) => {
-  const { name, email, password, role, agency, agencyOther } = req.body || {};
-  if (!name || !email || !password || !['agent', 'lawyer', 'external_lawyer'].includes(role)) {
-    return res.status(400).json({ error: 'Datos inválidos.' });
-  }
-  if (!isValidEmail(email)) {
-    return res.status(400).json({ error: 'Ese correo no tiene un formato válido.' });
-  }
-  if (name.trim().length > 200) {
-    return res.status(400).json({ error: 'El nombre es demasiado largo.' });
-  }
-  if (password.length < 8) {
-    return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres.' });
-  }
-  // bcrypt solo usa los primeros 72 bytes de la contraseña — sin este
-  // límite, una contraseña más larga se recorta en silencio (queda "menos
-  // segura" de lo que la persona cree) y además cualquiera puede mandar un
-  // string enorme solo para hacer trabajar de más al servidor al hashearlo.
-  if (password.length > 72) {
-    return res.status(400).json({ error: 'La contraseña no puede tener más de 72 caracteres.' });
-  }
+router.post('/register', rateLimitRegister, validateBody(registerSchema), (req, res) => {
+  const { name, email, password, role, agency, agencyOther } = req.body;
   let resolvedAgency = null;
   if (role === 'agent') {
     resolvedAgency = resolveAgency(agency, agencyOther);
     if (!resolvedAgency) return res.status(400).json({ error: 'Elige tu agencia (o escribe cuál si no está en la lista).' });
   }
-  const normalizedEmail = email.toLowerCase().trim();
-  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
+  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
   if (existing) return res.status(409).json({ error: 'Ya existe una cuenta con ese correo.' });
 
   const hash = bcrypt.hashSync(password, 12);
   db.prepare("INSERT INTO users (name, email, password_hash, role, status, agency) VALUES (?,?,?,?,'pending',?)")
-    .run(name, normalizedEmail, hash, role, resolvedAgency);
+    .run(name, email, hash, role, resolvedAgency);
 
   res.status(201).json({ ok: true, message: 'Cuenta creada. Un administrador debe aprobarla antes de que puedas iniciar sesión.' });
 
@@ -100,7 +128,7 @@ router.post('/register', rateLimitRegister, (req, res) => {
     const url = `${req.protocol}://${req.get('host')}/`;
     admins.forEach(a => {
       mailer.sendPendingApprovalEmail({
-        to: a.email, applicantName: name, applicantEmail: normalizedEmail,
+        to: a.email, applicantName: name, applicantEmail: email,
         applicantRole: role, applicantAgency: resolvedAgency, url
       });
     });
@@ -227,11 +255,10 @@ function beginTwoFactorChallenge(req, res, user) {
 // correcta nunca abre sesión por sí sola: solo deja a req.session.pendingUserId
 // listo para que /totp la confirme (o abre de una vez si el dispositivo ya
 // estaba recordado).
-router.post('/login', rateLimitLogin, (req, res) => {
-  const { email, password } = req.body || {};
-  if (!email || !password) return res.status(400).json({ error: 'Falta correo o contraseña.' });
+router.post('/login', rateLimitLogin, validateBody(loginSchema), (req, res) => {
+  const { email, password } = req.body;
 
-  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase().trim());
+  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
   if (!user) return res.status(401).json({ error: 'Correo o contraseña incorrectos.' });
 
   const ok = bcrypt.compareSync(password, user.password_hash);
@@ -250,7 +277,7 @@ router.post('/login', rateLimitLogin, (req, res) => {
 // POST /api/auth/email-otp {} — (re)manda el código por correo. Sirve tanto
 // para elegir "correo" como método la primera vez (desde la pantalla de
 // "choose") como para pedir uno nuevo si el anterior ya venció.
-router.post('/email-otp', rateLimitEmailOtp, async (req, res) => {
+router.post('/email-otp', rateLimitEmailOtp, validateBody(emailOtpSchema), async (req, res) => {
   const pendingUserId = req.session.pendingUserId;
   if (!pendingUserId) return res.status(401).json({ error: 'Tu sesión de login expiró, entra tu correo y contraseña de nuevo.' });
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(pendingUserId);
@@ -270,11 +297,10 @@ router.post('/email-otp', rateLimitEmailOtp, async (req, res) => {
 // activado, este es el momento en que ese método queda fijo para siempre
 // (ya demostró que sí lo tiene funcionando). `remember` deja este
 // navegador sin pedir 2FA por REMEMBER_DEVICE_TTL_DAYS (ver arriba).
-router.post('/totp', rateLimitTotp, (req, res) => {
+router.post('/totp', rateLimitTotp, validateBody(totpSchema), (req, res) => {
   const pendingUserId = req.session.pendingUserId;
   if (!pendingUserId) return res.status(401).json({ error: 'Tu sesión de login expiró, entra tu correo y contraseña de nuevo.' });
-  const { code, method, remember } = req.body || {};
-  if (!code) return res.status(400).json({ error: 'Falta el código.' });
+  const { code, method, remember } = req.body;
 
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(pendingUserId);
   if (!user) return res.status(401).json({ error: 'Tu sesión de login expiró, entra tu correo y contraseña de nuevo.' });
@@ -324,12 +350,12 @@ router.get('/me', (req, res) => {
 // (nunca revela si el correo existe o no, para no filtrar quién tiene
 // cuenta) — si existe y está activa, manda el correo con el link de un
 // solo uso vía Resend.
-router.post('/forgot-password', rateLimitForgotPassword, async (req, res) => {
-  const { email } = req.body || {};
+router.post('/forgot-password', rateLimitForgotPassword, validateBody(forgotPasswordSchema), async (req, res) => {
+  const { email } = req.body;
   const generic = { ok: true, message: 'Si ese correo tiene una cuenta, te mandamos un link para restablecer tu contraseña.' };
   if (!email) return res.json(generic);
 
-  const user = db.prepare("SELECT * FROM users WHERE email = ? AND status = 'active'").get(email.toLowerCase().trim());
+  const user = db.prepare("SELECT * FROM users WHERE email = ? AND status = 'active'").get(email);
   if (!user) return res.json(generic);
   if (!mailer.isConfigured()) return res.json(generic);
 
@@ -353,14 +379,8 @@ router.get('/reset-password/:token', (req, res) => {
 });
 
 // POST /api/auth/reset-password/:token { password }
-router.post('/reset-password/:token', (req, res) => {
-  const { password } = req.body || {};
-  if (!password || password.length < 8) {
-    return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres.' });
-  }
-  if (password.length > 72) {
-    return res.status(400).json({ error: 'La contraseña no puede tener más de 72 caracteres.' });
-  }
+router.post('/reset-password/:token', validateBody(resetPasswordSchema), (req, res) => {
+  const { password } = req.body;
   const reset = db.prepare('SELECT * FROM password_resets WHERE token = ?').get(req.params.token);
   if (!reset) return res.status(404).json({ error: 'Este link no es válido.', code: 'invalid' });
   if (reset.used_at) return res.status(410).json({ error: 'Este link ya fue usado.', code: 'used' });

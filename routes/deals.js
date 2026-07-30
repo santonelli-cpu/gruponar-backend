@@ -8,6 +8,95 @@ const { requireAuth, requireRole, resolveAgency } = require('./auth');
 const { genFilename } = require('../lib/storage');
 const { canAccessDeal, myRoleInDeal, myDealPartyEntityId, myRepresentsSide, UNRESTRICTED_ROLES, AGENT_LIKE_ROLES } = require('../lib/access');
 const { isValidEmail } = require('../lib/validate');
+const { validateBody, z } = require('../lib/validateBody');
+const { rateLimitWrite, rateLimitEmail, rateLimitUpload } = require('../lib/apiRateLimits');
+
+// Los campos de una parte (vendedor/comprador) varían según partyType y
+// ownershipMode (individual vs. entidad, socios directos vs. entidad padre
+// vs. trust directo) — el detalle de qué combinación es válida para cuál
+// modo lo sigue resolviendo validateParty() más abajo (regla de negocio
+// condicional, no le corresponde a un schema plano). Este schema solo
+// cubre tipo/largo de cada campo y —vía .strict()— que no venga ningún
+// campo que no se espera.
+const ownerSchema = z.object({ name: z.string().trim().min(1).max(200) }).strict();
+const partyFields = {
+  name: z.string().trim().max(300).optional(),
+  partyType: z.enum(['individual', 'corporation', 'llc']).optional(),
+  ownershipMode: z.enum(['direct_owners', 'parent_entity', 'direct_trust']).optional(),
+  owners: z.array(ownerSchema).max(2).optional(),
+  parentEntityName: z.string().trim().max(300).optional(),
+  parentEntityType: z.enum(['corporation', 'llc']).optional(),
+  parentHasTrustAbove: z.boolean().optional(),
+  parentTrustName: z.string().trim().max(300).optional(),
+  directTrustName: z.string().trim().max(300).optional(),
+  email: z.string().trim().max(254).optional()
+};
+const partyInArraySchema = z.object({ ...partyFields, side: z.enum(['buyer', 'seller']) }).strict();
+const createPartySchema = z.object({ ...partyFields, side: z.enum(['buyer', 'seller']) }).strict();
+const updatePartySchema = z.object({ ...partyFields }).strict();
+
+const createDealSchema = z.object({
+  scenario: z.enum(['purchase', 'trust', 'transfer', 'trust_termination']),
+  development: z.string().trim().max(100).optional(),
+  property: z.string().trim().min(1, 'Falta el nombre de la operación.').max(300),
+  price: z.number().optional(),
+  furniturePrice: z.number().optional(),
+  currency: z.string().trim().max(10).optional(),
+  startDate: z.string().trim().max(30).optional(),
+  parties: z.array(partyInArraySchema).min(1),
+  escrowCompany: z.enum(['armour', 'tla']).optional()
+}).strict();
+
+const updateDealSchema = z.object({
+  escrowCompany: z.enum(['armour', 'tla']).optional(),
+  closingDate: z.string().trim().max(30).nullable().optional(),
+  dueDiligenceEndDate: z.string().trim().max(30).nullable().optional(),
+  property: z.string().trim().max(300).optional(),
+  price: z.number().optional(),
+  furniturePrice: z.number().optional(),
+  currency: z.string().trim().max(10).optional(),
+  startDate: z.string().trim().max(30).nullable().optional(),
+  development: z.string().trim().max(100).optional(),
+  status: z.enum(['active', 'completed']).optional()
+}).strict();
+
+const addAgentSchema = z.object({
+  userId: z.number().int().positive(),
+  representsSide: z.enum(['buyer', 'seller']).nullable().optional()
+}).strict();
+
+const registerAgentSchema = z.object({
+  name: z.string().trim().min(1, 'Falta el nombre.').max(200),
+  email: z.string().trim().toLowerCase().max(254).email('Ese correo no tiene un formato válido.'),
+  role: z.enum(['agent', 'external_lawyer']).optional(),
+  agency: z.string().trim().max(200).optional(),
+  agencyOther: z.string().trim().max(200).optional(),
+  representsSide: z.enum(['buyer', 'seller']).nullable().optional()
+}).strict();
+
+const updateAgentSchema = z.object({
+  representsSide: z.enum(['buyer', 'seller']).nullable()
+}).strict();
+
+const addDocumentSchema = z.object({
+  name: z.string().trim().min(1, 'Falta el nombre del documento.').max(300),
+  dealPartyEntityId: z.number().int().positive().nullable().optional(),
+  subLabel: z.string().trim().max(200).optional()
+}).strict();
+
+const updateDocumentSchema = z.object({
+  status: z.enum(['pending', 'done']).optional(),
+  subChecks: z.record(z.string(), z.boolean()).optional()
+}).strict();
+
+const reviewDocumentSchema = z.object({
+  reviewStatus: z.enum(['pending', 'approved', 'rejected']),
+  reviewNote: z.string().trim().max(2000).optional()
+}).strict();
+
+const updateTaskSchema = z.object({
+  status: z.enum(['pending', 'progress', 'done'])
+}).strict();
 
 // Comprador/vendedor solo puede tocar documentos de su propia parte; un
 // agente que ya eligió a qué lado representa solo los de ese lado; los de
@@ -336,14 +425,8 @@ router.get('/', requireAuth, (req, res) => {
 });
 
 // POST /api/deals — admin/agente/abogado crean operaciones.
-router.post('/', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), async (req, res) => {
-  const { scenario, development, property, price, furniturePrice, currency, startDate, parties, escrowCompany } = req.body || {};
-  if (!scenario || !property || !Array.isArray(parties)) {
-    return res.status(400).json({ error: 'Faltan campos requeridos.' });
-  }
-  if (escrowCompany && !['armour', 'tla'].includes(escrowCompany)) {
-    return res.status(400).json({ error: 'Escrow company inválida.' });
-  }
+router.post('/', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, validateBody(createDealSchema), async (req, res) => {
+  const { scenario, development, property, price, furniturePrice, currency, startDate, parties, escrowCompany } = req.body;
   const sellers = parties.filter(p => p.side === 'seller');
   const buyers = parties.filter(p => p.side === 'buyer');
   if (!sellers.length || !buyers.length) {
@@ -475,19 +558,15 @@ router.get('/:id', requireAuth, (req, res) => {
 // (cierre, fin de due diligence) de una operación ya creada. Ambos grupos
 // de campos son independientes entre sí (solo se actualiza lo que venga en
 // el body).
-router.patch('/:id', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
+router.patch('/:id', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, validateBody(updateDealSchema), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
-  const { escrowCompany, closingDate, dueDiligenceEndDate, property, price, furniturePrice, currency, startDate, development, status } = req.body || {};
+  const { escrowCompany, closingDate, dueDiligenceEndDate, property, price, furniturePrice, currency, startDate, development, status } = req.body;
 
   if (status !== undefined) {
-    if (!['active', 'completed'].includes(status)) return res.status(400).json({ error: 'status debe ser active o completed.' });
     db.prepare("UPDATE deals SET status = ?, closed_at = ? WHERE id = ?")
       .run(status, status === 'completed' ? new Date().toISOString() : null, req.params.id);
   }
   if (escrowCompany !== undefined) {
-    if (!['armour', 'tla'].includes(escrowCompany)) {
-      return res.status(400).json({ error: 'Escrow company inválida.' });
-    }
     db.prepare('UPDATE deals SET escrow_company = ? WHERE id = ?').run(escrowCompany, req.params.id);
   }
   if (closingDate !== undefined) {
@@ -516,13 +595,12 @@ router.patch('/:id', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'),
 
 // POST /api/deals/:id/parties — agrega una parte nueva (vendedor/comprador
 // adicional) a una operación ya creada, con su propio checklist.
-router.post('/:id/parties', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), async (req, res) => {
+router.post('/:id/parties', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, validateBody(createPartySchema), async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id);
   if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
 
-  const p = req.body || {};
-  if (!['seller', 'buyer'].includes(p.side)) return res.status(400).json({ error: 'Falta el lado (seller/buyer).' });
+  const p = req.body;
   const err = validateParty(p);
   if (err) return res.status(400).json({ error: err });
 
@@ -555,13 +633,13 @@ router.post('/:id/parties', requireRole('admin', 'agent', 'lawyer', 'external_la
 // deal") para esto y resultaba confuso, así que esa sección ahora es solo
 // para agentes/abogados externos (ver buildInviteForm en el frontend) y
 // esta es la ÚNICA forma de ligar/crear la cuenta de una parte.
-router.patch('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), async (req, res) => {
+router.patch('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, validateBody(updatePartySchema), async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
   if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
   const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id);
 
-  const p = { ...req.body, side: party.side, partyType: req.body?.partyType || party.party_type, name: req.body?.name || party.name };
+  const p = { ...req.body, side: party.side, partyType: req.body.partyType || party.party_type, name: req.body.name || party.name };
   const err = validateParty(p);
   if (err) return res.status(400).json({ error: err });
 
@@ -625,7 +703,7 @@ function rebuildChecklistForParty(deal, partyId, p) {
 // POST /api/deals/:id/parties/:partyId/rebuild-checklist — recalcula el
 // checklist de una parte con su estructura de propiedad actual (ya guardada
 // en la base), agregando lo que falte.
-router.post('/:id/parties/:partyId/rebuild-checklist', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
+router.post('/:id/parties/:partyId/rebuild-checklist', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
   if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
@@ -653,7 +731,7 @@ router.post('/:id/parties/:partyId/rebuild-checklist', requireRole('admin', 'age
 // Nunca borra un documento que ya tenga archivo subido (status='done') — se
 // devuelve en "flagged" para que el admin lo revise a mano (puede que en
 // realidad sea de un socio y haya que reasignarlo, no perderlo).
-router.post('/:id/parties/:partyId/fix-entity-checklist', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
+router.post('/:id/parties/:partyId/fix-entity-checklist', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
   if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
@@ -683,7 +761,7 @@ router.post('/:id/parties/:partyId/fix-entity-checklist', requireRole('admin', '
 
 // DELETE /api/deals/:id/parties/:partyId — quitar una parte agregada de más
 // (bloqueado si ya tiene trabajo real hecho, para no perderlo).
-router.delete('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
+router.delete('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
   if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
@@ -705,7 +783,7 @@ router.delete('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer', '
 // la persona ligada a esta parte listando sus documentos pendientes. Los
 // documentos de Propiedad (deal_party_entity_id NULL) se incluyen solo si
 // esta parte es del lado vendedor, que es quien realísticamente los provee.
-router.post('/:id/parties/:partyId/remind', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), async (req, res) => {
+router.post('/:id/parties/:partyId/remind', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitEmail, async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
   if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
@@ -762,12 +840,9 @@ router.get('/:id/available-agents', requireRole('admin', 'agent', 'lawyer', 'ext
 // registró antes en la plataforma. Se permite aunque su cuenta siga
 // 'pending' de aprobación (queda asignado desde ya; solo puede iniciar
 // sesión una vez que un admin lo apruebe, esa regla no cambia).
-router.post('/:id/agents', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
+router.post('/:id/agents', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, validateBody(addAgentSchema), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
-  const { userId, representsSide } = req.body || {};
-  if (representsSide !== undefined && representsSide !== null && !['buyer', 'seller'].includes(representsSide)) {
-    return res.status(400).json({ error: 'representsSide debe ser buyer o seller.' });
-  }
+  const { userId, representsSide } = req.body;
   const user = db.prepare("SELECT * FROM users WHERE id = ? AND role IN ('agent', 'external_lawyer') AND status IN ('active', 'pending')").get(userId);
   if (!user) return res.status(400).json({ error: 'Ese usuario no existe o no es un agente/abogado externo.' });
   const already = db.prepare('SELECT 1 FROM deal_parties WHERE deal_id = ? AND user_id = ?').get(req.params.id, userId);
@@ -790,14 +865,10 @@ router.post('/:id/agents', requireRole('admin', 'agent', 'lawyer', 'external_law
 // lo da de alta ya activo (no pasa por aprobación, quien lo está agregando
 // ya es staff) y lo liga a esta operación de una vez, con una contraseña
 // temporal que se comparte por el canal que prefieras.
-router.post('/:id/agents/register', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), async (req, res) => {
+router.post('/:id/agents/register', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitEmail, validateBody(registerAgentSchema), async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
-  const { name, email, role, agency, agencyOther, representsSide } = req.body || {};
-  if (!name || !email) return res.status(400).json({ error: 'Falta el nombre o el correo.' });
+  const { name, email: normalizedEmail, role, agency, agencyOther, representsSide } = req.body;
   const collaboratorRole = role === 'external_lawyer' ? 'external_lawyer' : 'agent';
-  if (representsSide !== undefined && representsSide !== null && !['buyer', 'seller'].includes(representsSide)) {
-    return res.status(400).json({ error: 'representsSide debe ser buyer o seller.' });
-  }
   // La agencia (LPR Luxury, etc.) solo aplica a agentes de venta — un
   // abogado externo no tiene una, es de su propio despacho.
   let resolvedAgency = null;
@@ -806,7 +877,6 @@ router.post('/:id/agents/register', requireRole('admin', 'agent', 'lawyer', 'ext
     if (!resolvedAgency) return res.status(400).json({ error: 'Elige la agencia del agente (o escribe cuál si no está en la lista).' });
   }
 
-  const normalizedEmail = email.toLowerCase().trim();
   const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
   if (existing) {
     return res.status(409).json({ error: 'Ya existe una cuenta con ese correo — agrégalo desde el dropdown de "Agentes disponibles" en vez de darlo de alta otra vez.' });
@@ -854,12 +924,9 @@ router.post('/:id/agents/register', requireRole('admin', 'agent', 'lawyer', 'ext
 
 // PATCH /api/deals/:id/agents/:userId — cambia a quién representa un agente
 // ya agregado (ej. se les olvidó elegirlo, o cambió de cliente).
-router.patch('/:id/agents/:userId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
+router.patch('/:id/agents/:userId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, validateBody(updateAgentSchema), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
-  const { representsSide } = req.body || {};
-  if (representsSide !== null && !['buyer', 'seller'].includes(representsSide)) {
-    return res.status(400).json({ error: 'representsSide debe ser buyer, seller, o null.' });
-  }
+  const { representsSide } = req.body;
   const info = db.prepare("UPDATE deal_parties SET represents_side = ? WHERE deal_id = ? AND user_id = ? AND role_in_deal = 'agent'")
     .run(representsSide, req.params.id, req.params.userId);
   if (!info.changes) return res.status(404).json({ error: 'Ese agente no está en esta operación.' });
@@ -869,7 +936,7 @@ router.patch('/:id/agents/:userId', requireRole('admin', 'agent', 'lawyer', 'ext
 // DELETE /api/deals/:id/agents/:userId — quita a un agente de la operación
 // (no de la plataforma, solo deja de verla). Restringido a role_in_deal
 // 'agent' para no poder usar esta ruta contra un comprador/vendedor ligado.
-router.delete('/:id/agents/:userId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
+router.delete('/:id/agents/:userId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const info = db.prepare("DELETE FROM deal_parties WHERE deal_id = ? AND user_id = ? AND role_in_deal = 'agent'").run(req.params.id, req.params.userId);
   if (!info.changes) return res.status(404).json({ error: 'Ese agente no está en esta operación.' });
@@ -879,7 +946,7 @@ router.delete('/:id/agents/:userId', requireRole('admin', 'agent', 'lawyer', 'ex
 // POST /api/deals/:id/drive-folder — crea (o reintenta crear) la estructura
 // de carpetas en Drive para una operación que no la tiene todavía (ej. se
 // creó antes de conectar Drive, o la primera vez falló).
-router.post('/:id/drive-folder', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), async (req, res) => {
+router.post('/:id/drive-folder', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   if (!driveClient.isConfigured()) return res.status(501).json({ error: 'Google Drive no está configurado todavía.' });
   if (!driveClient.isConnected()) return res.status(501).json({ error: 'Google Drive no está conectado — ve a Equipo → Integraciones.' });
@@ -904,10 +971,9 @@ router.post('/:id/drive-folder', requireRole('admin', 'agent', 'lawyer', 'extern
 // checklist (ej. un comprobante más de los que ya se sabe que siempre hay
 // más de uno) — antes solo staff podía, y el cliente tenía que pedírselo a
 // un admin/agente para algo tan simple como "necesito otra fila".
-router.post('/:id/documents', requireRole('admin', 'agent', 'lawyer', 'external_lawyer', 'buyer', 'seller'), (req, res) => {
+router.post('/:id/documents', requireRole('admin', 'agent', 'lawyer', 'external_lawyer', 'buyer', 'seller'), rateLimitWrite, validateBody(addDocumentSchema), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
-  const { name, dealPartyEntityId, subLabel } = req.body || {};
-  if (!name || !name.trim()) return res.status(400).json({ error: 'Falta el nombre del documento.' });
+  const { name, dealPartyEntityId, subLabel } = req.body;
 
   let partyId = null;
   if (dealPartyEntityId !== undefined && dealPartyEntityId !== null) {
@@ -934,7 +1000,7 @@ router.post('/:id/documents', requireRole('admin', 'agent', 'lawyer', 'external_
 // POR COMPLETO (no solo el archivo que tuviera subido — ver DELETE .../file
 // arriba para eso) — para cuando algo de la lista fija no aplica a esta
 // operación. Solo staff, mismo motivo que agregar.
-router.delete('/:id/documents/:docId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), async (req, res) => {
+router.delete('/:id/documents/:docId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deal_id = ?').get(req.params.docId, req.params.id);
   if (!doc) return res.status(404).json({ error: 'Documento no encontrado.' });
@@ -953,14 +1019,13 @@ router.delete('/:id/documents/:docId', requireRole('admin', 'agent', 'lawyer', '
 // PATCH /api/deals/:id/documents/:docId — marcar documento recibido y/o
 // (solo para los documentos de LLC que lo requieren) marcar cuáles de sus
 // requisitos (notarizado/apostillado/traducido) ya llegaron.
-router.patch('/:id/documents/:docId', requireAuth, (req, res) => {
+router.patch('/:id/documents/:docId', requireAuth, rateLimitWrite, validateBody(updateDocumentSchema), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deal_id = ?').get(req.params.docId, req.params.id);
   if (!doc) return res.status(404).json({ error: 'Documento no encontrado.' });
   if (!canTouchDoc(req, req.params.id, doc)) return res.status(403).json({ error: 'No puedes modificar documentos de otra parte.' });
-  const { status, subChecks } = req.body || {};
+  const { status, subChecks } = req.body;
   if (status !== undefined) {
-    if (!['pending', 'done'].includes(status)) return res.status(400).json({ error: 'Status inválido.' });
     db.prepare('UPDATE documents SET status = ?, uploaded_by = ?, uploaded_at = datetime(\'now\') WHERE id = ? AND deal_id = ?')
       .run(status, req.session.userId, req.params.docId, req.params.id);
   }
@@ -981,15 +1046,12 @@ router.patch('/:id/documents/:docId', requireAuth, (req, res) => {
 // aprueba o rechaza el archivo ya subido (por si se subió mal o no es
 // válido). Solo admin/lawyer, nunca agente/abogado externo — son quienes
 // suben/gestionan documentos por el cliente, no quienes los validan.
-router.patch('/:id/documents/:docId/review', requireRole('admin', 'lawyer'), (req, res) => {
+router.patch('/:id/documents/:docId/review', requireRole('admin', 'lawyer'), rateLimitWrite, validateBody(reviewDocumentSchema), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deal_id = ?').get(req.params.docId, req.params.id);
   if (!doc) return res.status(404).json({ error: 'Documento no encontrado.' });
   if (!doc.file_url) return res.status(400).json({ error: 'Este documento todavía no tiene archivo subido.' });
-  const { reviewStatus, reviewNote } = req.body || {};
-  if (!['pending', 'approved', 'rejected'].includes(reviewStatus)) {
-    return res.status(400).json({ error: 'reviewStatus inválido.' });
-  }
+  const { reviewStatus, reviewNote } = req.body;
   db.prepare(`
     UPDATE documents SET review_status = ?, review_note = ?, reviewed_by = ?, reviewed_at = datetime('now')
     WHERE id = ? AND deal_id = ?
@@ -998,7 +1060,7 @@ router.patch('/:id/documents/:docId/review', requireRole('admin', 'lawyer'), (re
 });
 
 // POST /api/deals/:id/documents/:docId/file — subir el archivo de un documento del checklist.
-router.post('/:id/documents/:docId/file', requireAuth, (req, res, next) => {
+router.post('/:id/documents/:docId/file', requireAuth, rateLimitUpload, (req, res, next) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deal_id = ?').get(req.params.docId, req.params.id);
   if (!doc) return res.status(404).json({ error: 'Documento no encontrado.' });
@@ -1029,7 +1091,7 @@ router.post('/:id/documents/:docId/file', requireAuth, (req, res, next) => {
 // regresa el documento a 'pending' (en vez de solo poder reemplazarlo). Usa
 // la misma regla de acceso que subirlo: comprador/vendedor solo el de su
 // propia parte, staff sin restricción.
-router.delete('/:id/documents/:docId/file', requireAuth, async (req, res) => {
+router.delete('/:id/documents/:docId/file', requireAuth, rateLimitWrite, async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deal_id = ?').get(req.params.docId, req.params.id);
   if (!doc) return res.status(404).json({ error: 'Documento no encontrado.' });
@@ -1074,17 +1136,16 @@ router.get('/:id/documents/:docId/file', requireAuth, async (req, res) => {
 // admin/abogado interno — antes cualquiera con acceso a la operación
 // (agente, comprador, vendedor) podía ir marcándolo, cuando en realidad es
 // quien coordina el cierre quien sabe si ese paso de verdad se completó.
-router.patch('/:id/tasks/:taskId', requireRole('admin', 'lawyer'), (req, res) => {
+router.patch('/:id/tasks/:taskId', requireRole('admin', 'lawyer'), rateLimitWrite, validateBody(updateTaskSchema), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
-  const { status } = req.body || {};
-  if (!['pending', 'progress', 'done'].includes(status)) return res.status(400).json({ error: 'Status inválido.' });
+  const { status } = req.body;
   db.prepare('UPDATE tasks SET status = ? WHERE id = ? AND deal_id = ?')
     .run(status, req.params.taskId, req.params.id);
   res.json({ ok: true });
 });
 
 // DELETE /api/deals/:id — admin/abogado cualquiera; agente solo las suyas.
-router.delete('/:id', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
+router.delete('/:id', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const info = db.prepare('DELETE FROM deals WHERE id = ?').run(req.params.id);
   if (!info.changes) return res.status(404).json({ error: 'Operación no encontrada.' });

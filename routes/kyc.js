@@ -21,6 +21,8 @@ const { fillLprIndividualEn, SIGNATURE_ANCHOR: LPR_IND_EN_ANCHOR } = require('..
 const { fillLprMoralEs, SIGNATURE_ANCHOR: LPR_MORAL_ES_ANCHOR } = require('../lib/kycFill/lprMoralEs');
 const { fillLprMoralEn, SIGNATURE_ANCHOR: LPR_MORAL_EN_ANCHOR } = require('../lib/kycFill/lprMoralEn');
 const { convertDocxToPdf } = require('../lib/kycFill/docxFillEngine');
+const { validateBody, z } = require('../lib/validateBody');
+const { rateLimitExpensive, rateLimitUpload, rateLimitWrite } = require('../lib/apiRateLimits');
 
 const router = express.Router();
 
@@ -29,6 +31,14 @@ const uploadSigned = multer({
   limits: { fileSize: 15 * 1024 * 1024 },
   fileFilter: (req, file, cb) => cb(null, file.mimetype === 'application/pdf')
 });
+
+// answers es un objeto dinámico (una llave por campo del template KYC
+// elegido — armour/tla/lpr, individual/moral — que varía según cuál sea),
+// se valida que sea un objeto, no una lista de llaves fijas.
+const kycSaveSchema = z.object({
+  answers: z.record(z.string(), z.any()).optional(),
+  lang: z.enum(['es', 'en']).optional()
+}).strict();
 
 // Registro de plantillas disponibles. Cada una: definición de campos +
 // función de llenado + anchor de firma (mismo patrón para todas).
@@ -255,7 +265,7 @@ router.get('/deals/:id/kyc/:partyId', requireAuth, (req, res) => {
 // con el idioma/compañía equivocada). Solo staff, y solo si todavía no se
 // envió a firma — una vez enviado, borrar la fila local no cancela el sobre
 // de DocuSign, así que no se permite.
-router.delete('/deals/:id/kyc/:partyId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), async (req, res) => {
+router.delete('/deals/:id/kyc/:partyId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, async (req, res) => {
   const { id, partyId } = req.params;
   if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
 
@@ -279,7 +289,7 @@ router.delete('/deals/:id/kyc/:partyId', requireRole('admin', 'agent', 'lawyer',
 // se sube ya firmado en vez de pasar por el flujo de generar + DocuSign.
 // Solo staff, porque es un registro administrativo de algo que ya pasó
 // afuera, no algo que la propia parte reporte de sí misma.
-router.post('/deals/:id/kyc/:partyId/upload-signed', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
+router.post('/deals/:id/kyc/:partyId/upload-signed', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitUpload, (req, res) => {
   const { id, partyId } = req.params;
   if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
 
@@ -321,7 +331,7 @@ router.post('/deals/:id/kyc/:partyId/upload-signed', requireRole('admin', 'agent
 });
 
 // POST /api/deals/:id/kyc/:partyId — guarda respuestas como borrador.
-router.post('/deals/:id/kyc/:partyId', requireAuth, (req, res) => {
+router.post('/deals/:id/kyc/:partyId', requireAuth, rateLimitWrite, validateBody(kycSaveSchema), (req, res) => {
   const { id, partyId } = req.params;
   if (!canWorkOnKyc(req, id, partyId)) return res.status(403).json({ error: 'No autorizado.' });
 
@@ -332,10 +342,10 @@ router.post('/deals/:id/kyc/:partyId', requireAuth, (req, res) => {
 
   const kind = req.query.kind === 'lpr' ? 'lpr' : 'escrow';
   const priorSubmission = getLatestSubmission(partyId, kind);
-  const templateKey = priorSubmission ? priorSubmission.template_key : resolveTemplateKey(deal, party, req.body?.lang, kind === 'lpr');
+  const templateKey = priorSubmission ? priorSubmission.template_key : resolveTemplateKey(deal, party, req.body.lang, kind === 'lpr');
   if (!templateKey || !TEMPLATES[templateKey]) return res.status(501).json({ error: 'Plantilla no disponible todavía.' });
 
-  const { answers } = req.body || {};
+  const { answers } = req.body;
   const existing = getSubmission(partyId, templateKey);
   if (existing) {
     db.prepare("UPDATE kyc_submissions SET answers_json = ?, updated_at = datetime('now') WHERE id = ?")
@@ -454,7 +464,7 @@ function completeKycReviewTask(kycSubmissionId) {
 // cada vez — por eso, si el expediente ya se había mandado antes
 // (docusign_envelope_id ya puesto), este endpoint solo regenera el PDF y
 // nunca vuelve a intentar el envío.
-router.post('/deals/:id/kyc/:partyId/generate', requireAuth, async (req, res) => {
+router.post('/deals/:id/kyc/:partyId/generate', requireAuth, rateLimitExpensive, async (req, res) => {
   const { id, partyId } = req.params;
   if (!canWorkOnKyc(req, id, partyId)) return res.status(403).json({ error: 'No autorizado.' });
 
@@ -544,7 +554,7 @@ router.get('/deals/:id/kyc/:partyId/file', requireAuth, async (req, res) => {
 // generó y quedó pendiente de revisión) o falló. Solo admin/abogado
 // interno — un agente ya no puede mandar un KYC a firma directo, tiene que
 // pasar por esta revisión (ver AGENT_LIKE_ROLES en /generate).
-router.post('/deals/:id/kyc/:partyId/send-for-signature', requireRole('admin', 'lawyer'), async (req, res) => {
+router.post('/deals/:id/kyc/:partyId/send-for-signature', requireRole('admin', 'lawyer'), rateLimitExpensive, async (req, res) => {
   const { id, partyId } = req.params;
   if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
 
@@ -583,7 +593,7 @@ router.post('/deals/:id/kyc/:partyId/send-for-signature', requireRole('admin', '
 // normal (staff lo llenó a nombre del cliente), esto falla porque DocuSign
 // nunca registró un clientUserId para ese firmante; en ese caso el cliente
 // firma desde el correo que le llegó, no desde aquí.
-router.post('/deals/:id/kyc/:partyId/signing-url', requireAuth, async (req, res) => {
+router.post('/deals/:id/kyc/:partyId/signing-url', requireAuth, rateLimitExpensive, async (req, res) => {
   const { id, partyId } = req.params;
   if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
   if (myDealPartyEntityId(req, id) !== Number(partyId)) {

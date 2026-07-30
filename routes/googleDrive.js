@@ -1,6 +1,7 @@
 const express = require('express');
 const { requireRole } = require('./auth');
 const driveClient = require('../lib/googleDriveClient');
+const { rateLimitWrite } = require('../lib/apiRateLimits');
 
 const router = express.Router();
 
@@ -34,7 +35,7 @@ router.get('/oauth/callback', requireRole('admin'), async (req, res) => {
 });
 
 // POST /api/google-drive/disconnect
-router.post('/disconnect', requireRole('admin'), (req, res) => {
+router.post('/disconnect', requireRole('admin'), rateLimitWrite, (req, res) => {
   driveClient.disconnect();
   res.json({ ok: true });
 });

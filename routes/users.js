@@ -3,7 +3,8 @@ const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const db = require('../db');
 const { requireRole, resolveAgency, KNOWN_AGENCIES } = require('./auth');
-const { isValidEmail } = require('../lib/validate');
+const { validateBody, z } = require('../lib/validateBody');
+const { rateLimitWrite, rateLimitEmail } = require('../lib/apiRateLimits');
 const mailer = require('../lib/email');
 
 const router = express.Router();
@@ -12,6 +13,21 @@ function tempPassword(){
   return crypto.randomBytes(6).toString('base64url'); // ej: "aB3xQ9"
 }
 
+const createUserSchema = z.object({
+  name: z.string().trim().min(1, 'Escribe un nombre.').max(200, 'El nombre es demasiado largo.'),
+  email: z.string().trim().toLowerCase().max(254).email('Ese correo no tiene un formato válido.'),
+  role: z.enum(['admin', 'agent', 'lawyer', 'external_lawyer', 'buyer', 'seller'])
+}).strict();
+
+const agencySchema = z.object({
+  agency: z.string().trim().max(200).optional(),
+  agencyOther: z.string().trim().max(200).optional()
+}).strict();
+
+const phoneSchema = z.object({
+  phone: z.string().trim().max(30).optional().default('')
+}).strict();
+
 // POST /api/users — solo admin crea cuentas de equipo (agente, abogado, otro
 // admin) o cuentas de cliente directas. Restringido a admin (antes cualquier
 // agente podía crear una cuenta con role:'admin' — escalamiento de
@@ -19,21 +35,15 @@ function tempPassword(){
 // (routes/invites.js), esto queda para el roster interno.
 // Devuelve una contraseña temporal para compartir por un canal seguro
 // (no por el mismo correo que usarías para mandar el link, idealmente).
-router.post('/', requireRole('admin'), (req, res) => {
-  const { name, email, role } = req.body || {};
-  if (!name || !email || !['admin', 'agent', 'lawyer', 'external_lawyer', 'buyer', 'seller'].includes(role)) {
-    return res.status(400).json({ error: 'Datos inválidos.' });
-  }
-  if (!isValidEmail(email)) {
-    return res.status(400).json({ error: 'Ese correo no tiene un formato válido.' });
-  }
-  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase().trim());
+router.post('/', requireRole('admin'), rateLimitWrite, validateBody(createUserSchema), (req, res) => {
+  const { name, email, role } = req.body;
+  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
   if (existing) return res.status(409).json({ error: 'Ya existe una cuenta con ese correo.' });
 
   const password = tempPassword();
   const hash = bcrypt.hashSync(password, 12);
   const info = db.prepare('INSERT INTO users (name, email, password_hash, role) VALUES (?,?,?,?)')
-    .run(name, email.toLowerCase().trim(), hash, role);
+    .run(name, email, hash, role);
 
   // TODO (Claude Code): en vez de regresar la contraseña en la respuesta,
   // lo correcto en producción es mandarla por correo (con un servicio como
@@ -50,7 +60,7 @@ router.get('/', requireRole('admin'), (req, res) => {
 // (routes/auth.js POST /register la crea en status='pending'). Le avisamos
 // por correo a la persona misma — antes no se enteraba de que ya podía
 // entrar hasta que lo intentaba por su cuenta.
-router.patch('/:id/approve', requireRole('admin'), (req, res) => {
+router.patch('/:id/approve', requireRole('admin'), rateLimitEmail, (req, res) => {
   const user = db.prepare("SELECT id, name, email FROM users WHERE id = ? AND status = 'pending'").get(req.params.id);
   if (!user) return res.status(404).json({ error: 'No hay una cuenta pendiente con ese id.' });
   db.prepare("UPDATE users SET status = 'active' WHERE id = ?").run(user.id);
@@ -68,7 +78,7 @@ router.patch('/:id/approve', requireRole('admin'), (req, res) => {
 // (le ofrece elegir de nuevo). También borra cualquier dispositivo
 // recordado de esta cuenta — si el motivo del reset es que alguien más
 // pudo haber tenido acceso, un "recuérdame" viejo no debe seguir sirviendo.
-router.post('/:id/reset-2fa', requireRole('admin'), (req, res) => {
+router.post('/:id/reset-2fa', requireRole('admin'), rateLimitWrite, (req, res) => {
   const info = db.prepare("UPDATE users SET totp_enabled = 0, totp_secret = NULL, two_factor_method = NULL WHERE id = ?").run(req.params.id);
   if (!info.changes) return res.status(404).json({ error: 'Usuario no encontrado.' });
   db.prepare('DELETE FROM remembered_devices WHERE user_id = ?').run(req.params.id);
@@ -83,10 +93,10 @@ router.post('/:id/reset-2fa', requireRole('admin'), (req, res) => {
 // verdad de qué cuenta como agencia conocida — importa que quede bien
 // puesta porque de esto depende que el KYC de LPR salga automático
 // (routes/kyc.js dealAgentIsLprAgency).
-router.patch('/:id/agency', requireRole('admin'), (req, res) => {
+router.patch('/:id/agency', requireRole('admin'), rateLimitWrite, validateBody(agencySchema), (req, res) => {
   const user = db.prepare("SELECT id FROM users WHERE id = ? AND role = 'agent'").get(req.params.id);
   if (!user) return res.status(404).json({ error: 'No hay un agente con ese id.' });
-  const { agency, agencyOther } = req.body || {};
+  const { agency, agencyOther } = req.body;
   const resolved = resolveAgency(agency, agencyOther);
   if (!resolved) return res.status(400).json({ error: 'Elige una agencia (o escribe cuál si no está en la lista).' });
   db.prepare('UPDATE users SET agency = ? WHERE id = ?').run(resolved, req.params.id);
@@ -140,10 +150,10 @@ router.get('/clients', requireRole('admin'), (req, res) => {
 
 // PATCH /api/users/:id/phone — admin corrige/agrega el teléfono a mano
 // cuando no vino del KYC (o vino mal).
-router.patch('/:id/phone', requireRole('admin'), (req, res) => {
+router.patch('/:id/phone', requireRole('admin'), rateLimitWrite, validateBody(phoneSchema), (req, res) => {
   const user = db.prepare("SELECT id FROM users WHERE id = ? AND role IN ('buyer','seller')").get(req.params.id);
   if (!user) return res.status(404).json({ error: 'No hay un cliente con ese id.' });
-  const phone = (req.body && req.body.phone || '').trim();
+  const phone = req.body.phone;
   db.prepare('UPDATE users SET phone = ? WHERE id = ?').run(phone || null, req.params.id);
   res.json({ ok: true });
 });

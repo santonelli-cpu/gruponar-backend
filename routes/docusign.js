@@ -12,6 +12,8 @@ const driveClient = require('../lib/googleDriveClient');
 const docusignClient = require('../lib/docusignClient');
 const { fillArmourEscrow } = require('../lib/kycFill/armourEscrow');
 const { convertDocxToPdf } = require('../lib/kycFill/docxFillEngine');
+const { validateBody, z } = require('../lib/validateBody');
+const { rateLimitExpensive, rateLimitUpload, rateLimitWrite } = require('../lib/apiRateLimits');
 
 const router = express.Router();
 
@@ -20,6 +22,25 @@ const upload = multer({
   limits: { fileSize: 15 * 1024 * 1024 },
   fileFilter: (req, file, cb) => cb(null, file.mimetype === 'application/pdf')
 });
+
+const createTaskSchema = z.object({
+  label: z.string().trim().min(1, 'Escribe un nombre para el documento.').max(300),
+  side: z.enum(['buyer', 'seller'])
+}).strict();
+
+// Todos los campos del escrow agreement son texto libre que se inserta tal
+// cual en el documento (montos y fechas incluidos, vienen ya formateados
+// como los escribe quien llena el formulario, ej. "$50,000 USD") — por eso
+// son strings, no números.
+const generateEscrowSchema = z.object({
+  placeDate: z.string().trim().max(200).optional().default(''),
+  purchaseAgreementDescription: z.string().trim().max(2000).optional().default(''),
+  depositAmount: z.string().trim().max(200).optional().default(''),
+  fees: z.string().trim().max(2000).optional().default(''),
+  expirationDate: z.string().trim().max(200).optional().default(''),
+  noticeAddressSeller: z.string().trim().max(500).optional().default(''),
+  noticeAddressBuyer: z.string().trim().max(500).optional().default('')
+}).strict();
 
 function getTask(dealId, taskId) {
   return db.prepare('SELECT * FROM tasks WHERE id = ? AND deal_id = ?').get(taskId, dealId);
@@ -82,14 +103,11 @@ function withSideIndex(signers) {
 // un NDA o un poder que solo aplica a esta operación). Solo admin/abogado
 // interno, y siempre eligiendo un solo lado firmante — si hiciera falta que
 // firmen ambos ya está el escrow agreement/contrato para eso.
-router.post('/deals/:id/tasks', requireRole('admin', 'lawyer'), (req, res) => {
+router.post('/deals/:id/tasks', requireRole('admin', 'lawyer'), rateLimitWrite, validateBody(createTaskSchema), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const deal = db.prepare('SELECT id FROM deals WHERE id = ?').get(req.params.id);
   if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
-  const { label, side } = req.body || {};
-  const name = (label || '').trim();
-  if (!name) return res.status(400).json({ error: 'Escribe un nombre para el documento.' });
-  if (!['buyer', 'seller'].includes(side)) return res.status(400).json({ error: 'Elige si firma el comprador o el vendedor.' });
+  const { label: name, side } = req.body;
   const nextOrder = db.prepare('SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM tasks WHERE deal_id = ?').get(req.params.id).n;
   const info = db.prepare(`
     INSERT INTO tasks (deal_id, label_en, label_es, requires_signature, doc_type, sign_side, sort_order, created_at)
@@ -103,7 +121,7 @@ router.post('/deals/:id/tasks', requireRole('admin', 'lawyer'), (req, res) => {
 // vive en la tabla documents). Solo admin/abogado interno: son documentos
 // de cierre (escrow agreement, KYC del fiduciario) que agente/abogado
 // externo no deben poder subir/reemplazar por su cuenta.
-router.post('/deals/:id/tasks/:taskId/document', requireRole('admin', 'lawyer'), (req, res) => {
+router.post('/deals/:id/tasks/:taskId/document', requireRole('admin', 'lawyer'), rateLimitUpload, (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const task = getTask(req.params.id, req.params.taskId);
   if (!task) return res.status(404).json({ error: 'Tarea no encontrada.' });
@@ -150,7 +168,7 @@ router.get('/deals/:id/tasks/:taskId/document', requireAuth, async (req, res) =>
 // documento de esta tarea, listo para enviar a firma con el mismo flujo de
 // arriba (comprador firma primero, luego vendedor). Solo admin/abogado
 // interno pueden llenar y generar este documento.
-router.post('/deals/:id/tasks/:taskId/generate-escrow-document', requireRole('admin', 'lawyer'), async (req, res) => {
+router.post('/deals/:id/tasks/:taskId/generate-escrow-document', requireRole('admin', 'lawyer'), rateLimitExpensive, validateBody(generateEscrowSchema), async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const task = getTask(req.params.id, req.params.taskId);
   if (!task) return res.status(404).json({ error: 'Tarea no encontrada.' });
@@ -158,7 +176,7 @@ router.post('/deals/:id/tasks/:taskId/generate-escrow-document', requireRole('ad
   const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id);
   if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
 
-  const { placeDate, purchaseAgreementDescription, depositAmount, fees, expirationDate, noticeAddressSeller, noticeAddressBuyer } = req.body || {};
+  const { placeDate, purchaseAgreementDescription, depositAmount, fees, expirationDate, noticeAddressSeller, noticeAddressBuyer } = req.body;
   // Nombres reales (todos los compradores/vendedores con cuenta ligada, no
   // solo uno por lado) para el cuerpo del documento y para la tabla de
   // firmas — el mismo orden que usa el sobre de DocuSign más abajo, así los
@@ -209,7 +227,7 @@ router.post('/deals/:id/tasks/:taskId/generate-escrow-document', requireRole('ad
 // DocuSign (comprador y vendedor firman por correo, sin pasar por el
 // portal). Solo admin/abogado interno mandan a firma estos documentos de
 // cierre (escrow agreement, KYC del fiduciario, etc.).
-router.post('/deals/:id/tasks/:taskId/send-for-signature', requireRole('admin', 'lawyer'), async (req, res) => {
+router.post('/deals/:id/tasks/:taskId/send-for-signature', requireRole('admin', 'lawyer'), rateLimitExpensive, async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const task = getTask(req.params.id, req.params.taskId);
   if (!task) return res.status(404).json({ error: 'Tarea no encontrada.' });
@@ -222,6 +240,13 @@ router.post('/deals/:id/tasks/:taskId/send-for-signature', requireRole('admin', 
   }
   if (!task.document_url) {
     return res.status(400).json({ error: 'Sube el documento a firmar de esta tarea primero.' });
+  }
+  // Mismo motivo que el respaldo en routes/kyc.js sendKycEnvelope: sin este
+  // chequeo, un reintento de este endpoint (ej. después de un 502, o un
+  // doble clic) crea un sobre de DocuSign NUEVO cada vez, mandándole el
+  // mismo documento a firmar varias veces a las mismas personas.
+  if (task.docusign_envelope_id) {
+    return res.status(400).json({ error: 'Este documento ya se mandó a firma.' });
   }
 
   // El escrow agreement (y cualquier otro documento de cierre) lo firman

@@ -1,8 +1,14 @@
 const express = require('express');
 const db = require('../db');
 const { requireAuth, requireRole } = require('./auth');
+const { validateBody, z } = require('../lib/validateBody');
+const { rateLimitWrite } = require('../lib/apiRateLimits');
 
 const router = express.Router();
+
+const notaryNoteSchema = z.object({
+  note: z.string().max(2000).optional().default('')
+}).strict();
 
 // Configuración simple de la firma, sin ligarla a una operación específica
 // (a diferencia de casi todo lo demás en este backend). Por ahora solo hay
@@ -19,12 +25,12 @@ router.get('/notary-payment-note', requireAuth, (req, res) => {
   res.json({ note: row ? row.value : '' });
 });
 
-router.put('/notary-payment-note', requireRole('admin'), (req, res) => {
-  const { note } = req.body || {};
+router.put('/notary-payment-note', requireRole('admin'), rateLimitWrite, validateBody(notaryNoteSchema), (req, res) => {
+  const { note } = req.body;
   db.prepare(`
     INSERT INTO app_settings (key, value) VALUES (?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value
-  `).run(NOTARY_PAYMENT_NOTE_KEY, note || '');
+  `).run(NOTARY_PAYMENT_NOTE_KEY, note);
   res.json({ ok: true });
 });
 

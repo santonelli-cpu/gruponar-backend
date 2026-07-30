@@ -5,7 +5,8 @@ const db = require('../db');
 const { requireRole, beginTwoFactorChallenge } = require('./auth');
 const { canAccessDeal } = require('../lib/access');
 const { createRateLimiter } = require('../lib/rateLimit');
-const { isValidEmail } = require('../lib/validate');
+const { rateLimitEmail } = require('../lib/apiRateLimits');
+const { validateBody, z } = require('../lib/validateBody');
 const { resolveAgency } = require('./auth');
 const mailer = require('../lib/email');
 
@@ -17,23 +18,30 @@ const INVITE_TTL_DAYS = 7;
 // invitación (crea cuentas sin autenticación previa).
 const rateLimitAccept = createRateLimiter({ windowMs: 15 * 60 * 1000, maxAttempts: 10 });
 
+const createInviteSchema = z.object({
+  dealId: z.number().int().positive().optional(),
+  dealPartyEntityId: z.number().int().positive().optional(),
+  roleInDeal: z.enum(['buyer', 'seller', 'agent', 'lawyer', 'external_lawyer']),
+  name: z.string().trim().min(1, 'Escribe un nombre.').max(200, 'El nombre es demasiado largo.'),
+  email: z.string().trim().toLowerCase().max(254).email('Ese correo no tiene un formato válido.'),
+  representsSide: z.enum(['buyer', 'seller']).nullable().optional()
+}).strict();
+
+const acceptInviteSchema = z.object({
+  password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres.').max(72, 'La contraseña no puede tener más de 72 caracteres.'),
+  agency: z.string().trim().max(200).optional(),
+  agencyOther: z.string().trim().max(200).optional(),
+  lang: z.enum(['es', 'en']).optional()
+}).strict();
+
 // POST /api/invites — admin/agente/abogado genera una invitación. Para
 // comprador/vendedor hace falta decir A QUÉ PARTE específica de la
 // operación representa (dealPartyEntityId) — puede haber varios
 // compradores/vendedores, cada uno necesita su propia invitación ligada a
 // su propia parte. Para agente/abogado, sin dealId/partyEntityId es una
 // invitación de equipo (se une a la firma en general).
-router.post('/', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), async (req, res) => {
-  const { dealId, dealPartyEntityId, roleInDeal, name, email, representsSide } = req.body || {};
-  if (!['buyer', 'seller', 'agent', 'lawyer', 'external_lawyer'].includes(roleInDeal) || !name || !email) {
-    return res.status(400).json({ error: 'Datos inválidos.' });
-  }
-  if (!isValidEmail(email)) {
-    return res.status(400).json({ error: 'Ese correo no tiene un formato válido.' });
-  }
-  if (representsSide !== undefined && representsSide !== null && !['buyer', 'seller'].includes(representsSide)) {
-    return res.status(400).json({ error: 'representsSide debe ser buyer o seller.' });
-  }
+router.post('/', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitEmail, validateBody(createInviteSchema), async (req, res) => {
+  const { dealId, dealPartyEntityId, roleInDeal, name, email, representsSide } = req.body;
   if (['buyer', 'seller'].includes(roleInDeal)) {
     if (!dealId || !dealPartyEntityId) {
       return res.status(400).json({ error: 'Falta la operación y la persona específica a invitar.' });
@@ -53,12 +61,11 @@ router.post('/', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), asy
   const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 86400000).toISOString();
 
-  const normalizedEmail = email.toLowerCase().trim();
   db.prepare(`
     INSERT INTO invites (token, deal_id, deal_party_entity_id, role_in_deal, email, name, created_by, expires_at, represents_side)
     VALUES (?,?,?,?,?,?,?,?,?)
   `).run(token, dealId || null, ['buyer', 'seller'].includes(roleInDeal) ? dealPartyEntityId : null,
-         roleInDeal, normalizedEmail, name, req.session.userId, expiresAt,
+         roleInDeal, email, name, req.session.userId, expiresAt,
          ['agent', 'external_lawyer'].includes(roleInDeal) ? (representsSide || null) : null);
 
   const url = `/invite.html?token=${token}`;
@@ -73,7 +80,7 @@ router.post('/', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), asy
   let emailResult = { ok: false, error: 'Resend no está configurado.' };
   if (mailer.isConfigured()) {
     const lang = ['buyer', 'seller'].includes(roleInDeal) && deal ? mailer.resolveClientLang(deal.scenario, roleInDeal) : 'es';
-    emailResult = await mailer.sendInviteEmail({ to: normalizedEmail, name, roleInDeal, dealProperty, url: absoluteUrl, lang });
+    emailResult = await mailer.sendInviteEmail({ to: email, name, roleInDeal, dealProperty, url: absoluteUrl, lang });
   }
 
   res.status(201).json({ token, url, emailSent: emailResult.ok, emailError: emailResult.ok ? null : emailResult.error });
@@ -100,14 +107,8 @@ router.get('/:token', (req, res) => {
 });
 
 // POST /api/invites/:token/accept — público, crea la cuenta (o la reutiliza) y la liga a la parte correspondiente.
-router.post('/:token/accept', rateLimitAccept, (req, res) => {
-  const { password, agency, agencyOther } = req.body || {};
-  if (!password || password.length < 8) {
-    return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres.' });
-  }
-  if (password.length > 72) {
-    return res.status(400).json({ error: 'La contraseña no puede tener más de 72 caracteres.' });
-  }
+router.post('/:token/accept', rateLimitAccept, validateBody(acceptInviteSchema), (req, res) => {
+  const { password, agency, agencyOther } = req.body;
 
   const invite = db.prepare('SELECT * FROM invites WHERE token = ?').get(req.params.token);
   if (!invite) return res.status(404).json({ error: 'Invitación no encontrada.' });

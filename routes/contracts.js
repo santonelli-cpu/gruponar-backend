@@ -14,8 +14,23 @@ const docusignClient = require('../lib/docusignClient');
 const { extractPlaceholders, fillContractTemplate, countPdfPages } = require('../lib/contractFill/mergeEngine');
 const { convertDocxToPdf } = require('../lib/kycFill/docxFillEngine');
 const { getSmartSchema, expandSmartFields } = require('../lib/contractFill/smartContractFields');
+const { validateBody, z } = require('../lib/validateBody');
+const { rateLimitExpensive, rateLimitUpload, rateLimitWrite } = require('../lib/apiRateLimits');
 
 const router = express.Router();
+
+const contractTemplateSchema = z.object({
+  scenario: z.enum(['purchase', 'trust', 'transfer', 'trust_termination']),
+  label: z.string().trim().min(1, 'Escribe un nombre para el machote.').max(200)
+}).strict();
+
+// smartValues es un objeto dinámico (una llave por campo del esquema de
+// lib/contractFill/smartContractFields.js, que puede cambiar) — se valida
+// que sea un objeto de verdad, no una lista de llaves fijas como el resto.
+const contractSelectSchema = z.object({
+  templateId: z.number().int().positive().optional(),
+  smartValues: z.record(z.string(), z.any()).optional()
+}).strict();
 
 // Los machotes (.docx) no son por operación, viven bajo un prefijo fijo del
 // bucket — contract_templates.docx_file sigue guardando solo el nombre de
@@ -120,14 +135,19 @@ router.get('/contract-templates', requireRole('admin', 'lawyer'), (req, res) => 
 });
 
 // POST /api/contract-templates — sube un machote nuevo (.docx con {{CLAVE}}).
-router.post('/contract-templates', requireRole('admin', 'lawyer'), (req, res) => {
+router.post('/contract-templates', requireRole('admin', 'lawyer'), rateLimitUpload, (req, res) => {
   upload.single('file')(req, res, async (err) => {
     if (err) return res.status(400).json({ error: err.message || 'Archivo inválido.' });
     if (!req.file) return res.status(400).json({ error: 'Sube un archivo .docx.' });
-    const { scenario, label } = req.body || {};
-    if (!scenario || !['purchase', 'trust', 'transfer', 'trust_termination'].includes(scenario) || !label) {
-      return res.status(400).json({ error: 'Faltan campos requeridos (scenario, label).' });
+    // multer ya separó los campos de texto del archivo — validar aquí en
+    // vez de como middleware normal, porque un validateBody de antes no
+    // vería nada (multer todavía no corrió, req.body llegaría vacío).
+    const parsed = contractTemplateSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      return res.status(400).json({ error: `Dato inválido: ${issue.message}` });
     }
+    const { scenario, label } = parsed.data;
     try {
       const filename = genFilename(req.file.originalname);
       await gcsStorage.uploadBuffer(templateKey(filename), req.file.buffer, req.file.mimetype);
@@ -142,7 +162,7 @@ router.post('/contract-templates', requireRole('admin', 'lawyer'), (req, res) =>
 
 // DELETE /api/contract-templates/:id — quita un machote de la lista (no
 // afecta contratos ya generados con él, esos ya son archivos independientes).
-router.delete('/contract-templates/:id', requireRole('admin', 'lawyer'), async (req, res) => {
+router.delete('/contract-templates/:id', requireRole('admin', 'lawyer'), rateLimitWrite, async (req, res) => {
   const tpl = db.prepare('SELECT * FROM contract_templates WHERE id = ?').get(req.params.id);
   if (!tpl) return res.status(404).json({ error: 'Machote no encontrado.' });
   db.prepare('DELETE FROM contract_templates WHERE id = ?').run(tpl.id);
@@ -195,13 +215,13 @@ router.get('/deals/:id/contract', requireAuth, async (req, res) => {
 
 // POST /api/deals/:id/contract — elige machote y/o guarda las respuestas del
 // formulario inteligente (ver lib/contractFill/smartContractFields).
-router.post('/deals/:id/contract', requireRole('admin', 'lawyer'), (req, res) => {
+router.post('/deals/:id/contract', requireRole('admin', 'lawyer'), rateLimitWrite, validateBody(contractSelectSchema), (req, res) => {
   const { id } = req.params;
   if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
   const deal = loadDeal(id);
   if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
 
-  const { templateId, smartValues } = req.body || {};
+  const { templateId, smartValues } = req.body;
   if (templateId !== undefined) {
     const tpl = db.prepare('SELECT * FROM contract_templates WHERE id = ? AND scenario = ?').get(templateId, deal.scenario);
     if (!tpl) return res.status(400).json({ error: 'Machote inválido para el tipo de operación de esta venta.' });
@@ -217,7 +237,7 @@ router.post('/deals/:id/contract', requireRole('admin', 'lawyer'), (req, res) =>
 // conversión a PDF. Un solo botón produce ambos formatos: el .docx (para que
 // el admin lo descargue) y el .pdf (para verlo en el portal y mandarlo a
 // firma).
-router.post('/deals/:id/contract/generate', requireRole('admin', 'lawyer'), async (req, res) => {
+router.post('/deals/:id/contract/generate', requireRole('admin', 'lawyer'), rateLimitExpensive, async (req, res) => {
   const { id } = req.params;
   if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
   const deal = loadDeal(id);
@@ -262,7 +282,7 @@ router.post('/deals/:id/contract/generate', requireRole('admin', 'lawyer'), asyn
 // POST /api/deals/:id/contract/upload-signed — a veces el contrato de
 // promesa se redacta/firma por fuera del portal — se sube ya firmado en vez
 // de generarlo y mandarlo a DocuSign desde acá.
-router.post('/deals/:id/contract/upload-signed', requireRole('admin', 'lawyer'), (req, res) => {
+router.post('/deals/:id/contract/upload-signed', requireRole('admin', 'lawyer'), rateLimitUpload, (req, res) => {
   const { id } = req.params;
   if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
   const deal = loadDeal(id);
@@ -318,7 +338,7 @@ router.get('/deals/:id/contract/file', requireAuth, async (req, res) => {
 // POST /api/deals/:id/contract/send-for-signature — firma secuencial
 // comprador (routingOrder 1) → vendedor (routingOrder 2), mismo patrón que
 // el escrow agreement.
-router.post('/deals/:id/contract/send-for-signature', requireRole('admin', 'lawyer'), async (req, res) => {
+router.post('/deals/:id/contract/send-for-signature', requireRole('admin', 'lawyer'), rateLimitExpensive, async (req, res) => {
   const { id } = req.params;
   if (!canAccessDeal(req, id)) return res.status(403).json({ error: 'No autorizado.' });
 
