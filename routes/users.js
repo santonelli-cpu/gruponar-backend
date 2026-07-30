@@ -71,4 +71,55 @@ router.get('/known-agencies', requireRole('admin'), (req, res) => {
   res.json(KNOWN_AGENCIES);
 });
 
+// GET /api/users/clients — base de contactos de comprador/vendedor (nombre,
+// correo, teléfono, y en qué operación(es) están) para que admin siempre
+// tenga cómo volver a contactarlos, incluso después de que la operación
+// cierre. El teléfono no tiene su propio campo de captura todavía: si
+// users.phone está vacío, se usa el que hayan puesto al llenar su KYC
+// (answers.mobilePhone) como respaldo de solo lectura.
+router.get('/clients', requireRole('admin'), (req, res) => {
+  const clients = db.prepare(`
+    SELECT id, name, email, phone FROM users WHERE role IN ('buyer','seller') ORDER BY name COLLATE NOCASE
+  `).all();
+  const dealsStmt = db.prepare(`
+    SELECT d.id AS dealId, d.property AS property, dp.deal_party_entity_id AS partyEntityId
+    FROM deal_parties dp JOIN deals d ON d.id = dp.deal_id
+    WHERE dp.user_id = ? AND dp.role_in_deal IN ('buyer','seller')
+  `);
+  const kycAnswersStmt = db.prepare(`
+    SELECT answers_json FROM kyc_submissions
+    WHERE deal_party_entity_id = ? AND answers_json IS NOT NULL
+    ORDER BY id DESC
+  `);
+  const result = clients.map(c => {
+    const dealRows = dealsStmt.all(c.id);
+    let phone = c.phone || null;
+    if (!phone) {
+      outer: for (const row of dealRows) {
+        for (const sub of kycAnswersStmt.all(row.partyEntityId)) {
+          try {
+            const answers = JSON.parse(sub.answers_json);
+            if (answers.mobilePhone) { phone = answers.mobilePhone; break outer; }
+          } catch { /* respuesta corrupta, se ignora */ }
+        }
+      }
+    }
+    return {
+      id: c.id, name: c.name, email: c.email, phone,
+      deals: dealRows.map(r => ({ id: r.dealId, property: r.property }))
+    };
+  });
+  res.json(result);
+});
+
+// PATCH /api/users/:id/phone — admin corrige/agrega el teléfono a mano
+// cuando no vino del KYC (o vino mal).
+router.patch('/:id/phone', requireRole('admin'), (req, res) => {
+  const user = db.prepare("SELECT id FROM users WHERE id = ? AND role IN ('buyer','seller')").get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'No hay un cliente con ese id.' });
+  const phone = (req.body && req.body.phone || '').trim();
+  db.prepare('UPDATE users SET phone = ? WHERE id = ?').run(phone || null, req.params.id);
+  res.json({ ok: true });
+});
+
 module.exports = router;

@@ -17,6 +17,7 @@ const contractsRouter = require('./routes/contracts');
 const googleDriveRouter = require('./routes/googleDrive');
 const settingsRouter = require('./routes/settings');
 const { runAutomaticReminders } = require('./lib/reminders');
+const { checkAndSendPredialReminders } = require('./lib/predialReminder');
 
 const app = express();
 app.use(express.json());
@@ -80,3 +81,10 @@ app.listen(PORT, () => console.log(`Grupo Nar backend escuchando en puerto ${POR
 // en la base de datos, no en memoria.
 setTimeout(() => runAutomaticReminders().catch(err => console.error('[reminders] error:', err.message)), 60 * 1000);
 setInterval(() => runAutomaticReminders().catch(err => console.error('[reminders] error:', err.message)), 24 * 60 * 60 * 1000);
+
+// Recordatorio anual de predial a compradores ya cerrados (lib/predialReminder.js)
+// — se checa una vez al día; el propio módulo decide si en verdad hay que
+// mandar algo (solo la primera semana de enero, una vez por año, sin
+// importar cuántas veces se reinicie el servidor esa semana).
+setTimeout(() => checkAndSendPredialReminders().catch(err => console.error('[predial-reminder] error:', err.message)), 90 * 1000);
+setInterval(() => checkAndSendPredialReminders().catch(err => console.error('[predial-reminder] error:', err.message)), 24 * 60 * 60 * 1000);

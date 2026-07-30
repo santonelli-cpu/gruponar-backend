@@ -94,6 +94,10 @@ ensureUserRoleAllowsLawyer();
 // así que sí califica como DEFAULT válido en un ADD COLUMN normal.
 ensureColumn('users', 'status', "status TEXT NOT NULL DEFAULT 'active'");
 ensureColumn('users', 'agency', 'agency TEXT');
+// Base de contactos de clientes (admin, ver routes/users.js GET /clients) —
+// sin campo propio de captura todavía, admin lo llena a mano o se rellena
+// solo desde el KYC (answers.mobilePhone) si ya lo dieron ahí.
+ensureColumn('users', 'phone', 'phone TEXT');
 
 // Qué escrow company usa la operación — determina qué plantilla KYC/escrow
 // se ofrece (Armour o TLA). Sin CHECK aquí, igual que el resto de columnas

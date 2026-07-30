@@ -235,7 +235,9 @@ const TYPE_LABEL = new Proxy(TYPE_LABEL_I18N, {
 const STRINGS = {
   es: {
     tabAdmin: 'Admin', tabStaffOperations: 'Operaciones', tabPortal: 'Portal cliente / agente',
-    navDashboard: 'Dashboard', navOperations: 'Operaciones', navTeam: 'Equipo',
+    navDashboard: 'Dashboard', navOperations: 'Operaciones', navTeam: 'Equipo', navClients: 'Clientes',
+    downloadCsv: 'Descargar lista (CSV)', noClientsYet: 'Todavía no hay compradores ni vendedores con cuenta.',
+    phonePh: 'Teléfono', noDealsYet: 'Sin operación ligada',
     loginTitle: 'Iniciar sesión', loginSub: 'Ingresa con tu correo y contraseña.',
     loginEmailPh: 'correo@ejemplo.com', loginPasswordPh: 'Contraseña', loginSubmit: 'Entrar', loginSubmitting: 'Entrando...',
     loginNoAccount: '¿Eres agente o abogado y no tienes cuenta?', loginCreateAccount: 'Crear cuenta',
@@ -417,7 +419,9 @@ const STRINGS = {
   },
   en: {
     tabAdmin: 'Admin', tabStaffOperations: 'Deals', tabPortal: 'Client / agent portal',
-    navDashboard: 'Dashboard', navOperations: 'Deals', navTeam: 'Team',
+    navDashboard: 'Dashboard', navOperations: 'Deals', navTeam: 'Team', navClients: 'Clients',
+    downloadCsv: 'Download list (CSV)', noClientsYet: 'No buyers or sellers with an account yet.',
+    phonePh: 'Phone', noDealsYet: 'No linked deal',
     loginTitle: 'Log in', loginSub: 'Enter your email and password.',
     loginEmailPh: 'email@example.com', loginPasswordPh: 'Password', loginSubmit: 'Log in', loginSubmitting: 'Logging in...',
     loginNoAccount: 'Are you an agent or lawyer without an account?', loginCreateAccount: 'Create account',
@@ -611,6 +615,7 @@ let dealsListFilter = 'active';
 let dashboardData = null;
 let pendingUsers = null;
 let activeTeamMembers = null;
+let clientsCache = undefined;
 let kycCache = {};
 let kycFormOpenFor = null;
 
@@ -1280,7 +1285,7 @@ document.getElementById('header-logout').addEventListener('click', logout);
 
 // ---------- ADMIN ----------
 function renderAdmin(body){
-  if(adminView === 'list' || adminView === 'dashboard' || adminView === 'team' || adminView === null){
+  if(adminView === 'list' || adminView === 'dashboard' || adminView === 'team' || adminView === 'clients' || adminView === null){
     const secCard = document.createElement('div');
     secCard.className = 'card';
     secCard.innerHTML = `
@@ -1303,16 +1308,24 @@ function renderAdmin(body){
       <button class="btn ${adminView==='dashboard'?'primary':''}" id="nav-dashboard">${t('navDashboard')}</button>
       <button class="btn ${adminView==='list'?'primary':''}" id="nav-list">${t('navOperations')}</button>
       ${currentUser.role==='admin' ? `<button class="btn ${adminView==='team'?'primary':''}" id="nav-team">${t('navTeam')}${pendingUsers && pendingUsers.length ? ` (${pendingUsers.length})` : ''}</button>` : ''}
+      ${currentUser.role==='admin' ? `<button class="btn ${adminView==='clients'?'primary':''}" id="nav-clients">${t('navClients')}</button>` : ''}
     `;
     body.appendChild(nav);
     nav.querySelector('#nav-dashboard').onclick = () => { adminView='dashboard'; activeDealId=null; loadDashboard(); };
     nav.querySelector('#nav-list').onclick = () => { adminView='list'; activeDealId=null; render(); };
     const teamBtn = nav.querySelector('#nav-team');
     if(teamBtn) teamBtn.onclick = () => { adminView='team'; activeDealId=null; render(); };
+    const clientsBtn = nav.querySelector('#nav-clients');
+    if(clientsBtn) clientsBtn.onclick = () => { adminView='clients'; activeDealId=null; render(); };
   }
 
   if(adminView === 'team'){
     body.appendChild(buildTeamSection());
+    return;
+  }
+
+  if(adminView === 'clients'){
+    body.appendChild(buildClientsSection());
     return;
   }
 
@@ -1699,6 +1712,97 @@ function buildTeamSection(){
   }
 
   return wrap;
+}
+
+// Base de contactos de comprador/vendedor — separado del Equipo (que es
+// staff: agentes/abogados/admin) porque un cliente no es parte del equipo,
+// pero admin necesita poder volver a contactarlo (ej. recordatorio anual de
+// predial) incluso después de que su operación ya cerró.
+function buildClientsSection(){
+  const wrap = document.createElement('div');
+  const title = document.createElement('div');
+  title.className = 'section-title'; title.textContent = t('navClients');
+  wrap.appendChild(title);
+  const card = document.createElement('div'); card.className = 'card';
+
+  if(clientsCache === undefined){
+    card.innerHTML = `<div class="field-hint" style="margin:0;">${t('loading')}</div>`;
+    loadClients();
+    wrap.appendChild(card);
+    return wrap;
+  }
+  if(clientsCache.error){
+    card.innerHTML = `<div class="field-hint" style="margin:0;">${escapeHtml(clientsCache.error)}</div>`;
+    wrap.appendChild(card);
+    return wrap;
+  }
+
+  const topRow = document.createElement('div');
+  topRow.style.cssText = 'display:flex; justify-content:flex-end; margin-bottom:10px;';
+  const downloadBtn = document.createElement('button');
+  downloadBtn.className = 'btn'; downloadBtn.innerHTML = `<i class="ti ti-download" aria-hidden="true"></i> ${t('downloadCsv')}`;
+  downloadBtn.onclick = () => downloadClientsCsv(clientsCache);
+  topRow.appendChild(downloadBtn);
+  wrap.appendChild(topRow);
+
+  if(!clientsCache.length){
+    card.innerHTML = `<div class="field-hint" style="margin:0;">${t('noClientsYet')}</div>`;
+    wrap.appendChild(card);
+    return wrap;
+  }
+
+  clientsCache.forEach(c => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:0.5px solid var(--line); gap:10px; flex-wrap:wrap;';
+    const dealsLabel = c.deals.map(d => escapeHtml(d.property)).join(', ') || t('noDealsYet');
+    row.innerHTML = `<span style="font-size:13px;">${escapeHtml(c.name)} <span class="field-hint" style="margin:0;">— ${escapeHtml(c.email)} · ${dealsLabel}</span></span>`;
+
+    const phoneWrap = document.createElement('span');
+    phoneWrap.style.cssText = 'display:flex; align-items:center; gap:6px;';
+    const phoneInput = document.createElement('input');
+    phoneInput.type = 'text'; phoneInput.value = c.phone || ''; phoneInput.placeholder = t('phonePh');
+    phoneInput.style.cssText = 'font-size:12px; padding:4px 8px; width:140px;';
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'btn'; saveBtn.style.fontSize = '11px'; saveBtn.textContent = t('save');
+    saveBtn.onclick = async () => {
+      saveBtn.disabled = true;
+      try{
+        await apiFetch(`/api/users/${c.id}/phone`, { method:'PATCH', body: JSON.stringify({ phone: phoneInput.value.trim() }) });
+        c.phone = phoneInput.value.trim() || null;
+        saveBtn.textContent = t('saved');
+        setTimeout(() => { saveBtn.textContent = t('save'); }, 1200);
+      }catch(e){ alert(e.message); }
+      saveBtn.disabled = false;
+    };
+    phoneWrap.appendChild(phoneInput);
+    phoneWrap.appendChild(saveBtn);
+    row.appendChild(phoneWrap);
+    card.appendChild(row);
+  });
+  wrap.appendChild(card);
+  return wrap;
+}
+
+async function loadClients(){
+  try{
+    clientsCache = await apiFetch('/api/users/clients');
+  }catch(e){
+    clientsCache = { error: e.message };
+  }
+  render();
+}
+
+function downloadClientsCsv(clients){
+  const header = ['Nombre', 'Correo', 'Teléfono', 'Operaciones'];
+  const csvEscape = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+  const rows = clients.map(c => [c.name, c.email, c.phone || '', c.deals.map(d => d.property).join('; ')]);
+  const csv = [header, ...rows].map(r => r.map(csvEscape).join(',')).join('\r\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `clientes-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
 }
 
 // Nota de referencia (texto libre) de a qué cuenta se transfieren los
