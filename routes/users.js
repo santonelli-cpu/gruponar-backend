@@ -79,7 +79,7 @@ router.get('/known-agencies', requireRole('admin'), (req, res) => {
 // (answers.mobilePhone) como respaldo de solo lectura.
 router.get('/clients', requireRole('admin'), (req, res) => {
   const clients = db.prepare(`
-    SELECT id, name, email, phone FROM users WHERE role IN ('buyer','seller') ORDER BY name COLLATE NOCASE
+    SELECT id, name, email, phone, role FROM users WHERE role IN ('buyer','seller') ORDER BY name COLLATE NOCASE
   `).all();
   const dealsStmt = db.prepare(`
     SELECT d.id AS dealId, d.property AS property, dp.deal_party_entity_id AS partyEntityId
@@ -105,7 +105,7 @@ router.get('/clients', requireRole('admin'), (req, res) => {
       }
     }
     return {
-      id: c.id, name: c.name, email: c.email, phone,
+      id: c.id, name: c.name, email: c.email, phone, role: c.role,
       deals: dealRows.map(r => ({ id: r.dealId, property: r.property }))
     };
   });

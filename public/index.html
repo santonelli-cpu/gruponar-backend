@@ -53,6 +53,13 @@
   .deal-title{font-weight:600; font-size:14.5px;}
   .deal-sub{font-size:12px; color:var(--ink-soft); margin-top:2px;}
   .badge{display:inline-block; font-size:10.5px; padding:3px 10px; border-radius:20px; background:var(--jade-soft); color:var(--jade); margin-top:6px; font-weight:500;}
+  .data-table{width:100%; border-collapse:collapse; font-size:13px;}
+  .data-table th{text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.4px; color:var(--ink-faint); font-weight:600; padding:0 10px 8px; border-bottom:1px solid var(--line-strong);}
+  .data-table td{padding:9px 10px; border-bottom:0.5px solid var(--line); vertical-align:middle;}
+  .data-table tr:last-child td{border-bottom:none;}
+  .role-badge{font-size:10.5px; padding:2px 9px; border-radius:20px; font-weight:500; white-space:nowrap;}
+  .role-badge.buyer{background:var(--gold-soft); color:#6B4E1E;}
+  .role-badge.seller{background:var(--oxblood-soft); color:var(--oxblood);}
   .badge.scn-trust{background:var(--gold-soft); color:#6B4E1E;}
   .badge.scn-transfer{background:var(--clay-soft); color:#7A3417;}
   .badge.scn-trust-termination{background:var(--oxblood-soft); color:var(--oxblood);}
@@ -238,6 +245,8 @@ const STRINGS = {
     navDashboard: 'Dashboard', navOperations: 'Operaciones', navTeam: 'Equipo', navClients: 'Clientes',
     downloadCsv: 'Descargar lista (CSV)', noClientsYet: 'Todavía no hay compradores ni vendedores con cuenta.',
     phonePh: 'Teléfono', noDealsYet: 'Sin operación ligada',
+    searchByName: 'Buscar por nombre...', allRoles: 'Todos', noClientsMatch: 'Ningún cliente coincide con la búsqueda/filtro.',
+    nameLabel: 'Nombre', roleLabel: 'Rol',
     loginTitle: 'Iniciar sesión', loginSub: 'Ingresa con tu correo y contraseña.',
     loginEmailPh: 'correo@ejemplo.com', loginPasswordPh: 'Contraseña', loginSubmit: 'Entrar', loginSubmitting: 'Entrando...',
     loginNoAccount: '¿Eres agente o abogado y no tienes cuenta?', loginCreateAccount: 'Crear cuenta',
@@ -422,6 +431,8 @@ const STRINGS = {
     navDashboard: 'Dashboard', navOperations: 'Deals', navTeam: 'Team', navClients: 'Clients',
     downloadCsv: 'Download list (CSV)', noClientsYet: 'No buyers or sellers with an account yet.',
     phonePh: 'Phone', noDealsYet: 'No linked deal',
+    searchByName: 'Search by name...', allRoles: 'All', noClientsMatch: 'No client matches that search/filter.',
+    nameLabel: 'Name', roleLabel: 'Role',
     loginTitle: 'Log in', loginSub: 'Enter your email and password.',
     loginEmailPh: 'email@example.com', loginPasswordPh: 'Password', loginSubmit: 'Log in', loginSubmitting: 'Logging in...',
     loginNoAccount: 'Are you an agent or lawyer without an account?', loginCreateAccount: 'Create account',
@@ -616,6 +627,8 @@ let dashboardData = null;
 let pendingUsers = null;
 let activeTeamMembers = null;
 let clientsCache = undefined;
+let clientsSearch = '';
+let clientsRoleFilter = 'all';
 let kycCache = {};
 let kycFormOpenFor = null;
 
@@ -1737,33 +1750,71 @@ function buildClientsSection(){
     return wrap;
   }
 
-  const topRow = document.createElement('div');
-  topRow.style.cssText = 'display:flex; justify-content:flex-end; margin-bottom:10px;';
-  const downloadBtn = document.createElement('button');
-  downloadBtn.className = 'btn'; downloadBtn.innerHTML = `<i class="ti ti-download" aria-hidden="true"></i> ${t('downloadCsv')}`;
-  downloadBtn.onclick = () => downloadClientsCsv(clientsCache);
-  topRow.appendChild(downloadBtn);
-  wrap.appendChild(topRow);
+  const controls = document.createElement('div');
+  controls.style.cssText = 'display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap; align-items:center;';
+  controls.innerHTML = `
+    <input type="text" id="clients-search" placeholder="${t('searchByName')}" value="${escapeHtml(clientsSearch)}" style="flex:1; min-width:180px; font-size:13px; padding:7px 10px;">
+    <select id="clients-role-filter" style="font-size:13px; padding:7px 10px;">
+      <option value="all" ${clientsRoleFilter==='all'?'selected':''}>${t('allRoles')}</option>
+      <option value="buyer" ${clientsRoleFilter==='buyer'?'selected':''}>${t('buyerLabel2')}</option>
+      <option value="seller" ${clientsRoleFilter==='seller'?'selected':''}>${t('sellerLabel2')}</option>
+    </select>
+    <button class="btn" id="clients-download"><i class="ti ti-download" aria-hidden="true"></i> ${t('downloadCsv')}</button>
+  `;
+  wrap.appendChild(controls);
+  controls.querySelector('#clients-search').oninput = (e) => {
+    clientsSearch = e.target.value;
+    const cursor = e.target.selectionStart;
+    render();
+    // render() reconstruye todo el DOM (incluido este input) — sin esto, el
+    // foco y la posición del cursor se pierden en cada tecla mientras buscas.
+    const el = document.getElementById('clients-search');
+    if(el){ el.focus(); el.setSelectionRange(cursor, cursor); }
+  };
+  controls.querySelector('#clients-role-filter').onchange = (e) => { clientsRoleFilter = e.target.value; render(); };
+
+  const search = clientsSearch.trim().toLowerCase();
+  const filtered = clientsCache.filter(c =>
+    (clientsRoleFilter === 'all' || c.role === clientsRoleFilter) &&
+    (!search || c.name.toLowerCase().includes(search))
+  );
+  controls.querySelector('#clients-download').onclick = () => downloadClientsCsv(filtered);
 
   if(!clientsCache.length){
     card.innerHTML = `<div class="field-hint" style="margin:0;">${t('noClientsYet')}</div>`;
     wrap.appendChild(card);
     return wrap;
   }
+  if(!filtered.length){
+    card.innerHTML = `<div class="field-hint" style="margin:0;">${t('noClientsMatch')}</div>`;
+    wrap.appendChild(card);
+    return wrap;
+  }
 
-  clientsCache.forEach(c => {
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:0.5px solid var(--line); gap:10px; flex-wrap:wrap;';
+  card.style.overflowX = 'auto';
+  const table = document.createElement('table');
+  table.className = 'data-table';
+  table.innerHTML = `<thead><tr>
+    <th>${t('nameLabel')}</th><th>${t('emailLabel')}</th><th>${t('phonePh')}</th><th>${t('roleLabel')}</th><th>${t('dealSingular')}</th>
+  </tr></thead>`;
+  const tbody = document.createElement('tbody');
+  filtered.forEach(c => {
+    const tr = document.createElement('tr');
     const dealsLabel = c.deals.map(d => escapeHtml(d.property)).join(', ') || t('noDealsYet');
-    row.innerHTML = `<span style="font-size:13px;">${escapeHtml(c.name)} <span class="field-hint" style="margin:0;">— ${escapeHtml(c.email)} · ${dealsLabel}</span></span>`;
-
-    const phoneWrap = document.createElement('span');
-    phoneWrap.style.cssText = 'display:flex; align-items:center; gap:6px;';
+    const roleLabel = c.role === 'buyer' ? t('buyerLabel2') : t('sellerLabel2');
+    tr.innerHTML = `
+      <td>${escapeHtml(c.name)}</td>
+      <td>${escapeHtml(c.email)}</td>
+      <td></td>
+      <td><span class="role-badge ${c.role}">${roleLabel}</span></td>
+      <td>${dealsLabel}</td>
+    `;
+    const phoneCell = tr.children[2];
     const phoneInput = document.createElement('input');
     phoneInput.type = 'text'; phoneInput.value = c.phone || ''; phoneInput.placeholder = t('phonePh');
-    phoneInput.style.cssText = 'font-size:12px; padding:4px 8px; width:140px;';
+    phoneInput.style.cssText = 'font-size:12px; padding:4px 8px; width:120px;';
     const saveBtn = document.createElement('button');
-    saveBtn.className = 'btn'; saveBtn.style.fontSize = '11px'; saveBtn.textContent = t('save');
+    saveBtn.className = 'btn'; saveBtn.style.cssText = 'font-size:11px; margin-left:6px;'; saveBtn.textContent = t('save');
     saveBtn.onclick = async () => {
       saveBtn.disabled = true;
       try{
@@ -1774,11 +1825,13 @@ function buildClientsSection(){
       }catch(e){ alert(e.message); }
       saveBtn.disabled = false;
     };
-    phoneWrap.appendChild(phoneInput);
-    phoneWrap.appendChild(saveBtn);
-    row.appendChild(phoneWrap);
-    card.appendChild(row);
+    phoneCell.appendChild(phoneInput);
+    phoneCell.appendChild(saveBtn);
+    tbody.appendChild(tr);
   });
+  table.appendChild(tbody);
+  card.innerHTML = '';
+  card.appendChild(table);
   wrap.appendChild(card);
   return wrap;
 }
@@ -1793,9 +1846,9 @@ async function loadClients(){
 }
 
 function downloadClientsCsv(clients){
-  const header = ['Nombre', 'Correo', 'Teléfono', 'Operaciones'];
+  const header = ['Nombre', 'Correo', 'Teléfono', 'Rol', 'Operaciones'];
   const csvEscape = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
-  const rows = clients.map(c => [c.name, c.email, c.phone || '', c.deals.map(d => d.property).join('; ')]);
+  const rows = clients.map(c => [c.name, c.email, c.phone || '', c.role === 'buyer' ? t('buyerLabel2') : t('sellerLabel2'), c.deals.map(d => d.property).join('; ')]);
   const csv = [header, ...rows].map(r => r.map(csvEscape).join(',')).join('\r\n');
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
