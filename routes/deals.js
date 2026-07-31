@@ -1305,12 +1305,13 @@ router.patch('/:id/tasks/:taskId', requireRole('admin', 'lawyer'), rateLimitWrit
 
   // Asignar la tarea a un abogado interno (o a un admin, o a nadie con
   // null) — solo admin decide quién lleva cada paso.
+  let assignee = null;
   if (assignedTo !== undefined) {
     if (req.session.role !== 'admin') {
       return res.status(403).json({ error: 'Solo un administrador puede asignar tareas.' });
     }
     if (assignedTo !== null) {
-      const assignee = db.prepare("SELECT id, name FROM users WHERE id = ? AND role IN ('lawyer', 'admin') AND status = 'active'").get(assignedTo);
+      assignee = db.prepare("SELECT id, name, email FROM users WHERE id = ? AND role IN ('lawyer', 'admin') AND status = 'active'").get(assignedTo);
       if (!assignee) return res.status(400).json({ error: 'Solo se puede asignar a un abogado interno o admin activo.' });
       logActivity(req.params.id, req.session.userId, 'task_assigned', `${task.label_es} → ${assignee.name}`);
     }
@@ -1319,6 +1320,19 @@ router.patch('/:id/tasks/:taskId', requireRole('admin', 'lawyer'), rateLimitWrit
   }
 
   res.json({ ok: true });
+
+  // Aviso por correo al asignado (best-effort, después de responder) — que
+  // se entere de que le toca sin tener que entrar a revisar. No se avisa si
+  // se asigna a sí mismo ni al des-asignar.
+  if (assignee && assignee.id !== req.session.userId && task.assigned_to !== assignee.id && mailer.isConfigured()) {
+    const deal = db.prepare('SELECT property FROM deals WHERE id = ?').get(req.params.id);
+    const assigner = db.prepare('SELECT name FROM users WHERE id = ?').get(req.session.userId);
+    mailer.sendTaskAssignedEmail({
+      to: assignee.email, name: assignee.name, dealProperty: deal.property,
+      taskLabel: task.label_es, assignedByName: assigner ? assigner.name : 'Un administrador',
+      url: `${req.protocol}://${req.get('host')}/?dealId=${req.params.id}`
+    }).then(r => { if (!r.ok) console.error('[resend] no se pudo avisar la tarea asignada', req.params.id, r.error); });
+  }
 });
 
 // GET /api/deals/:id/team-assignees — admins y abogados internos activos, a

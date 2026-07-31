@@ -101,6 +101,31 @@
   .field-editable{cursor:pointer; border-bottom:1px dashed transparent; border-radius:2px;}
   .field-editable:hover{border-bottom-color:var(--line-strong); background:var(--stone);}
   .inline-edit-input{border:1px solid var(--line-strong); border-radius:6px; padding:3px 7px; background:var(--stone-card); color:var(--ink);}
+  /* Toasts — confirmaciones y errores sin popups nativos del navegador */
+  #toast-stack{position:fixed; bottom:18px; right:18px; z-index:2000; display:flex; flex-direction:column; gap:8px; max-width:min(380px, calc(100vw - 36px));}
+  .toast{display:flex; align-items:flex-start; gap:9px; padding:11px 14px; border-radius:10px; font-size:13px; line-height:1.4;
+    background:var(--oxblood-deep); color:#F6F4F0; box-shadow:0 6px 24px rgba(33,22,19,0.28);
+    animation:toast-in .18s ease-out;}
+  .toast.error{background:#7A1E16;}
+  .toast.success{background:#2F5D46;}
+  .toast i{flex-shrink:0; margin-top:1px;}
+  @keyframes toast-in{from{opacity:0; transform:translateY(8px);}to{opacity:1; transform:none;}}
+  .toast.leaving{opacity:0; transform:translateY(6px); transition:opacity .25s, transform .25s;}
+  /* Diálogo de confirmación propio (reemplaza confirm() nativo) */
+  .dialog-overlay{position:fixed; inset:0; background:rgba(33,22,19,0.55); display:flex; align-items:center; justify-content:center; z-index:1500; padding:20px;}
+  .dialog-box{background:var(--stone-card); border-radius:14px; width:min(420px, 94vw); padding:20px; box-shadow:0 12px 40px rgba(33,22,19,0.3);}
+  .dialog-box p{margin:0 0 16px; font-size:13.5px; line-height:1.5; white-space:pre-line;}
+  .dialog-actions{display:flex; gap:8px; justify-content:flex-end;}
+  /* Spinner en botones de acciones lentas */
+  .btn-spinner{display:inline-block; width:12px; height:12px; border:2px solid currentColor; border-top-color:transparent; border-radius:50%; animation:spin .7s linear infinite; vertical-align:-2px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  /* Barra fija de secciones dentro del detalle de la operación */
+  .deal-section-nav{position:sticky; top:0; z-index:30; display:flex; gap:6px; overflow-x:auto; padding:8px 2px; margin:0 0 4px;
+    background:var(--stone); scrollbar-width:none;}
+  .deal-section-nav::-webkit-scrollbar{display:none;}
+  .deal-section-nav button{flex-shrink:0; border:0.5px solid var(--line-strong); background:var(--stone-card); color:var(--ink-soft);
+    font-size:11.5px; padding:4px 11px; border-radius:20px; cursor:pointer; white-space:nowrap; font-family:inherit;}
+  .deal-section-nav button:hover{background:var(--oxblood-soft); color:var(--oxblood); border-color:var(--oxblood-soft);}
   .progress-row{display:flex; gap:28px; margin-bottom:16px; flex-wrap:wrap;}
   .progress-block{flex:1; min-width:160px;}
   .progress-top{display:flex; justify-content:space-between; font-size:12px; margin-bottom:5px;}
@@ -405,12 +430,14 @@ const STRINGS = {
     nameLabel: 'Nombre', roleLabel: 'Rol', agencyLabel: 'Agencia',
     networkError: 'Sin conexión con el servidor — revisa tu internet e intenta de nuevo.',
     gestoriaSection: 'Gestoría', bancoSection: 'Banco',
-    assignedTo: 'Asignada a', assignedToNobody: 'Sin asignar',
+    assignedTo: 'Asignada a', assignedToNobody: 'Sin asignar', confirmLabel: 'Confirmar',
     sendProgressSummary: 'Enviar resumen de avance a las partes',
     confirmSendProgressSummary: '¿Mandar por correo a comprador y vendedor el resumen de pasos completados y cuál sigue?',
     progressSummarySent: 'Resumen enviado a {count} destinatario(s).',
     lastProgressSummary: 'Último resumen enviado: {date}',
     activityTitle: 'Actividad', activityEmpty: 'Todavía no hay actividad registrada en esta operación.',
+    navSecParties: 'Partes', navSecDocs: 'Documentos', navSecKyc: 'Checklist KYC', navSecSignatures: 'Firmas',
+    navSecTracker: 'Tracker', navSecPeople: 'Personas', navSecContract: 'Contrato', navSecActivity: 'Actividad',
     actDealCreated: 'creó la operación', actDealTrashed: 'mandó la operación a la papelera', actDealRestored: 'restauró la operación',
     actDocUploaded: 'subió un documento', actDocApproved: 'aprobó un documento', actDocRejected: 'rechazó un documento',
     actTaskDone: 'completó un paso del tracker', actTaskReopened: 'reabrió un paso del tracker', actTaskAssigned: 'asignó una tarea',
@@ -663,12 +690,14 @@ const STRINGS = {
     nameLabel: 'Name', roleLabel: 'Role', agencyLabel: 'Agency',
     networkError: 'Could not reach the server — check your connection and try again.',
     gestoriaSection: 'Gestoría (permits & certificates)', bancoSection: 'Bank',
-    assignedTo: 'Assigned to', assignedToNobody: 'Unassigned',
+    assignedTo: 'Assigned to', assignedToNobody: 'Unassigned', confirmLabel: 'Confirm',
     sendProgressSummary: 'Send progress summary to the parties',
     confirmSendProgressSummary: 'Email buyer and seller the summary of completed steps and what comes next?',
     progressSummarySent: 'Summary sent to {count} recipient(s).',
     lastProgressSummary: 'Last summary sent: {date}',
     activityTitle: 'Activity', activityEmpty: 'No activity recorded on this deal yet.',
+    navSecParties: 'Parties', navSecDocs: 'Documents', navSecKyc: 'KYC checklist', navSecSignatures: 'Signatures',
+    navSecTracker: 'Tracker', navSecPeople: 'People', navSecContract: 'Contract', navSecActivity: 'Activity',
     actDealCreated: 'created the deal', actDealTrashed: 'moved the deal to trash', actDealRestored: 'restored the deal',
     actDocUploaded: 'uploaded a document', actDocApproved: 'approved a document', actDocRejected: 'rejected a document',
     actTaskDone: 'completed a tracker step', actTaskReopened: 'reopened a tracker step', actTaskAssigned: 'assigned a task',
@@ -946,6 +975,74 @@ let docChecklistExpanded = {};
 let teamAssigneesCache = undefined;
 let activityCache = {};
 
+// Toast (esquina inferior derecha, se va solo) — reemplaza alert() para
+// confirmaciones y errores; los errores duran más para alcanzar a leerlos.
+// Vive fuera de #body para sobrevivir a los render().
+function showToast(message, type = 'info'){
+  let stack = document.getElementById('toast-stack');
+  if(!stack){
+    stack = document.createElement('div');
+    stack.id = 'toast-stack';
+    document.body.appendChild(stack);
+  }
+  const toast = document.createElement('div');
+  toast.className = 'toast ' + (type === 'error' ? 'error' : type === 'success' ? 'success' : '');
+  const icon = type === 'error' ? 'ti-alert-circle' : type === 'success' ? 'ti-circle-check' : 'ti-info-circle';
+  toast.innerHTML = `<i class="ti ${icon}" aria-hidden="true"></i><span></span>`;
+  toast.querySelector('span').textContent = message;
+  stack.appendChild(toast);
+  const ttl = type === 'error' ? 6000 : 3500;
+  setTimeout(() => {
+    toast.classList.add('leaving');
+    setTimeout(() => toast.remove(), 300);
+  }, ttl);
+}
+
+// Reemplazo estilizado de confirm() — devuelve una promesa true/false.
+// `danger: true` pinta el botón de confirmar en rojo (borrar, quitar...).
+function confirmDialog(message, { danger = false, confirmLabel } = {}){
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'dialog-overlay';
+    overlay.innerHTML = `
+      <div class="dialog-box">
+        <p></p>
+        <div class="dialog-actions">
+          <button class="btn dlg-cancel">${t('cancel')}</button>
+          <button class="btn ${danger ? 'danger' : 'primary'} dlg-ok">${confirmLabel || t('confirmLabel')}</button>
+        </div>
+      </div>
+    `;
+    overlay.querySelector('p').textContent = message;
+    const close = (val) => { overlay.remove(); window.removeEventListener('keydown', onKey); resolve(val); };
+    const onKey = (e) => { if(e.key === 'Escape') close(false); if(e.key === 'Enter') close(true); };
+    overlay.onclick = (e) => { if(e.target === overlay) close(false); };
+    overlay.querySelector('.dlg-cancel').onclick = () => close(false);
+    overlay.querySelector('.dlg-ok').onclick = () => close(true);
+    window.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+    overlay.querySelector('.dlg-ok').focus();
+  });
+}
+
+// Estado de carga en botones de acciones lentas (generar PDF, mandar a
+// firma): deshabilita, muestra spinner conservando el ancho, y restaura al
+// terminar — el usuario ve que algo está pasando y no puede dar doble clic.
+async function withButtonLoading(btn, fn){
+  const original = btn.innerHTML;
+  const width = btn.offsetWidth;
+  btn.disabled = true;
+  btn.style.minWidth = width + 'px';
+  btn.innerHTML = '<span class="btn-spinner"></span>';
+  try{
+    return await fn();
+  } finally {
+    btn.disabled = false;
+    btn.style.minWidth = '';
+    btn.innerHTML = original;
+  }
+}
+
 async function loadTeamAssignees(dealId){
   teamAssigneesCache = null; // en vuelo — no volver a pedir en cada render
   try{ teamAssigneesCache = await apiFetch(`/api/deals/${dealId}/team-assignees`); }
@@ -1190,7 +1287,7 @@ async function openDeal(dealId){
     // cualquier acción que dispara openDeal también generó actividad nueva.
     delete activityCache[dealId];
   }catch(e){
-    alert(e.message);
+    showToast(e.message, 'error');
     // La operación ya no existe (alguien más la borró) o ya no la puedes
     // ver — antes se quedaba la copia vieja en `deals` (de cuando sí
     // existía) y el detalle se seguía mostrando con esos datos viejos
@@ -1282,7 +1379,30 @@ function myPartyInDeal(deal){
   return deal.parties.find(p => p.linkedUserIds.includes(currentUser.id)) || null;
 }
 
+// Cada render() reconstruye el DOM completo y el navegador brincaba al
+// inicio de la página en CADA acción (marcar un documento, asignar una
+// tarea...) — se preserva el scroll mientras sigas viendo la MISMA vista;
+// al cambiar de vista (otra pestaña, abrir/cerrar una operación) sí se va
+// arriba, que es lo esperado.
+let _lastViewKey = null;
+function currentViewKey(){
+  return [authenticated, mainTab, adminView, activeDealId, portalRole, portalPartyId].join('|');
+}
+
 function render(){
+  const viewKey = currentViewKey();
+  const sameView = viewKey === _lastViewKey;
+  const scrollY = window.scrollY;
+  _lastViewKey = viewKey;
+  renderInner();
+  if(sameView){
+    window.scrollTo(0, scrollY);
+  } else {
+    window.scrollTo(0, 0);
+  }
+}
+
+function renderInner(){
   document.getElementById('mainTabs').style.visibility = authenticated ? 'visible' : 'hidden';
   document.getElementById('header-logout').style.display = authenticated ? '' : 'none';
   document.getElementById('tab-admin').textContent = currentUser && currentUser.role === 'admin' ? t('tabAdmin') : t('tabStaffOperations');
@@ -1962,22 +2082,22 @@ function renderAdmin(body){
       menuEl.querySelector(`#menu-status-${d.id}`).onclick = async () => {
         dealMenuOpenFor = null;
         const nextStatus = d.status === 'completed' ? 'active' : 'completed';
-        if(nextStatus === 'completed' && !confirm(t('confirmMarkCompleted'))) return;
+        if(nextStatus === 'completed' && !await confirmDialog(t('confirmMarkCompleted'))) return;
         try{
           await apiFetch(`/api/deals/${d.id}`, { method:'PATCH', body: JSON.stringify({ status: nextStatus }) });
           d.status = nextStatus;
           render();
-        }catch(err){ alert(err.message); }
+        }catch(err){ showToast(err.message, 'error'); }
       };
       menuEl.querySelector(`#menu-delete-${d.id}`).onclick = async () => {
         dealMenuOpenFor = null;
-        if(!confirm(t('confirmDeleteDeal'))) return;
+        if(!await confirmDialog(t('confirmDeleteDeal'), { danger: true })) return;
         try{
           await apiFetch(`/api/deals/${d.id}`, { method: 'DELETE' });
           deals = deals.filter(x => x.id !== d.id);
           if(currentUser.role === 'admin') loadTrash();
           render();
-        }catch(err){ alert(err.message); }
+        }catch(err){ showToast(err.message, 'error'); }
       };
     }
     body.appendChild(card);
@@ -2147,7 +2267,7 @@ function buildDashboard(){
           try{
             await apiFetch(`/api/deals/${dealId}/documents/${doc.documentId}`, { method:'PATCH', body: JSON.stringify({status:'done'}) });
             await loadDashboard();
-          }catch(e){ alert(e.message); }
+          }catch(e){ showToast(e.message, 'error'); }
         };
         card.appendChild(row);
       });
@@ -2175,7 +2295,7 @@ function buildDashboard(){
           try{
             await apiFetch(`/api/deals/${dealId}/tasks/${task.taskId}`, { method:'PATCH', body: JSON.stringify({status: next}) });
             await loadDashboard();
-          }catch(e){ alert(e.message); }
+          }catch(e){ showToast(e.message, 'error'); }
         };
         card.appendChild(row);
       });
@@ -2210,7 +2330,7 @@ function buildTeamSection(){
         try{
           await apiFetch(`/api/users/${u.id}/approve`, { method:'PATCH' });
           await loadPendingUsers();
-        }catch(e){ alert(e.message); }
+        }catch(e){ showToast(e.message, 'error'); }
       };
       row.appendChild(approveBtn);
       pendingCard.appendChild(row);
@@ -2324,12 +2444,12 @@ function buildTeamSection(){
       reset2faBtn.textContent = t('reset2fa');
       reset2faBtn.title = t('reset2faTitle');
       reset2faBtn.onclick = async () => {
-        if(!confirm(t('reset2faConfirm', { name: u.name }))) return;
+        if(!await confirmDialog(t('reset2faConfirm', { name: u.name }))) return;
         reset2faBtn.disabled = true;
         try{
           await apiFetch(`/api/users/${u.id}/reset-2fa`, { method:'POST' });
-          alert(t('reset2faDone'));
-        }catch(e){ alert(e.message); }
+          showToast(t('reset2faDone'), 'success');
+        }catch(e){ showToast(e.message, 'error'); }
         reset2faBtn.disabled = false;
       };
       actionsCell.appendChild(reset2faBtn);
@@ -2523,12 +2643,12 @@ function buildClientsSection(){
     reset2faBtn.className = 'btn'; reset2faBtn.style.fontSize = '11px'; reset2faBtn.textContent = t('reset2fa');
     reset2faBtn.title = t('reset2faTitle');
     reset2faBtn.onclick = async () => {
-      if(!confirm(t('reset2faConfirm', { name: c.name }))) return;
+      if(!await confirmDialog(t('reset2faConfirm', { name: c.name }))) return;
       reset2faBtn.disabled = true;
       try{
         await apiFetch(`/api/users/${c.id}/reset-2fa`, { method:'POST' });
-        alert(t('reset2faDone'));
-      }catch(e){ alert(e.message); }
+        showToast(t('reset2faDone'), 'success');
+      }catch(e){ showToast(e.message, 'error'); }
       reset2faBtn.disabled = false;
     };
     actionsCell.appendChild(reset2faBtn);
@@ -2545,7 +2665,7 @@ function buildClientsSection(){
         c.phone = phoneInput.value.trim() || null;
         saveBtn.textContent = t('saved');
         setTimeout(() => { saveBtn.textContent = t('save'); }, 1200);
-      }catch(e){ alert(e.message); }
+      }catch(e){ showToast(e.message, 'error'); }
       saveBtn.disabled = false;
     };
     phoneCell.appendChild(phoneInput);
@@ -2614,15 +2734,15 @@ function buildTrashSection(){
         deals = [];
         render();
         loadData();
-      }catch(e){ alert(e.message); }
+      }catch(e){ showToast(e.message, 'error'); }
     };
     row.querySelector(`#purge-${d.id}`).onclick = async () => {
-      if(!confirm(t('confirmDeletePermanently'))) return;
+      if(!await confirmDialog(t('confirmDeletePermanently'), { danger: true })) return;
       try{
         await apiFetch(`/api/deals/${d.id}/permanent`, { method: 'DELETE' });
         trashedDeals = trashedDeals.filter(x => x.id !== d.id);
         render();
-      }catch(e){ alert(e.message); }
+      }catch(e){ showToast(e.message, 'error'); }
     };
   });
   wrap.appendChild(card);
@@ -2668,7 +2788,7 @@ function buildNotaryPaymentNoteSection(){
       const savedEl = card.querySelector('#notary-note-saved');
       savedEl.style.display = '';
       setTimeout(() => { savedEl.style.display = 'none'; }, 2000);
-    }catch(e){ alert(e.message); }
+    }catch(e){ showToast(e.message, 'error'); }
   };
   return card;
 }
@@ -2698,7 +2818,7 @@ function buildIntegrationsSection(){
     const disconnectBtn = document.createElement('button');
     disconnectBtn.className = 'btn'; disconnectBtn.style.fontSize = '11px'; disconnectBtn.textContent = t('disconnect');
     disconnectBtn.onclick = async () => {
-      try{ await apiFetch('/api/google-drive/disconnect', { method:'POST' }); driveStatus = null; render(); }catch(e){ alert(e.message); }
+      try{ await apiFetch('/api/google-drive/disconnect', { method:'POST' }); driveStatus = null; render(); }catch(e){ showToast(e.message, 'error'); }
     };
     actions.appendChild(disconnectBtn);
     row.appendChild(actions);
@@ -2812,12 +2932,12 @@ function buildPartyFieldsBlock(allowedTypes, existing, dealId){
   const attorneyRemoveBtn = box.querySelector('.pf-attorney-remove');
   if(attorneyRemoveBtn){
     attorneyRemoveBtn.onclick = async () => {
-      if(!confirm(t('confirmRemoveAttorney'))) return;
+      if(!await confirmDialog(t('confirmRemoveAttorney'), { danger: true })) return;
       attorneyRemoveBtn.disabled = true;
       try{
         await apiFetch(`/api/deals/${dealId}/parties/${existing.id}`, { method:'PATCH', body: JSON.stringify({ removeAttorney: true }) });
         await openDeal(dealId);
-      }catch(e){ alert(e.message); attorneyRemoveBtn.disabled = false; }
+      }catch(e){ showToast(e.message, 'error'); attorneyRemoveBtn.disabled = false; }
     };
   }
 
@@ -3060,14 +3180,14 @@ function buildPartiesSection(deal){
               msg += result.welcomeEmailSent ? t('welcomeEmailSentNote') : t('welcomeEmailFailedNote', { error: result.welcomeEmailError || '' });
               alert(msg);
             } else if(result.emailError){
-              alert(t('partyRegisterFailedAlert', { error: result.emailError }));
+              showToast(t('partyRegisterFailedAlert', { error: result.emailError }), 'error');
             }
             if(result.attorneyTemporaryPassword){
               let msg = t('attorneyRegisteredAlert', { password: result.attorneyTemporaryPassword });
               msg += result.attorneyWelcomeEmailSent ? t('welcomeEmailSentNote') : t('welcomeEmailFailedNote', { error: result.attorneyWelcomeEmailError || '' });
               alert(msg);
             } else if(result.attorneyError){
-              alert(t('partyRegisterFailedAlert', { error: result.attorneyError }));
+              showToast(t('partyRegisterFailedAlert', { error: result.attorneyError }), 'error');
             }
             await openDeal(deal.id);
           }catch(e){ errEl.textContent = e.message; }
@@ -3078,11 +3198,11 @@ function buildPartiesSection(deal){
       };
       const removeBtn = row.querySelector('.pty-remove');
       if(removeBtn) removeBtn.onclick = async () => {
-        if(!confirm(t('confirmRemoveParty', { name: p.name }))) return;
+        if(!await confirmDialog(t('confirmRemoveParty', { name: p.name }), { danger: true })) return;
         try{
           await apiFetch(`/api/deals/${deal.id}/parties/${p.id}`, { method:'DELETE' });
           await openDeal(deal.id);
-        }catch(e){ alert(e.message); }
+        }catch(e){ showToast(e.message, 'error'); }
       };
       card.appendChild(row);
     });
@@ -3107,7 +3227,7 @@ function buildPartiesSection(deal){
             msg += result.welcomeEmailSent ? t('welcomeEmailSentNote') : t('welcomeEmailFailedNote', { error: result.welcomeEmailError || '' });
             alert(msg);
           } else if(result.emailError){
-            alert(t('partyRegisterFailedAlert', { error: result.emailError }));
+            showToast(t('partyRegisterFailedAlert', { error: result.emailError }), 'error');
           }
           await openDeal(deal.id);
         }catch(e){ errEl.textContent = e.message; }
@@ -3133,6 +3253,34 @@ function buildAdminDealDetail(deal){
   back.innerHTML = `<i class="ti ti-chevron-left" aria-hidden="true"></i> ${t('allDeals')}`;
   back.onclick = () => { activeDealId=null; render(); };
   wrap.appendChild(back);
+
+  // Barra fija de secciones — la página del detalle es larga (partes,
+  // checklists, KYC, tracker, firmas, personas, contrato, actividad); esto
+  // permite saltar directo sin scroll infinito. Los IDs los pone
+  // sectionAnchor() al crear cada título.
+  const NAV_SECTIONS = [
+    ['sec-parties', t('navSecParties')],
+    ['sec-docs', t('navSecDocs')],
+    ['sec-kyc', t('navSecKyc')],
+    ['admin-kyc-section', t('navSecSignatures')],
+    ['sec-tracker', t('navSecTracker')],
+    ['sec-people', t('navSecPeople')],
+    ['sec-contract', t('navSecContract')],
+    ['sec-activity', t('navSecActivity')]
+  ];
+  const nav = document.createElement('nav');
+  nav.className = 'deal-section-nav';
+  NAV_SECTIONS.forEach(([id, label]) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = label;
+    btn.onclick = () => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    nav.appendChild(btn);
+  });
+  wrap.appendChild(nav);
+  // Con la barra sticky arriba, el destino del scroll debe quedar DEBAJO de
+  // ella, no tapado — scroll-margin en cada ancla lo resuelve sin JS.
+  function sectionAnchor(el, id){ el.id = id; el.style.scrollMarginTop = '46px'; return el; }
 
   const header = document.createElement('div');
   header.className = 'card';
@@ -3201,7 +3349,7 @@ function buildAdminDealDetail(deal){
     try{
       await apiFetch('/api/deals/' + deal.id, { method:'PATCH', body: JSON.stringify(body) });
       await openDeal(deal.id);
-    }catch(e){ alert(e.message); if(revert) revert(); else render(); }
+    }catch(e){ showToast(e.message, 'error'); if(revert) revert(); else render(); }
   }
   header.querySelector('#deal-title-display').onclick = function(){
     if(this.querySelector('input')) return;
@@ -3259,11 +3407,11 @@ function buildAdminDealDetail(deal){
   };
   header.querySelector('#toggleDealStatusBtn').onclick = async () => {
     const nextStatus = deal.status === 'completed' ? 'active' : 'completed';
-    if(nextStatus === 'completed' && !confirm(t('confirmMarkCompleted'))) return;
+    if(nextStatus === 'completed' && !await confirmDialog(t('confirmMarkCompleted'))) return;
     try{
       await apiFetch(`/api/deals/${deal.id}`, { method:'PATCH', body: JSON.stringify({ status: nextStatus }) });
       await openDeal(deal.id);
-    }catch(e){ alert(e.message); }
+    }catch(e){ showToast(e.message, 'error'); }
   };
   const driveFolderBtn = header.querySelector('#create-drive-folder-btn');
   if(driveFolderBtn){
@@ -3272,40 +3420,40 @@ function buildAdminDealDetail(deal){
       try{
         await apiFetch(`/api/deals/${deal.id}/drive-folder`, { method:'POST' });
         await openDeal(deal.id);
-      }catch(e){ alert(e.message); driveFolderBtn.disabled = false; driveFolderBtn.innerHTML = `<i class="ti ti-folder-plus" aria-hidden="true"></i> ${t('createDriveFolder')}`; }
+      }catch(e){ showToast(e.message, 'error'); driveFolderBtn.disabled = false; driveFolderBtn.innerHTML = `<i class="ti ti-folder-plus" aria-hidden="true"></i> ${t('createDriveFolder')}`; }
     };
   }
   header.querySelector('#escrow-company-select').onchange = async (e) => {
     const next = e.target.value;
-    if(!confirm(t('confirmChangeEscrow', { company: next==='armour'?'Armour Secure':'TLA Financial Services' }))){
+    if(!await confirmDialog(t('confirmChangeEscrow', { company: next==='armour'?'Armour Secure':'TLA Financial Services' }))){
       e.target.value = deal.escrowCompany;
       return;
     }
     try{
       await apiFetch('/api/deals/' + deal.id, { method:'PATCH', body: JSON.stringify({ escrowCompany: next }) });
       await openDeal(deal.id);
-    }catch(err){ alert(err.message); e.target.value = deal.escrowCompany; }
+    }catch(err){ showToast(err.message, 'error'); e.target.value = deal.escrowCompany; }
   };
   header.querySelector('#closing-date-input').onchange = async (e) => {
     try{
       await apiFetch('/api/deals/' + deal.id, { method:'PATCH', body: JSON.stringify({ closingDate: e.target.value || null }) });
       deal.closingDate = e.target.value;
-    }catch(err){ alert(err.message); e.target.value = deal.closingDate; }
+    }catch(err){ showToast(err.message, 'error'); e.target.value = deal.closingDate; }
   };
   header.querySelector('#dd-end-date-input').onchange = async (e) => {
     try{
       await apiFetch('/api/deals/' + deal.id, { method:'PATCH', body: JSON.stringify({ dueDiligenceEndDate: e.target.value || null }) });
       deal.dueDiligenceEndDate = e.target.value;
       render();
-    }catch(err){ alert(err.message); e.target.value = deal.dueDiligenceEndDate; }
+    }catch(err){ showToast(err.message, 'error'); e.target.value = deal.dueDiligenceEndDate; }
   };
   header.querySelector('#delDeal').onclick = async () => {
-    if(!confirm(t('confirmDeleteDeal'))) return;
+    if(!await confirmDialog(t('confirmDeleteDeal'), { danger: true })) return;
     try{
       await apiFetch('/api/deals/' + deal.id, { method: 'DELETE' });
       deals = deals.filter(d=>d.id!==deal.id);
       activeDealId = null; render();
-    }catch(e){ alert(e.message); }
+    }catch(e){ showToast(e.message, 'error'); }
   };
 
   // Actos jurídicos — texto libre que redacta admin/abogado interno con el
@@ -3333,18 +3481,18 @@ function buildAdminDealDetail(deal){
         const savedHint = legalActsCard.querySelector('#legal-acts-saved');
         savedHint.style.transition = 'none'; savedHint.style.opacity = '1';
         requestAnimationFrame(() => { savedHint.style.transition = 'opacity 1.5s'; savedHint.style.opacity = '0'; });
-      }catch(err){ alert(err.message); }
+      }catch(err){ showToast(err.message, 'error'); }
     };
   }
 
   const partiesTitle = document.createElement('div');
   partiesTitle.className = 'section-title'; partiesTitle.textContent = t('sellersAndBuyers');
-  wrap.appendChild(partiesTitle);
+  wrap.appendChild(sectionAnchor(partiesTitle, 'sec-parties'));
   wrap.appendChild(buildPartiesSection(deal));
 
   const propTitle = document.createElement('div');
   propTitle.className = 'section-title'; propTitle.textContent = t('propertySection');
-  wrap.appendChild(propTitle);
+  wrap.appendChild(sectionAnchor(propTitle, 'sec-docs'));
   const propCard = document.createElement('div');
   propCard.className = 'card';
   propCard.appendChild(buildPropertyDocsSection(deal, true));
@@ -3374,22 +3522,22 @@ function buildAdminDealDetail(deal){
 
   const docsTitle = document.createElement('div');
   docsTitle.className = 'section-title'; docsTitle.textContent = t('docsChecklist');
-  wrap.appendChild(docsTitle);
+  wrap.appendChild(sectionAnchor(docsTitle, 'sec-kyc'));
   const docsCard = document.createElement('div');
   docsCard.className = 'card';
   docsCard.appendChild(buildDocsBySideGrouping(deal, true));
   wrap.appendChild(docsCard);
 
   const kycTitle = document.createElement('div');
-  kycTitle.className = 'section-title'; kycTitle.id = 'admin-kyc-section'; kycTitle.textContent = t('kycFile');
-  wrap.appendChild(kycTitle);
+  kycTitle.className = 'section-title'; kycTitle.textContent = t('kycFile');
+  wrap.appendChild(sectionAnchor(kycTitle, 'admin-kyc-section'));
   const kycCard = document.createElement('div'); kycCard.className = 'card';
   deal.parties.forEach(p => kycCard.appendChild(buildKycSection(deal, p, true)));
   wrap.appendChild(kycCard);
 
   const tasksTitle = document.createElement('div');
   tasksTitle.className = 'section-title'; tasksTitle.textContent = t('closingTracker');
-  wrap.appendChild(tasksTitle);
+  wrap.appendChild(sectionAnchor(tasksTitle, 'sec-tracker'));
   const tasksCard = document.createElement('div');
   tasksCard.className = 'card';
   tasksCard.appendChild(buildTaskList(deal, ['admin','lawyer'].includes(currentUser.role)));
@@ -3399,12 +3547,12 @@ function buildAdminDealDetail(deal){
 
   const agentsTitle = document.createElement('div');
   agentsTitle.className = 'section-title'; agentsTitle.textContent = t('agentsInDeal');
-  wrap.appendChild(agentsTitle);
+  wrap.appendChild(sectionAnchor(agentsTitle, 'sec-people'));
   wrap.appendChild(buildDealAgentsSection(deal));
 
   const contractTitle = document.createElement('div');
   contractTitle.className = 'section-title'; contractTitle.textContent = t('contractPromise');
-  wrap.appendChild(contractTitle);
+  wrap.appendChild(sectionAnchor(contractTitle, 'sec-contract'));
   const contractCard = document.createElement('div'); contractCard.className = 'card';
   // Generar/editar el contrato es trabajo exclusivo de admin/abogado — el
   // agente ve la misma vista de solo lectura que comprador/vendedor (ver
@@ -3417,7 +3565,7 @@ function buildAdminDealDetail(deal){
   // alargar más la página.
   const activityTitle = document.createElement('div');
   activityTitle.className = 'section-title'; activityTitle.textContent = t('activityTitle');
-  wrap.appendChild(activityTitle);
+  wrap.appendChild(sectionAnchor(activityTitle, 'sec-activity'));
   wrap.appendChild(buildActivitySection(deal));
 
   return wrap;
@@ -3543,12 +3691,12 @@ function buildKycSection(deal, party, isStaffView, kind){
     const sendBtn = document.createElement('button');
     sendBtn.className = 'btn gold';
     sendBtn.textContent = t('sendForSignature');
-    sendBtn.onclick = async () => {
+    sendBtn.onclick = () => withButtonLoading(sendBtn, async () => {
       try{
         await apiFetch(`/api/deals/${deal.id}/kyc/${role}/send-for-signature${kindQs}`, { method:'POST' });
         await loadKyc(deal.id, role, undefined, kind);
-      }catch(e){ alert(e.message); }
-    };
+      }catch(e){ showToast(e.message, 'error'); }
+    });
     actions.appendChild(sendBtn);
   }
 
@@ -3558,11 +3706,11 @@ function buildKycSection(deal, party, isStaffView, kind){
     resetBtn.textContent = t('resetFile');
     resetBtn.title = t('resetFileTitle');
     resetBtn.onclick = async () => {
-      if(!confirm(t('confirmResetFile'))) return;
+      if(!await confirmDialog(t('confirmResetFile'), { danger: true })) return;
       try{
         await apiFetch(`/api/deals/${deal.id}/kyc/${role}${kindQs}`, { method:'DELETE' });
         await loadKyc(deal.id, role, undefined, kind);
-      }catch(e){ alert(e.message); }
+      }catch(e){ showToast(e.message, 'error'); }
     };
     actions.appendChild(resetBtn);
   }
@@ -3578,7 +3726,7 @@ function buildKycSection(deal, party, isStaffView, kind){
       try{
         const { url } = await apiFetch(`/api/deals/${deal.id}/kyc/${role}/signing-url${kindQs}`, { method:'POST' });
         openKycSigningModal(url, deal.id, role, kind);
-      }catch(e){ alert(e.message); }
+      }catch(e){ showToast(e.message, 'error'); }
     };
     actions.appendChild(signBtn);
   }
@@ -3600,7 +3748,7 @@ function buildKycSection(deal, party, isStaffView, kind){
       try{
         await apiUpload(`/api/deals/${deal.id}/kyc/${role}/upload-signed${kindQs}`, fd);
         await loadKyc(deal.id, role, undefined, kind);
-      }catch(err){ alert(err.message); uploadSignedBtn.disabled = false; uploadSignedBtn.innerHTML = original; }
+      }catch(err){ showToast(err.message, 'error'); uploadSignedBtn.disabled = false; uploadSignedBtn.innerHTML = original; }
     };
     actions.appendChild(uploadSignedBtn);
     actions.appendChild(uploadSignedInput);
@@ -3689,11 +3837,11 @@ function buildKycForm(deal, role, data, isStaffView, kind){
     try{
       await apiFetch(`/api/deals/${deal.id}/kyc/${role}${kindQs}`, { method:'POST', body: JSON.stringify({ answers: collectAnswers(), lang }) });
       await loadKyc(deal.id, role, undefined, kind);
-    }catch(e){ alert(e.message); }
+    }catch(e){ showToast(e.message, 'error'); }
   };
   const generateBtn = document.createElement('button');
   generateBtn.className = 'btn primary'; generateBtn.textContent = t('saveGenerateSend');
-  generateBtn.onclick = async () => {
+  generateBtn.onclick = () => withButtonLoading(generateBtn, async () => {
     try{
       await apiFetch(`/api/deals/${deal.id}/kyc/${role}${kindQs}`, { method:'POST', body: JSON.stringify({ answers: collectAnswers(), lang }) });
       const result = await apiFetch(`/api/deals/${deal.id}/kyc/${role}/generate${kindQs}`, { method:'POST' });
@@ -3707,16 +3855,16 @@ function buildKycForm(deal, role, data, isStaffView, kind){
           openKycSigningModal(url, deal.id, role, kind);
         }catch(e){ /* si falla, se queda en la sección con el botón "Firmar ahora" como respaldo */ }
       } else if(result.sentForSignature){
-        alert(t('alertGeneratedSent'));
+        showToast(t('alertGeneratedSent'), 'success');
       } else if(result.pendingReview){
         // Agente/abogado externo — no se manda solo, admin/abogado interno
         // lo revisa y lo manda (ver tarea nueva en Seguimiento del cierre).
-        alert(t('alertPendingReview'));
+        showToast(t('alertPendingReview'));
       } else if(result.autoSendError){
-        alert(t('alertAutoSendFailed', { error: result.autoSendError }));
+        showToast(t('alertAutoSendFailed', { error: result.autoSendError }), 'error');
       }
-    }catch(e){ alert(e.message); }
-  };
+    }catch(e){ showToast(e.message, 'error'); }
+  });
   const closeBtn = document.createElement('button');
   closeBtn.className = 'btn'; closeBtn.textContent = t('close');
   closeBtn.onclick = () => { kycFormOpenFor = null; render(); };
@@ -3750,7 +3898,7 @@ function openKycSigningModal(url, dealId, role, kind){
       const kindQs = kind === 'lpr' ? '?kind=lpr' : '';
       await apiFetch(`/api/deals/${dealId}/kyc/${role}/status${kindQs}`);
       await loadKyc(dealId, role, undefined, kind);
-    }catch(err){ alert(err.message); }
+    }catch(err){ showToast(err.message, 'error'); }
   };
   window.addEventListener('message', onMessage);
 }
@@ -3796,7 +3944,7 @@ function buildDocItemLi(deal, doc, isStaffView, readOnly){
     try{
       await apiFetch(`/api/deals/${deal.id}/documents/${doc.id}`, { method:'PATCH', body: JSON.stringify({status: next}) });
       doc.status = next; render();
-    }catch(e){ alert(e.message); }
+    }catch(e){ showToast(e.message, 'error'); }
   };
   li.querySelectorAll('.sub-check').forEach(checkEl => {
     checkEl.onchange = async (e) => {
@@ -3805,19 +3953,19 @@ function buildDocItemLi(deal, doc, isStaffView, readOnly){
       try{
         await apiFetch(`/api/deals/${deal.id}/documents/${doc.id}`, { method:'PATCH', body: JSON.stringify({subChecks: {[scLabel]: next}}) });
         doc.subChecks[scLabel] = next;
-      }catch(err){ alert(err.message); e.target.checked = !next; }
+      }catch(err){ showToast(err.message, 'error'); e.target.checked = !next; }
     };
   });
   const uploadBtn = li.querySelector('.doc-upload-btn');
   const fileInput = li.querySelector('.doc-file-input');
   const deleteBtn = li.querySelector('.doc-delete-btn');
   if(deleteBtn) deleteBtn.onclick = async () => {
-    if(!confirm(t('deleteFileConfirm', { name: localizeDocName(doc.name) }))) return;
+    if(!await confirmDialog(t('deleteFileConfirm', { name: localizeDocName(doc.name) }), { danger: true })) return;
     deleteBtn.disabled = true;
     try{
       await apiFetch(`/api/deals/${deal.id}/documents/${doc.id}/file`, { method:'DELETE' });
       await openDeal(deal.id);
-    }catch(err){ alert(err.message); deleteBtn.disabled = false; }
+    }catch(err){ showToast(err.message, 'error'); deleteBtn.disabled = false; }
   };
   const approveBtn = li.querySelector('.doc-approve-btn');
   if(approveBtn) approveBtn.onclick = async () => {
@@ -3825,7 +3973,7 @@ function buildDocItemLi(deal, doc, isStaffView, readOnly){
     try{
       await apiFetch(`/api/deals/${deal.id}/documents/${doc.id}/review`, { method:'PATCH', body: JSON.stringify({ reviewStatus: 'approved' }) });
       await openDeal(deal.id);
-    }catch(err){ alert(err.message); approveBtn.disabled = false; }
+    }catch(err){ showToast(err.message, 'error'); approveBtn.disabled = false; }
   };
   const rejectBtn = li.querySelector('.doc-reject-btn');
   if(rejectBtn) rejectBtn.onclick = async () => {
@@ -3835,7 +3983,7 @@ function buildDocItemLi(deal, doc, isStaffView, readOnly){
     try{
       await apiFetch(`/api/deals/${deal.id}/documents/${doc.id}/review`, { method:'PATCH', body: JSON.stringify({ reviewStatus: 'rejected', reviewNote }) });
       await openDeal(deal.id);
-    }catch(err){ alert(err.message); rejectBtn.disabled = false; }
+    }catch(err){ showToast(err.message, 'error'); rejectBtn.disabled = false; }
   };
   if(uploadBtn) uploadBtn.onclick = () => fileInput.click();
   fileInput.onchange = async (e) => {
@@ -3850,19 +3998,19 @@ function buildDocItemLi(deal, doc, isStaffView, readOnly){
       await apiUpload(`/api/deals/${deal.id}/documents/${doc.id}/file`, fd);
       await openDeal(deal.id);
     }catch(err){
-      alert(err.message);
+      showToast(err.message, 'error');
       uploadBtn.disabled = false;
       uploadBtn.innerHTML = originalHtml;
     }
   };
   const removeReqBtn = li.querySelector('.doc-remove-req-btn');
   if(removeReqBtn) removeReqBtn.onclick = async () => {
-    if(!confirm(t('removeChecklistItemConfirm', { name: localizeDocName(doc.name) }))) return;
+    if(!await confirmDialog(t('removeChecklistItemConfirm', { name: localizeDocName(doc.name) }), { danger: true })) return;
     removeReqBtn.disabled = true;
     try{
       await apiFetch(`/api/deals/${deal.id}/documents/${doc.id}`, { method:'DELETE' });
       await openDeal(deal.id);
-    }catch(err){ alert(err.message); removeReqBtn.disabled = false; }
+    }catch(err){ showToast(err.message, 'error'); removeReqBtn.disabled = false; }
   };
   return li;
 }
@@ -3905,7 +4053,7 @@ function buildAddDocumentRow(deal, dealPartyEntityId, section){
       if(section) body.section = section;
       await apiFetch(`/api/deals/${deal.id}/documents`, { method:'POST', body: JSON.stringify(body) });
       await openDeal(deal.id);
-    }catch(e){ alert(e.message); addBtn.disabled = false; }
+    }catch(e){ showToast(e.message, 'error'); addBtn.disabled = false; }
   };
   nameInput.onkeydown = (e) => { if(e.key === 'Enter') addBtn.click(); if(e.key === 'Escape') cancelBtn.click(); };
   return row;
@@ -3962,7 +4110,7 @@ function buildDocListForParty(deal, party, isStaffView){
         try{
           const r = await apiFetch(`/api/deals/${deal.id}/parties/${party.id}/remind`, { method:'POST' });
           remindBtn.textContent = t('sentCount', { count: r.count });
-        }catch(e){ alert(e.message); remindBtn.disabled = false; }
+        }catch(e){ showToast(e.message, 'error'); remindBtn.disabled = false; }
       };
     }
     h.appendChild(remindBtn);
@@ -3976,7 +4124,7 @@ function buildDocListForParty(deal, party, isStaffView){
       fixBtn.textContent = t('fixChecklist');
       fixBtn.title = t('fixChecklistTitle');
       fixBtn.onclick = async () => {
-        if(!confirm(t('fixChecklistConfirm'))) return;
+        if(!await confirmDialog(t('fixChecklistConfirm'))) return;
         fixBtn.disabled = true;
         try{
           const r = await apiFetch(`/api/deals/${deal.id}/parties/${party.id}/fix-entity-checklist`, { method:'POST' });
@@ -3988,7 +4136,7 @@ function buildDocListForParty(deal, party, isStaffView){
           if(r.flagged.length) msg += t('fixChecklistFlagged', { count: r.flagged.length, names: r.flagged.join(', ') });
           alert(msg);
           await openDeal(deal.id);
-        }catch(e){ alert(e.message); fixBtn.disabled = false; }
+        }catch(e){ showToast(e.message, 'error'); fixBtn.disabled = false; }
       };
       h.appendChild(fixBtn);
     }
@@ -4146,7 +4294,7 @@ function buildNotaryClosingCostsSection(deal, isStaffView, viewerSide){
       try{
         await apiUpload(`/api/deals/${deal.id}/documents/${quoteDoc.id}/file`, fd);
         await openDeal(deal.id);
-      }catch(err){ alert(err.message); uploadBtn.disabled = false; uploadBtn.innerHTML = original; }
+      }catch(err){ showToast(err.message, 'error'); uploadBtn.disabled = false; uploadBtn.innerHTML = original; }
     };
     quoteActions.appendChild(uploadBtn);
     quoteActions.appendChild(fileInput);
@@ -4157,7 +4305,7 @@ function buildNotaryClosingCostsSection(deal, isStaffView, viewerSide){
       approveBtn.onclick = async () => {
         approveBtn.disabled = true;
         try{ await apiFetch(`/api/deals/${deal.id}/documents/${quoteDoc.id}/review`, { method:'PATCH', body: JSON.stringify({ reviewStatus:'approved' }) }); await openDeal(deal.id); }
-        catch(e){ alert(e.message); approveBtn.disabled = false; }
+        catch(e){ showToast(e.message, 'error'); approveBtn.disabled = false; }
       };
       quoteActions.appendChild(approveBtn);
     }
@@ -4169,7 +4317,7 @@ function buildNotaryClosingCostsSection(deal, isStaffView, viewerSide){
         if(reviewNote === null) return;
         rejectBtn.disabled = true;
         try{ await apiFetch(`/api/deals/${deal.id}/documents/${quoteDoc.id}/review`, { method:'PATCH', body: JSON.stringify({ reviewStatus:'rejected', reviewNote }) }); await openDeal(deal.id); }
-        catch(e){ alert(e.message); rejectBtn.disabled = false; }
+        catch(e){ showToast(e.message, 'error'); rejectBtn.disabled = false; }
       };
       quoteActions.appendChild(rejectBtn);
     }
@@ -4259,7 +4407,7 @@ function buildTaskList(deal, canManage){
       try{
         await apiFetch(`/api/deals/${deal.id}/tasks/${task.id}`, { method:'PATCH', body: JSON.stringify({status: next}) });
         task.status = next; render();
-      }catch(e){ alert(e.message); }
+      }catch(e){ showToast(e.message, 'error'); }
     };
     const goKycLink = row.querySelector('.task-go-kyc');
     if(goKycLink) goKycLink.onclick = (e) => {
@@ -4282,7 +4430,7 @@ function buildTaskList(deal, canManage){
             try{
               await apiFetch(`/api/deals/${deal.id}/tasks/${task.id}`, { method:'PATCH', body: JSON.stringify({ assignedTo: sel.value ? Number(sel.value) : null }) });
               await openDeal(deal.id);
-            }catch(e){ alert(e.message); sel.value = task.assignedTo || ''; }
+            }catch(e){ showToast(e.message, 'error'); sel.value = task.assignedTo || ''; }
           };
           const lbl = document.createElement('label');
           lbl.className = 'field-hint';
@@ -4306,13 +4454,13 @@ function buildTaskList(deal, canManage){
     btn.className = 'btn';
     btn.innerHTML = `<i class="ti ti-mail-forward" aria-hidden="true"></i> ${t('sendProgressSummary')}`;
     btn.onclick = async () => {
-      if(!confirm(t('confirmSendProgressSummary'))) return;
+      if(!await confirmDialog(t('confirmSendProgressSummary'))) return;
       btn.disabled = true;
       try{
         const r = await apiFetch(`/api/deals/${deal.id}/send-progress-summary`, { method:'POST' });
-        alert(t('progressSummarySent', { count: r.count }));
+        showToast(t('progressSummarySent', { count: r.count }), 'success');
         await openDeal(deal.id);
-      }catch(e){ alert(e.message); btn.disabled = false; }
+      }catch(e){ showToast(e.message, 'error'); btn.disabled = false; }
     };
     summaryRow.appendChild(btn);
     if(deal.lastProgressEmailAt){
@@ -4523,7 +4671,7 @@ function buildPersonRow(dealId, a, opts){
         clearKycCacheForDeal(dealId);
         await openDeal(dealId);
         if(opts.onChange) opts.onChange();
-      }catch(err){ alert(err.message); sel.value = a.representsSide || ''; }
+      }catch(err){ showToast(err.message, 'error'); sel.value = a.representsSide || ''; }
     };
     controls.appendChild(sel);
   }
@@ -4539,7 +4687,7 @@ function buildPersonRow(dealId, a, opts){
         clearKycCacheForDeal(dealId);
         await openDeal(dealId);
         if(opts.onChange) opts.onChange();
-      }catch(e){ alert(e.message); }
+      }catch(e){ showToast(e.message, 'error'); }
     };
     controls.appendChild(rmBtn);
   }
@@ -4673,7 +4821,7 @@ function openAddPeopleModal(dealId){
             query = '';
             await openDeal(dealId);
             renderModal();
-          }catch(e){ alert(e.message); }
+          }catch(e){ showToast(e.message, 'error'); }
         };
         resultsEl.appendChild(row);
       });
@@ -4791,16 +4939,16 @@ function buildContractSection(deal, isStaffView){
     try{
       await apiFetch(`/api/deals/${deal.id}/contract`, { method:'POST', body: JSON.stringify({ templateId }) });
       await loadContract(deal.id);
-    }catch(err){ alert(err.message); }
+    }catch(err){ showToast(err.message, 'error'); }
   };
   const deleteBtn = tplRow.querySelector('#ct-delete');
   if(deleteBtn){
     deleteBtn.onclick = async () => {
-      if(!confirm(t('confirmDeleteTemplate'))) return;
+      if(!await confirmDialog(t('confirmDeleteTemplate'), { danger: true })) return;
       try{
         await apiFetch(`/api/contract-templates/${data.selectedTemplateId}`, { method:'DELETE' });
         await loadContract(deal.id);
-      }catch(err){ alert(err.message); }
+      }catch(err){ showToast(err.message, 'error'); }
     };
   }
 
@@ -4981,7 +5129,7 @@ function buildContractSection(deal, isStaffView){
       try{
         await apiFetch(`/api/deals/${deal.id}/contract`, { method:'POST', body: JSON.stringify({ smartValues: collectValues() }) });
         await loadContract(deal.id);
-      }catch(e){ alert(e.message); }
+      }catch(e){ showToast(e.message, 'error'); }
     };
     actions.appendChild(saveBtn);
   }
@@ -4994,7 +5142,7 @@ function buildContractSection(deal, isStaffView){
       await apiFetch(`/api/deals/${deal.id}/contract/generate`, { method:'POST' });
       window.open(`/api/deals/${deal.id}/contract/file?format=docx`, '_blank');
       await loadContract(deal.id);
-    }catch(e){ alert(e.message); }
+    }catch(e){ showToast(e.message, 'error'); }
   };
   actions.appendChild(genDownloadBtn);
 
@@ -5010,12 +5158,12 @@ function buildContractSection(deal, isStaffView){
   if(data.status === 'generated'){
     const sendBtn = document.createElement('button');
     sendBtn.className = 'btn gold'; sendBtn.textContent = t('sendForSignature');
-    sendBtn.onclick = async () => {
+    sendBtn.onclick = () => withButtonLoading(sendBtn, async () => {
       try{
         await apiFetch(`/api/deals/${deal.id}/contract/send-for-signature`, { method:'POST' });
         await loadContract(deal.id);
-      }catch(e){ alert(e.message); }
-    };
+      }catch(e){ showToast(e.message, 'error'); }
+    });
     actions.appendChild(sendBtn);
   }
 
@@ -5035,7 +5183,7 @@ function buildContractSection(deal, isStaffView){
     try{
       await apiUpload(`/api/deals/${deal.id}/contract/upload-signed`, fd);
       await loadContract(deal.id);
-    }catch(err){ alert(err.message); uploadSignedContractBtn.disabled = false; uploadSignedContractBtn.innerHTML = original; }
+    }catch(err){ showToast(err.message, 'error'); uploadSignedContractBtn.disabled = false; uploadSignedContractBtn.innerHTML = original; }
   };
   actions.appendChild(uploadSignedContractBtn);
   actions.appendChild(uploadSignedContractInput);
@@ -5388,7 +5536,7 @@ function buildSignatureTasksSection(deal, body, isStaffView){
         try{
           await apiUpload(`/api/docusign/deals/${deal.id}/tasks/${task.id}/document`, fd);
           await openDeal(deal.id);
-        }catch(err){ alert(err.message); uploadBtn.disabled = false; uploadBtn.innerHTML = original; }
+        }catch(err){ showToast(err.message, 'error'); uploadBtn.disabled = false; uploadBtn.innerHTML = original; }
       };
       actions.appendChild(uploadBtn);
       actions.appendChild(fileInput);
@@ -5409,12 +5557,12 @@ function buildSignatureTasksSection(deal, body, isStaffView){
       sendBtn.className = 'btn gold';
       sendBtn.textContent = t('sendForSignature');
       sendBtn.disabled = !task.documentOriginalName || task.docusignStatus !== 'not_sent';
-      sendBtn.onclick = async () => {
+      sendBtn.onclick = () => withButtonLoading(sendBtn, async () => {
         try{
           await apiFetch(`/api/docusign/deals/${deal.id}/tasks/${task.id}/send-for-signature`, { method:'POST' });
           await openDeal(deal.id);
-        }catch(err){ alert(err.message); }
-      };
+        }catch(err){ showToast(err.message, 'error'); }
+      });
       actions.appendChild(sendBtn);
     } else if(task.status !== 'done' && task.docusignStatus !== 'not_sent'){
       const sentHint = document.createElement('span');
@@ -5427,13 +5575,13 @@ function buildSignatureTasksSection(deal, body, isStaffView){
     checkBtn.className = 'btn';
     checkBtn.textContent = t('checkStatus');
     checkBtn.style.fontSize = '11px';
-    checkBtn.onclick = async () => {
+    checkBtn.onclick = () => withButtonLoading(checkBtn, async () => {
       try{
         const result = await apiFetch(`/api/docusign/deals/${deal.id}/tasks/${task.id}/status`);
         await openDeal(deal.id);
-        if(result.warning) alert(result.warning);
-      }catch(err){ alert(err.message); }
-    };
+        if(result.warning) showToast(result.warning);
+      }catch(err){ showToast(err.message, 'error'); }
+    });
     actions.appendChild(checkBtn);
 
     row.appendChild(actions);
