@@ -402,7 +402,7 @@ const STRINGS = {
     downloadCsv: 'Descargar lista (CSV)', noClientsYet: 'Todavía no hay compradores ni vendedores con cuenta.',
     phonePh: 'Teléfono', noDealsYet: 'Sin operación ligada',
     searchByName: 'Buscar por nombre...', allRoles: 'Todos', noClientsMatch: 'Ningún cliente coincide con la búsqueda/filtro.',
-    nameLabel: 'Nombre', roleLabel: 'Rol',
+    nameLabel: 'Nombre', roleLabel: 'Rol', agencyLabel: 'Agencia',
     loginTitle: 'Iniciar sesión', loginSub: 'Ingresa con tu correo y contraseña.',
     loginEmailPh: 'correo@ejemplo.com', loginPasswordPh: 'Contraseña', loginSubmit: 'Entrar', loginSubmitting: 'Entrando...',
     loginNoAccount: '¿Eres agente o abogado y no tienes cuenta?', loginCreateAccount: 'Crear cuenta',
@@ -647,7 +647,7 @@ const STRINGS = {
     downloadCsv: 'Download list (CSV)', noClientsYet: 'No buyers or sellers with an account yet.',
     phonePh: 'Phone', noDealsYet: 'No linked deal',
     searchByName: 'Search by name...', allRoles: 'All', noClientsMatch: 'No client matches that search/filter.',
-    nameLabel: 'Name', roleLabel: 'Role',
+    nameLabel: 'Name', roleLabel: 'Role', agencyLabel: 'Agency',
     loginTitle: 'Log in', loginSub: 'Enter your email and password.',
     loginEmailPh: 'email@example.com', loginPasswordPh: 'Password', loginSubmit: 'Log in', loginSubmitting: 'Logging in...',
     loginNoAccount: 'Are you an agent or lawyer without an account?', loginCreateAccount: 'Create account',
@@ -916,6 +916,7 @@ let notaryPaymentNote = undefined;
 // desplegadas — sin entrada todavía, una tarjeta con pocos pendientes
 // arranca abierta y una con muchos arranca cerrada (ver buildDashboard).
 let dashboardExpandedGroups = {};
+let docChecklistExpanded = {};
 let driveStatus = null;
 let escrowFormOpenFor = null;
 let activeDealId = null;
@@ -2127,44 +2128,6 @@ function buildDashboard(){
   return wrap;
 }
 
-// Editar nombre/correo de una cuenta ya registrada (PATCH /api/users/:id/profile)
-// — se usa tanto en Equipo (agentes/abogados) como en Clientes (comprador/
-// vendedor). Mismo patrón toggle-de-formulario que el editor de agencia.
-function buildProfileEditControl(u, onSaved){
-  const editBtn = document.createElement('button');
-  editBtn.className = 'btn'; editBtn.style.cssText = 'font-size:11px; padding:3px 10px; align-self:flex-start; margin-top:4px;';
-  editBtn.textContent = t('editProfile');
-  const editWrap = document.createElement('div');
-  editWrap.style.cssText = 'display:none; gap:8px; align-items:center; flex-wrap:wrap; margin-top:4px;';
-  editWrap.innerHTML = `
-    <input type="text" class="pe-name" placeholder="${t('namePh')}" value="${escapeHtml(u.name)}" style="font-size:12px;">
-    <input type="email" class="pe-email" placeholder="${t('emailPh')}" value="${escapeHtml(u.email)}" style="font-size:12px;">
-    <button class="btn primary" style="font-size:11px;">${t('saveChanges')}</button>
-    <button class="btn" style="font-size:11px;">${t('cancel')}</button>
-    <span class="gate-error" style="margin:0;"></span>
-  `;
-  const nameEl = editWrap.querySelector('.pe-name');
-  const emailEl = editWrap.querySelector('.pe-email');
-  const [saveBtn, cancelBtn] = editWrap.querySelectorAll('button');
-  const errEl = editWrap.querySelector('.gate-error');
-  editBtn.onclick = () => { editWrap.style.display = 'flex'; editBtn.style.display = 'none'; };
-  cancelBtn.onclick = () => { editWrap.style.display = 'none'; editBtn.style.display = ''; };
-  saveBtn.onclick = async () => {
-    errEl.textContent = '';
-    const name = nameEl.value.trim();
-    const email = emailEl.value.trim();
-    if(!name || !email){ errEl.textContent = t('errNameOrEmail'); return; }
-    try{
-      await apiFetch(`/api/users/${u.id}/profile`, { method:'PATCH', body: JSON.stringify({ name, email }) });
-      await onSaved();
-    }catch(e){ errEl.textContent = e.message; }
-  };
-  const box = document.createElement('div');
-  box.appendChild(editBtn);
-  box.appendChild(editWrap);
-  return box;
-}
-
 function buildTeamSection(){
   const wrap = document.createElement('div');
 
@@ -2205,60 +2168,100 @@ function buildTeamSection(){
   } else if(!activeTeamMembers.length){
     activeCard.innerHTML = `<div class="field-hint" style="margin:0;">${t('noActiveTeam')}</div>`;
   } else {
+    activeCard.style.overflowX = 'auto';
+    const table = document.createElement('table');
+    table.className = 'data-table';
+    table.innerHTML = `<thead><tr>
+      <th>${t('nameLabel')}</th><th>${t('emailLabel')}</th><th>${t('roleLabel')}</th><th>${t('agencyLabel')}</th><th></th>
+    </tr></thead>`;
+    const tbody = document.createElement('tbody');
     activeTeamMembers.forEach(u => {
-      const row = document.createElement('div');
-      row.style.cssText = 'display:flex; flex-direction:column; gap:6px; padding:8px 0; border-bottom:0.5px solid var(--line);';
-      const roleLabel = roleDisplayLabel(u.role);
-      const top = document.createElement('div');
-      top.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;';
-      top.innerHTML = `<span style="font-size:13px;">${escapeHtml(u.name)} <span class="field-hint" style="margin:0;">— ${escapeHtml(u.email)} · ${roleLabel}${u.agency ? ' · ' + escapeHtml(u.agency) : ''}</span></span>`;
-      row.appendChild(top);
-      row.appendChild(buildProfileEditControl(u, () => loadPendingUsers()));
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td></td><td></td><td></td><td></td><td></td>`;
+
+      const nameCell = tr.children[0];
+      const nameInput = document.createElement('input');
+      nameInput.type = 'text'; nameInput.value = u.name; nameInput.placeholder = t('namePh');
+      nameInput.style.cssText = 'font-size:12px; padding:4px 8px; width:140px;';
+      nameCell.appendChild(nameInput);
+      const emailCell = tr.children[1];
+      const emailInput = document.createElement('input');
+      emailInput.type = 'email'; emailInput.value = u.email; emailInput.placeholder = t('emailPh');
+      emailInput.style.cssText = 'font-size:12px; padding:4px 8px; width:180px;';
+      emailCell.appendChild(emailInput);
+      tr.children[2].innerHTML = roleChipHtml(u.role);
+
+      const actionsCell = tr.children[4];
+      const profileErr = document.createElement('div');
+      profileErr.className = 'gate-error'; profileErr.style.cssText = 'margin:0 0 4px; font-size:11px;';
+      const profileSaveBtn = document.createElement('button');
+      profileSaveBtn.className = 'btn'; profileSaveBtn.style.cssText = 'font-size:11px; margin-right:6px;'; profileSaveBtn.textContent = t('save');
+      profileSaveBtn.onclick = async () => {
+        profileErr.textContent = '';
+        const name = nameInput.value.trim();
+        const email = emailInput.value.trim();
+        if(!name || !email){ profileErr.textContent = t('errNameOrEmail'); return; }
+        profileSaveBtn.disabled = true;
+        try{
+          await apiFetch(`/api/users/${u.id}/profile`, { method:'PATCH', body: JSON.stringify({ name, email }) });
+          u.name = name; u.email = email;
+          profileSaveBtn.textContent = t('saved');
+          setTimeout(() => { profileSaveBtn.textContent = t('save'); }, 1200);
+        }catch(e){ profileErr.textContent = e.message; }
+        profileSaveBtn.disabled = false;
+      };
+      actionsCell.appendChild(profileErr);
+      actionsCell.appendChild(profileSaveBtn);
 
       // Solo agentes tienen agencia — de esto depende que el KYC de LPR
       // salga automático (dealAgentIsLprAgency en routes/kyc.js), así que
       // tiene que haber forma de corregirla después del alta/registro.
+      const agencyCell = tr.children[3];
       if(u.role === 'agent'){
+        const agencyDisplay = document.createElement('span');
+        agencyDisplay.style.cssText = 'font-size:12px;';
+        agencyDisplay.textContent = u.agency || '—';
         const editBtn = document.createElement('button');
-        editBtn.className = 'btn'; editBtn.style.cssText = 'font-size:11px; padding:3px 10px; align-self:flex-start;';
+        editBtn.className = 'btn'; editBtn.style.cssText = 'font-size:10.5px; padding:2px 6px; margin-left:6px;';
         editBtn.textContent = u.agency ? t('editAgency') : t('setAgency');
         const editWrap = document.createElement('div');
-        editWrap.style.cssText = 'display:none; gap:8px; align-items:center; flex-wrap:wrap;';
+        editWrap.style.cssText = 'display:none; gap:6px; align-items:center; flex-wrap:wrap; margin-top:4px;';
         editWrap.innerHTML = `
-          <select style="font-size:12px;">
+          <select style="font-size:11.5px;">
             <option value="">${t('registerAgencyPlaceholderSelect')}</option>
             ${AGENCIES.map(a => `<option value="${escapeHtml(a)}" ${u.agency===a?'selected':''}>${escapeHtml(a)}</option>`).join('')}
             <option value="Otro" ${u.agency && !AGENCIES.includes(u.agency)?'selected':''}>${t('registerAgencyOther')}</option>
           </select>
-          <input type="text" placeholder="${t('registerAgencyOtherPh')}" style="font-size:12px; display:${u.agency && !AGENCIES.includes(u.agency)?'':'none'};" value="${u.agency && !AGENCIES.includes(u.agency)?escapeHtml(u.agency):''}">
-          <button class="btn primary" style="font-size:11px;">${t('saveChanges')}</button>
-          <button class="btn" style="font-size:11px;">${t('cancel')}</button>
-          <span class="gate-error" style="margin:0;"></span>
+          <input type="text" placeholder="${t('registerAgencyOtherPh')}" style="font-size:11.5px; width:100px; display:${u.agency && !AGENCIES.includes(u.agency)?'':'none'};" value="${u.agency && !AGENCIES.includes(u.agency)?escapeHtml(u.agency):''}">
+          <button class="btn primary" style="font-size:10.5px; padding:2px 6px;">${t('saveChanges')}</button>
+          <span class="gate-error" style="margin:0; font-size:10.5px;"></span>
         `;
         const [selectEl, otherEl] = editWrap.querySelectorAll('select, input[type=text]');
-        const [saveBtn, cancelBtn] = editWrap.querySelectorAll('button');
-        const errEl = editWrap.querySelector('.gate-error');
+        const agencySaveBtn = editWrap.querySelector('button');
+        const agencyErrEl = editWrap.querySelector('.gate-error');
         selectEl.onchange = () => { otherEl.style.display = selectEl.value === 'Otro' ? '' : 'none'; };
-        editBtn.onclick = () => { editWrap.style.display = 'flex'; editBtn.style.display = 'none'; };
-        cancelBtn.onclick = () => { editWrap.style.display = 'none'; editBtn.style.display = ''; };
-        saveBtn.onclick = async () => {
-          errEl.textContent = '';
+        editBtn.onclick = () => { editWrap.style.display = editWrap.style.display === 'none' ? 'flex' : 'none'; };
+        agencySaveBtn.onclick = async () => {
+          agencyErrEl.textContent = '';
           try{
             await apiFetch(`/api/users/${u.id}/agency`, {
               method:'PATCH', body: JSON.stringify({ agency: selectEl.value, agencyOther: otherEl.value.trim() })
             });
             await loadPendingUsers();
-          }catch(e){ errEl.textContent = e.message; }
+          }catch(e){ agencyErrEl.textContent = e.message; }
         };
-        row.appendChild(editBtn);
-        row.appendChild(editWrap);
+        agencyCell.appendChild(agencyDisplay);
+        agencyCell.appendChild(editBtn);
+        agencyCell.appendChild(editWrap);
+      } else {
+        agencyCell.textContent = '—';
       }
 
       // Para cuando alguien pierde el teléfono donde tenía la app de 2FA
       // (o cambió de equipo) — sin esto no hay forma de que vuelva a entrar,
       // el código que genera su app vieja ya no sirve para nada.
       const reset2faBtn = document.createElement('button');
-      reset2faBtn.className = 'btn'; reset2faBtn.style.cssText = 'font-size:11px; padding:3px 10px; align-self:flex-start;';
+      reset2faBtn.className = 'btn'; reset2faBtn.style.fontSize = '11px';
       reset2faBtn.textContent = t('reset2fa');
       reset2faBtn.title = t('reset2faTitle');
       reset2faBtn.onclick = async () => {
@@ -2270,9 +2273,12 @@ function buildTeamSection(){
         }catch(e){ alert(e.message); }
         reset2faBtn.disabled = false;
       };
-      row.appendChild(reset2faBtn);
-      activeCard.appendChild(row);
+      actionsCell.appendChild(reset2faBtn);
+      tbody.appendChild(tr);
     });
+    table.appendChild(tbody);
+    activeCard.innerHTML = '';
+    activeCard.appendChild(table);
   }
   wrap.appendChild(activeCard);
 
@@ -3793,10 +3799,18 @@ function buildDocListForParty(deal, party, isStaffView){
   const box = document.createElement('div');
   box.style.marginBottom = '14px';
   const sideLabel = party.side === 'seller' ? t('sellerLabel2') : t('buyerLabel2');
+  const docs = deal.documents.filter(d => d.partyId === party.id);
+  const expandKey = deal.id + '-' + party.id;
+  const isExpanded = docChecklistExpanded[expandKey] !== undefined ? docChecklistExpanded[expandKey] : true;
   const h = document.createElement('div');
-  h.style.cssText = 'font-weight:500; font-size:13px; color:var(--ink-soft); margin-bottom:6px; display:flex; align-items:center; gap:8px;';
+  h.style.cssText = 'font-weight:500; font-size:13px; color:var(--ink-soft); margin-bottom:6px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;';
+  const toggleBtn = document.createElement('button');
+  toggleBtn.className = 'icon-btn'; toggleBtn.style.cssText = 'width:22px; height:22px; flex-shrink:0;'; toggleBtn.title = t('toggleExpand');
+  toggleBtn.innerHTML = `<i class="ti ti-chevron-${isExpanded?'down':'right'}" aria-hidden="true"></i>`;
+  toggleBtn.onclick = () => { docChecklistExpanded[expandKey] = !isExpanded; render(); };
+  h.appendChild(toggleBtn);
   const hLabel = document.createElement('span');
-  hLabel.textContent = `${party.name} (${sideLabel} · ${TYPE_LABEL[party.partyType]})`;
+  hLabel.textContent = `${party.name} (${sideLabel} · ${TYPE_LABEL[party.partyType]}) — ${docs.length} ${t('docsCountLabel').toLowerCase()}`;
   h.appendChild(hLabel);
   if(isStaffView){
     const remindBtn = document.createElement('button');
@@ -3854,11 +3868,12 @@ function buildDocListForParty(deal, party, isStaffView){
     box.appendChild(warn);
   }
 
+  if(!isExpanded) return box;
+
   // Subagrupa por sub_label — cada grupo distinto (un socio, el trust)
   // corresponde a la subcarpeta propia que le tocaría dentro de la carpeta
   // de esta parte en Drive; los documentos sin sub_label son los de la
   // propia entidad/persona (party.name), sin subcarpeta.
-  const docs = deal.documents.filter(d => d.partyId === party.id);
   const groups = [];
   const groupIndex = {};
   docs.forEach(doc => {
