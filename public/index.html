@@ -655,6 +655,10 @@ const STRINGS = {
     nextStepKycSign: 'Firma tu expediente KYC',
     waitingOnYouTitle: 'Te toca a ti ({count})', waitingOnYouMore: '+ {count} pendiente(s) más — revisa tus checklists abajo.',
     signLabel: 'Firmar', uploadLabel: 'Subir',
+    versionsTitle: 'Historial de versiones', versionsEmpty: 'Este documento no tiene versiones anteriores.',
+    versionsOnlyCurrent: 'Sin versiones anteriores — cada vez que se reemplace o quite el archivo, la versión anterior quedará guardada aquí.',
+    versionCurrent: 'Actual', versionsUnnamed: '(sin nombre)',
+    actDocReplaced: 'reemplazó un documento', actDocFileRemoved: 'quitó el archivo de un documento',
     myTasksTitle: 'Mis tareas ({count})',
     loadingFile: 'Cargando expediente...',
     viewAs: 'Ver como', agentSeesAll: 'Agente (ve todo)',
@@ -919,6 +923,10 @@ const STRINGS = {
     nextStepKycSign: 'Sign your KYC file',
     waitingOnYouTitle: "Waiting on you ({count})", waitingOnYouMore: '+ {count} more pending — see your checklists below.',
     signLabel: 'Sign', uploadLabel: 'Upload',
+    versionsTitle: 'Version history', versionsEmpty: 'This document has no previous versions.',
+    versionsOnlyCurrent: 'No previous versions — whenever the file is replaced or removed, the prior version will be kept here.',
+    versionCurrent: 'Current', versionsUnnamed: '(unnamed)',
+    actDocReplaced: 'replaced a document', actDocFileRemoved: "removed a document's file",
     myTasksTitle: 'My tasks ({count})',
     loadingFile: 'Loading file...',
     viewAs: 'View as', agentSeesAll: 'Agent (sees everything)',
@@ -3605,6 +3613,8 @@ const ACTIVITY_META = {
   deal_trashed:          { icon: 'ti-trash',       key: 'actDealTrashed' },
   deal_restored:         { icon: 'ti-rotate',      key: 'actDealRestored' },
   doc_uploaded:          { icon: 'ti-upload',      key: 'actDocUploaded' },
+  doc_replaced:          { icon: 'ti-history',     key: 'actDocReplaced' },
+  doc_file_removed:      { icon: 'ti-eraser',      key: 'actDocFileRemoved' },
   doc_approved:          { icon: 'ti-check',       key: 'actDocApproved' },
   doc_rejected:          { icon: 'ti-x',           key: 'actDocRejected' },
   task_done:             { icon: 'ti-circle-check', key: 'actTaskDone' },
@@ -3936,6 +3946,69 @@ function openKycSigningModal(url, dealId, role, kind){
 // él subirlo (ej. el vendedor viendo los comprobantes de pago del
 // comprador: puede consultarlos, pero no es requisito suyo y no debe poder
 // subir/reemplazar/borrar ni marcarlo como hecho).
+// Historial de versiones de un documento — quién subió qué y cuándo, con
+// link para ver cada versión archivada. Al re-subir o quitar un archivo, la
+// versión anterior se conserva (ver document_versions en el backend).
+async function showVersionsDialog(deal, doc){
+  let versions;
+  try{
+    versions = await apiFetch(`/api/deals/${deal.id}/documents/${doc.id}/versions`);
+  }catch(e){ showToast(e.message, 'error'); return; }
+  if(!versions.length && !doc.fileUrl){
+    showToast(t('versionsEmpty'));
+    return;
+  }
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  const box = document.createElement('div');
+  box.className = 'dialog-box';
+  box.style.maxHeight = '70vh';
+  box.style.overflowY = 'auto';
+  box.innerHTML = `<div class="section-title" style="margin-top:0;">${t('versionsTitle')} — ${escapeHtml(localizeDocName(doc.name))}</div>`;
+
+  const rows = [];
+  if(doc.fileUrl){
+    rows.push({ current: true, original_name: doc.originalName, uploaded_at: null, uploadedByName: null,
+      href: `/api/deals/${deal.id}/documents/${doc.id}/file` });
+  }
+  versions.forEach(v => rows.push({ current: false, original_name: v.original_name, uploaded_at: v.uploaded_at,
+    uploadedByName: v.uploadedByName, archived_at: v.archived_at,
+    href: `/api/deals/${deal.id}/documents/${doc.id}/versions/${v.id}/file` }));
+
+  rows.forEach((r, i) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:10px; padding:8px 0;' + (i < rows.length - 1 ? ' border-bottom:0.5px solid var(--line);' : '');
+    row.innerHTML = `
+      <span style="flex:1; min-width:0;">
+        <div style="font-size:13px; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(r.original_name || t('versionsUnnamed'))}
+          ${r.current ? `<span class="badge" style="background:var(--jade-soft); color:var(--jade); margin:0 0 0 6px;">${t('versionCurrent')}</span>` : ''}</div>
+        <div class="field-hint" style="margin:1px 0 0;">
+          ${r.current ? '' : `${r.uploadedByName ? escapeHtml(r.uploadedByName) + ' · ' : ''}${escapeHtml((r.uploaded_at || r.archived_at || '').slice(0, 16).replace('T', ' '))}`}
+        </div>
+      </span>
+      <a href="${r.href}" target="_blank" class="btn" style="font-size:11px; padding:4px 10px; flex-shrink:0;"><i class="ti ti-eye" aria-hidden="true"></i> ${t('viewFile')}</a>
+    `;
+    box.appendChild(row);
+  });
+  if(!versions.length){
+    const hint = document.createElement('div');
+    hint.className = 'field-hint'; hint.style.margin = '8px 0 0';
+    hint.textContent = t('versionsOnlyCurrent');
+    box.appendChild(hint);
+  }
+  const actions = document.createElement('div');
+  actions.className = 'dialog-actions';
+  actions.style.marginTop = '14px';
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'btn'; closeBtn.textContent = t('close');
+  closeBtn.onclick = () => overlay.remove();
+  actions.appendChild(closeBtn);
+  box.appendChild(actions);
+  overlay.appendChild(box);
+  overlay.onclick = (e) => { if(e.target === overlay) overlay.remove(); };
+  document.body.appendChild(overlay);
+}
+
 function buildDocItemLi(deal, doc, isStaffView, readOnly){
   const li = document.createElement('li');
   li.className = 'doc-item';
@@ -3964,6 +4037,7 @@ function buildDocItemLi(deal, doc, isStaffView, readOnly){
       ${!readOnly && doc.fileUrl ? `<button type="button" class="btn doc-delete-btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px; color:var(--oxblood);" title="${t('deleteFile')}"><i class="ti ti-trash" aria-hidden="true"></i></button>` : ''}
       ${canReview && doc.fileUrl && doc.reviewStatus !== 'approved' ? `<button type="button" class="btn doc-approve-btn" style="font-size:11px; padding:4px 10px; color:var(--jade); border-color:var(--jade);">${t('approveDocument')}</button>` : ''}
       ${canReview && doc.fileUrl && doc.reviewStatus !== 'rejected' ? `<button type="button" class="btn doc-reject-btn" style="font-size:11px; padding:4px 10px; color:var(--oxblood);">${t('rejectDocument')}</button>` : ''}
+      ${isStaffView ? `<button type="button" class="btn doc-versions-btn" style="font-size:11px; padding:4px 8px;" title="${t('versionsTitle')}"><i class="ti ti-history" aria-hidden="true"></i></button>` : ''}
       ${isStaffView ? `<button type="button" class="btn doc-remove-req-btn" style="font-size:11px; padding:4px 8px; color:var(--oxblood);" title="${t('removeChecklistItemTitle')}"><i class="ti ti-x" aria-hidden="true"></i></button>` : ''}
       <input type="file" class="doc-file-input" style="display:none;" accept=".pdf,.jpg,.jpeg,.png,.heic">
     </span>
@@ -3987,6 +4061,8 @@ function buildDocItemLi(deal, doc, isStaffView, readOnly){
   });
   const uploadBtn = li.querySelector('.doc-upload-btn');
   const fileInput = li.querySelector('.doc-file-input');
+  const versionsBtn = li.querySelector('.doc-versions-btn');
+  if(versionsBtn) versionsBtn.onclick = () => showVersionsDialog(deal, doc);
   const deleteBtn = li.querySelector('.doc-delete-btn');
   if(deleteBtn) deleteBtn.onclick = async () => {
     if(!await confirmDialog(t('deleteFileConfirm', { name: localizeDocName(doc.name) }), { danger: true })) return;

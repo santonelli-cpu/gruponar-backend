@@ -1221,6 +1221,11 @@ router.post('/:id/documents/:docId/file', requireAuth, rateLimitUpload, (req, re
     try {
       const key = path.join(String(req.params.id), genFilename(req.file.originalname));
       await gcsStorage.uploadBuffer(key, req.file.buffer, req.file.mimetype);
+      // Si ya había un archivo, se archiva como versión ANTES de
+      // reemplazarlo — el objeto en Cloud Storage se conserva (mismo
+      // prefijo <dealId>/, así el borrado permanente de la operación
+      // también lo limpia). Ver document_versions en db/schema.sql.
+      archiveCurrentFileVersion(doc);
       db.prepare(`
         UPDATE documents SET file_url=?, original_name=?, mime_type=?, size_bytes=?, status='done',
           uploaded_by=?, uploaded_at=datetime('now'),
@@ -1228,7 +1233,7 @@ router.post('/:id/documents/:docId/file', requireAuth, rateLimitUpload, (req, re
         WHERE id=? AND deal_id=?
       `).run(key, req.file.originalname, req.file.mimetype, req.file.size, req.session.userId, req.params.docId, req.params.id);
       res.json({ ok: true });
-      logActivity(req.params.id, req.session.userId, 'doc_uploaded', doc.name);
+      logActivity(req.params.id, req.session.userId, doc.file_url ? 'doc_replaced' : 'doc_uploaded', doc.name);
       syncDocumentToDrive(req, req.params.id, doc.deal_party_entity_id, `${doc.name}${doc.sub_label ? ' - ' + doc.sub_label : ''} - ${req.file.originalname}`, req.file.buffer, req.file.mimetype, doc.section);
     } catch (uploadErr) {
       res.status(502).json({ error: uploadErr.message || 'Error al subir el archivo.' });
@@ -1236,10 +1241,25 @@ router.post('/:id/documents/:docId/file', requireAuth, rateLimitUpload, (req, re
   });
 });
 
+// Archiva el archivo ACTUAL de un documento como versión histórica (si
+// tiene) — compartido entre re-subir y quitar. No borra nada de Cloud
+// Storage: el punto es exactamente que la versión anterior siga existiendo.
+function archiveCurrentFileVersion(doc) {
+  if (!doc.file_url) return;
+  db.prepare(`
+    INSERT INTO document_versions (document_id, file_url, original_name, mime_type, size_bytes, uploaded_by, uploaded_at)
+    VALUES (?,?,?,?,?,?,?)
+  `).run(doc.id, doc.file_url, doc.original_name, doc.mime_type, doc.size_bytes, doc.uploaded_by, doc.uploaded_at);
+}
+
 // DELETE /api/deals/:id/documents/:docId/file — quita el archivo subido y
 // regresa el documento a 'pending' (en vez de solo poder reemplazarlo). Usa
 // la misma regla de acceso que subirlo: comprador/vendedor solo el de su
-// propia parte, staff sin restricción.
+// propia parte, staff sin restricción. El archivo NO se borra de Cloud
+// Storage: se archiva como versión histórica (document_versions) — en una
+// plataforma legal "quitar" significa "ya no es el actual", nunca "no
+// existió"; el borrado real solo pasa con el borrado permanente de la
+// operación (deletePrefix).
 router.delete('/:id/documents/:docId/file', requireAuth, rateLimitWrite, async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deal_id = ?').get(req.params.docId, req.params.id);
@@ -1248,14 +1268,57 @@ router.delete('/:id/documents/:docId/file', requireAuth, rateLimitWrite, async (
     return res.status(403).json({ error: 'No puedes borrar documentos de otra parte.' });
   }
   if (!doc.file_url) return res.status(400).json({ error: 'Este documento no tiene archivo subido.' });
+  archiveCurrentFileVersion(doc);
   db.prepare(`
     UPDATE documents SET file_url=NULL, original_name=NULL, mime_type=NULL, size_bytes=NULL, status='pending',
       uploaded_by=NULL, uploaded_at=NULL,
       review_status='pending', review_note=NULL, reviewed_by=NULL, reviewed_at=NULL
     WHERE id=? AND deal_id=?
   `).run(req.params.docId, req.params.id);
+  logActivity(req.params.id, req.session.userId, 'doc_file_removed', doc.name);
   res.json({ ok: true });
-  gcsStorage.deleteFile(doc.file_url).catch(err => console.error('[gcs] no se pudo borrar el archivo', doc.file_url, err.message));
+});
+
+// GET /api/deals/:id/documents/:docId/versions — historial de versiones del
+// documento (quién subió qué y cuándo, más recientes primero). Mismo
+// permiso que ver el archivo actual.
+router.get('/:id/documents/:docId/versions', requireAuth, (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deal_id = ?').get(req.params.docId, req.params.id);
+  if (!doc) return res.status(404).json({ error: 'Documento no encontrado.' });
+  if (!canTouchDoc(req, req.params.id, doc)) {
+    return res.status(403).json({ error: 'No puedes ver documentos de otra parte.' });
+  }
+  const rows = db.prepare(`
+    SELECT v.id, v.original_name, v.mime_type, v.size_bytes, v.uploaded_at, v.archived_at, u.name AS uploadedByName
+    FROM document_versions v LEFT JOIN users u ON u.id = v.uploaded_by
+    WHERE v.document_id = ?
+    ORDER BY v.id DESC
+  `).all(req.params.docId);
+  res.json(rows);
+});
+
+// GET /api/deals/:id/documents/:docId/versions/:versionId/file — descarga
+// de una versión archivada, con la misma autorización que el archivo actual.
+router.get('/:id/documents/:docId/versions/:versionId/file', requireAuth, async (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deal_id = ?').get(req.params.docId, req.params.id);
+  if (!doc) return res.status(404).json({ error: 'Documento no encontrado.' });
+  if (!canTouchDoc(req, req.params.id, doc)) {
+    return res.status(403).json({ error: 'No puedes ver documentos de otra parte.' });
+  }
+  const version = db.prepare('SELECT * FROM document_versions WHERE id = ? AND document_id = ?').get(req.params.versionId, req.params.docId);
+  if (!version) return res.status(404).json({ error: 'Versión no encontrada.' });
+  if (!await gcsStorage.existsFile(version.file_url)) return res.status(404).json({ error: 'Archivo no encontrado.' });
+  try {
+    await gcsStorage.streamToResponse(version.file_url, res, {
+      contentType: version.mime_type || 'application/octet-stream',
+      downloadName: version.original_name || 'documento',
+      inline: true
+    });
+  } catch (err) {
+    if (!res.headersSent) res.status(502).json({ error: 'Error al leer el archivo.' });
+  }
 });
 
 // GET /api/deals/:id/documents/:docId/file — descarga autenticada del archivo subido.

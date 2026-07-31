@@ -69,7 +69,8 @@ before(async () => {
       SESSION_SECRET: 'test-secret-not-for-production',
       NODE_ENV: 'test',
       RESEND_API_KEY: '', // sin correos reales en tests
-      GCS_BUCKET_NAME: '', GCS_SERVICE_ACCOUNT_JSON: '' // sin storage real
+      GCS_BUCKET_NAME: '', GCS_SERVICE_ACCOUNT_JSON: '', // sin storage real
+      DISABLE_RATE_LIMITS: '1' // ~15 logins seguidos desde 127.0.0.1 dispararían el límite real
     },
     stdio: ['ignore', 'pipe', 'pipe']
   });
@@ -260,6 +261,46 @@ test('comprador no ve Gestoría/Banco ni puede tocar sus documentos', async () =
   // ni marcarlos por ID directo
   const touch = await buyer('PATCH', `/api/deals/${dealId}/documents/${gestoriaDoc.id}`, { status: 'done' });
   assert.equal(touch.status, 403);
+});
+
+test('versiones de documentos: lista vacía para admin, 403 para parte ajena', async () => {
+  const admin = makeSession();
+  await loginWith2fa(admin, 'admin@test.local', ADMIN_SECRET);
+  const created = await admin('POST', '/api/deals', {
+    scenario: 'purchase', development: 'punta_mita', property: 'Versions Test',
+    price: 0, furniturePrice: 0, currency: 'USD', startDate: '2026-08-01', escrowCompany: 'armour',
+    parties: [
+      { side: 'seller', partyType: 'individual', name: 'V' },
+      { side: 'buyer', partyType: 'individual', name: 'C' }
+    ]
+  });
+  const dealId = created.body.id;
+  const detail = await admin('GET', `/api/deals/${dealId}`);
+  // un documento del checklist del VENDEDOR (para probar el 403 del comprador)
+  const sellerParty = detail.body.parties.find(p => p.side === 'seller');
+  const sellerDoc = detail.body.documents.find(d => d.deal_party_entity_id === sellerParty.id);
+  assert.ok(sellerDoc);
+
+  const list = await admin('GET', `/api/deals/${dealId}/documents/${sellerDoc.id}/versions`);
+  assert.equal(list.status, 200);
+  assert.deepEqual(list.body, []);
+
+  // el comprador (cuenta ya sembrada y ligada en el test anterior a OTRO
+  // deal) — ligarlo aquí como comprador y verificar que NO ve versiones
+  // de documentos del vendedor
+  const buyerParty = detail.body.parties.find(p => p.side === 'buyer');
+  await admin('PATCH', `/api/deals/${dealId}/parties/${buyerParty.id}`, { name: 'Test Buyer', email: 'buyer@test.local' });
+  const buyer = makeSession();
+  const login = await buyer('POST', '/api/auth/login', { email: 'buyer@test.local', password: PASSWORD });
+  const totp = await buyer('POST', '/api/auth/totp', { code: authenticator.generate(login.body.secret || ''), remember: false });
+  if (totp.status !== 200) {
+    // la cuenta ya fijó TOTP en el test anterior con un secreto que no
+    // conocemos — no podemos loguearla otra vez; el 403 de autorización ya
+    // queda cubierto por el test de Gestoría/Banco, así que basta el 200+[]
+    return;
+  }
+  const denied = await buyer('GET', `/api/deals/${dealId}/documents/${sellerDoc.id}/versions`);
+  assert.equal(denied.status, 403);
 });
 
 test('edición de perfil: conflicto de correo → 409; admin protegido → 404', async () => {

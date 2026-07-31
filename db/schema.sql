@@ -248,3 +248,21 @@ CREATE TABLE IF NOT EXISTS deadline_reminders_log (
   sent_at TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (deal_id, kind, target_date)
 );
+
+-- Historial de versiones de documentos del checklist — al re-subir un
+-- archivo (o quitarlo), la versión que estaba se archiva aquí en vez de
+-- perderse: el objeto en Cloud Storage NO se borra, solo deja de ser "el
+-- actual". Para una plataforma legal, poder responder "¿qué versión del
+-- avalúo estaba subida el día X y quién la subió?" no es opcional.
+CREATE TABLE IF NOT EXISTS document_versions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  file_url TEXT NOT NULL,
+  original_name TEXT,
+  mime_type TEXT,
+  size_bytes INTEGER,
+  uploaded_by INTEGER REFERENCES users(id),
+  uploaded_at TEXT,
+  archived_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_document_versions_doc ON document_versions(document_id, id);
