@@ -493,6 +493,9 @@ const STRINGS = {
     operationsTitle: 'Operaciones', newDeal: 'Nueva operación',
     emptyDeals: 'No hay operaciones activas.<br>Crea la primera con "Nueva operación".',
     dealsFilterActive: 'Activas', dealsFilterCompleted: 'Completadas', emptyCompletedDeals: 'No hay operaciones completadas todavía.',
+    dealsSearchPh: 'Buscar por inmueble, cliente, agente o desarrollo…', noDealsMatchSearch: 'Ninguna operación coincide con la búsqueda.',
+    exportZip: 'Expediente (ZIP)', exportZipTitle: 'Descarga todos los archivos de la operación en un ZIP organizado por carpetas (Propiedad, Vendedor, Comprador, KYC, Contrato, Firmas…).',
+    actExpedienteExported: 'descargó el expediente completo',
     dealCompletedBadge: 'Cerrada', markDealCompleted: 'Marcar como cerrada', reopenDeal: 'Reabrir operación',
     confirmMarkCompleted: '¿Marcar esta operación como cerrada? Se mueve a "Completadas" — puedes reabrirla cuando quieras.',
     dashboard: 'Dashboard', loadingDashboard: 'Cargando dashboard...',
@@ -767,6 +770,9 @@ const STRINGS = {
     operationsTitle: 'Deals', newDeal: 'New deal',
     emptyDeals: 'No active deals.<br>Create the first one with "New deal".',
     dealsFilterActive: 'Active', dealsFilterCompleted: 'Completed', emptyCompletedDeals: 'No completed deals yet.',
+    dealsSearchPh: 'Search by property, client, agent or development…', noDealsMatchSearch: 'No deals match your search.',
+    exportZip: 'Case file (ZIP)', exportZipTitle: 'Download every file of this deal in one ZIP organized by folders (Property, Seller, Buyer, KYC, Contract, Signatures…).',
+    actExpedienteExported: 'downloaded the full case file',
     dealCompletedBadge: 'Closed', markDealCompleted: 'Mark as closed', reopenDeal: 'Reopen deal',
     confirmMarkCompleted: 'Mark this deal as closed? It moves to "Completed" — you can reopen it anytime.',
     dashboard: 'Dashboard', loadingDashboard: 'Loading dashboard...',
@@ -1009,6 +1015,7 @@ let dashboardExpandedGroups = {};
 let docChecklistExpanded = {};
 let waitingOnYouExpanded = {};
 let docActionsMenuFor = null;
+let dealsSearch = '';
 let dealDetailTab = 'parties';
 let dealDetailTabDeal = null;
 let teamAssigneesCache = undefined;
@@ -2066,20 +2073,37 @@ function renderAdmin(body){
   const activeCount = deals.filter(d => (d.status||'active') === 'active').length;
   const completedCount = deals.filter(d => d.status === 'completed').length;
   const filterRow = document.createElement('div');
-  filterRow.style.cssText = 'display:flex; gap:8px; margin-bottom:14px;';
+  filterRow.style.cssText = 'display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; align-items:center;';
   filterRow.innerHTML = `
     <button class="btn ${dealsListFilter==='active'?'primary':''}" id="deals-filter-active">${t('dealsFilterActive')} (${activeCount})</button>
     <button class="btn ${dealsListFilter==='completed'?'primary':''}" id="deals-filter-completed">${t('dealsFilterCompleted')} (${completedCount})</button>
+    <input type="text" id="deals-search" placeholder="${t('dealsSearchPh')}" value="${escapeHtml(dealsSearch)}" style="flex:1; min-width:200px; font-size:13px; padding:7px 12px;">
   `;
   body.appendChild(filterRow);
   filterRow.querySelector('#deals-filter-active').onclick = () => { dealsListFilter = 'active'; render(); };
   filterRow.querySelector('#deals-filter-completed').onclick = () => { dealsListFilter = 'completed'; render(); };
+  filterRow.querySelector('#deals-search').oninput = (e) => {
+    dealsSearch = e.target.value;
+    const cursor = e.target.selectionStart;
+    render();
+    const el = document.getElementById('deals-search');
+    if(el){ el.focus(); el.setSelectionRange(cursor, cursor); }
+  };
 
-  const visibleDeals = deals.filter(d => (d.status||'active') === dealsListFilter);
+  // Búsqueda por inmueble, cualquier parte (vendedor/comprador), agente o
+  // desarrollo — todo ya viene en el resumen de cada operación, así que el
+  // filtro es instantáneo, sin viaje al servidor.
+  const search = dealsSearch.trim().toLowerCase();
+  const matchesSearch = (d) => !search
+    || d.property.toLowerCase().includes(search)
+    || d.parties.some(p => p.name.toLowerCase().includes(search))
+    || (d.agents || []).some(a => (a.name || '').toLowerCase().includes(search))
+    || (DEVELOPMENT_LABEL[d.development||'punta_mita'] || '').toLowerCase().includes(search);
+  const visibleDeals = deals.filter(d => (d.status||'active') === dealsListFilter && matchesSearch(d));
   if(!visibleDeals.length){
     const empty = document.createElement('div');
     empty.className = 'empty';
-    empty.innerHTML = `<i class="ti ti-building-estate" aria-hidden="true"></i><div>${dealsListFilter==='completed' ? t('emptyCompletedDeals') : t('emptyDeals')}</div>`;
+    empty.innerHTML = `<i class="ti ti-building-estate" aria-hidden="true"></i><div>${search ? t('noDealsMatchSearch') : (dealsListFilter==='completed' ? t('emptyCompletedDeals') : t('emptyDeals'))}</div>`;
     body.appendChild(empty);
     return;
   }
@@ -3399,6 +3423,7 @@ function buildAdminDealDetail(deal){
       ${deal.driveFolderUrl
         ? `<a class="btn" href="${deal.driveFolderUrl}" target="_blank"><i class="ti ti-folder" aria-hidden="true"></i> ${t('openInDrive')}</a>`
         : `<button class="btn" id="create-drive-folder-btn"><i class="ti ti-folder-plus" aria-hidden="true"></i> ${t('createDriveFolder')}</button>`}
+      ${['admin','lawyer'].includes(currentUser.role) ? `<a class="btn" href="/api/deals/${deal.id}/export" title="${t('exportZipTitle')}"><i class="ti ti-file-zip" aria-hidden="true"></i> ${t('exportZip')}</a>` : ''}
       <button class="btn ${deal.status==='completed' ? '' : 'success'}" id="toggleDealStatusBtn">${deal.status==='completed' ? `<i class="ti ti-rotate" aria-hidden="true"></i> ${t('reopenDeal')}` : `<i class="ti ti-check" aria-hidden="true"></i> ${t('markDealCompleted')}`}</button>
       <button class="btn danger" id="delDeal"><i class="ti ti-trash" aria-hidden="true"></i> ${t('deleteDeal')}</button>
     </div>
@@ -3663,7 +3688,8 @@ const ACTIVITY_META = {
   person_added:          { icon: 'ti-user-plus',   key: 'actPersonAdded' },
   kyc_sent:              { icon: 'ti-signature',   key: 'actKycSent' },
   contract_sent:         { icon: 'ti-file-text',   key: 'actContractSent' },
-  progress_summary_sent: { icon: 'ti-mail-forward', key: 'actProgressSummarySent' }
+  progress_summary_sent: { icon: 'ti-mail-forward', key: 'actProgressSummarySent' },
+  expediente_exported:   { icon: 'ti-file-zip',    key: 'actExpedienteExported' }
 };
 
 function buildActivitySection(deal){

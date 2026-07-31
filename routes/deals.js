@@ -1,5 +1,8 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const { execFileSync } = require('child_process');
 const multer = require('multer');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
@@ -9,7 +12,7 @@ const { genFilename } = require('../lib/storage');
 const { canAccessDeal, myRoleInDeal, myDealPartyEntityId, myRepresentsSide, UNRESTRICTED_ROLES, AGENT_LIKE_ROLES } = require('../lib/access');
 const { isValidEmail } = require('../lib/validate');
 const { validateBody, z } = require('../lib/validateBody');
-const { rateLimitWrite, rateLimitEmail, rateLimitUpload } = require('../lib/apiRateLimits');
+const { rateLimitWrite, rateLimitEmail, rateLimitUpload, rateLimitExpensive } = require('../lib/apiRateLimits');
 
 // Los campos de una parte (vendedor/comprador) varían según partyType y
 // ownershipMode (individual vs. entidad, socios directos vs. entidad padre
@@ -824,11 +827,11 @@ router.patch('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer', 'e
 // parte, sin duplicar ni borrar lo que ya existe (ni lo ya subido/marcado).
 function rebuildChecklistForParty(deal, partyId, p) {
   const existing = db.prepare('SELECT name, sub_label FROM documents WHERE deal_party_entity_id = ?').all(partyId);
-  const existingKeys = new Set(existing.map(d => `${d.name} ${d.sub_label || ''}`));
+  const existingKeys = new Set(existing.map(d => `${d.name}\u0000${d.sub_label || ''}`));
   const wanted = buildDocsForParty(deal.scenario, p);
   const insertDoc = db.prepare("INSERT INTO documents (deal_id, deal_party_entity_id, sub_label, name, created_at) VALUES (?,?,?,?,datetime('now'))");
   wanted.forEach(d => {
-    const key = `${d.name} ${d.subLabel || ''}`;
+    const key = `${d.name}\u0000${d.subLabel || ''}`;
     if (!existingKeys.has(key)) insertDoc.run(deal.id, partyId, d.subLabel, d.name);
   });
 }
@@ -1461,6 +1464,92 @@ router.post('/:id/restore', requireRole('admin'), rateLimitWrite, (req, res) => 
   if (!info.changes) return res.status(404).json({ error: 'No hay ninguna operación borrada con ese id.' });
   logActivity(req.params.id, req.session.userId, 'deal_restored', null);
   res.json({ ok: true });
+});
+
+// Nombre seguro para archivos/carpetas dentro del ZIP del expediente —
+// sin separadores de ruta ni caracteres de control, largo acotado.
+function safeName(s) {
+  return String(s || '').replace(/[\/\\:*?"<>|\x00-\x1f]/g, '-').trim().slice(0, 120) || 'archivo';
+}
+
+// GET /api/deals/:id/export — descarga TODO el expediente de la operación
+// en un solo ZIP organizado por carpetas (Propiedad / Vendedor / Comprador /
+// Gestoría / Banco / KYC / Contrato / Firmas): documentos del checklist,
+// expedientes KYC generados, contrato de promesa y documentos de las tareas
+// de firma. Para el archivo muerto del despacho y para entregarle al
+// cliente su copia al cierre. Solo admin/abogado interno.
+router.get('/:id/export', requireRole('admin', 'lawyer'), rateLimitExpensive, async (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const deal = db.prepare('SELECT * FROM deals WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+  if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
+  if (!gcsStorage.isConfigured()) return res.status(501).json({ error: 'Cloud Storage no está configurado.' });
+
+  // Recolectar todo lo que tiene archivo, con su carpeta destino.
+  const entries = [];
+  db.prepare(`
+    SELECT d.*, dpe.side, dpe.name AS partyName FROM documents d
+    LEFT JOIN deal_party_entities dpe ON dpe.id = d.deal_party_entity_id
+    WHERE d.deal_id = ? AND d.file_url IS NOT NULL
+  `).all(deal.id).forEach(d => {
+    let dir = 'Propiedad';
+    if (d.section === 'gestoria') dir = 'Gestoría';
+    else if (d.section === 'banco') dir = 'Banco';
+    else if (d.deal_party_entity_id) dir = path.join(d.side === 'seller' ? 'Vendedor' : 'Comprador', safeName(d.partyName));
+    entries.push({ key: d.file_url, dir, filename: safeName(`${d.name}${d.sub_label ? ' - ' + d.sub_label : ''} - ${d.original_name || 'archivo'}`) });
+  });
+  db.prepare(`
+    SELECT k.*, dpe.name AS partyName FROM kyc_submissions k
+    JOIN deal_party_entities dpe ON dpe.id = k.deal_party_entity_id
+    WHERE k.deal_id = ? AND k.generated_file_url IS NOT NULL
+  `).all(deal.id).forEach(k => {
+    entries.push({ key: k.generated_file_url, dir: 'KYC', filename: safeName(`KYC ${k.partyName} (${k.template_key})`) + path.extname(k.generated_file_url) });
+  });
+  if (deal.contract_generated_file_url) {
+    entries.push({ key: deal.contract_generated_file_url, dir: 'Contrato', filename: safeName(`Contrato de Promesa - ${deal.property}`) + path.extname(deal.contract_generated_file_url) });
+  }
+  db.prepare('SELECT * FROM tasks WHERE deal_id = ? AND document_url IS NOT NULL').all(deal.id).forEach(tk => {
+    entries.push({ key: tk.document_url, dir: 'Firmas', filename: safeName(`${tk.label_es} - ${tk.document_original_name || 'documento'}`) });
+  });
+
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'expediente-'));
+  const rootName = safeName(deal.property);
+  let added = 0;
+  try {
+    for (const e of entries) {
+      try {
+        if (!await gcsStorage.existsFile(e.key)) continue;
+        const buf = await gcsStorage.downloadToBuffer(e.key);
+        const dir = path.join(tmpRoot, rootName, e.dir);
+        fs.mkdirSync(dir, { recursive: true });
+        // sin pisarse: si dos archivos quedan con el mismo nombre, numerar
+        let dest = path.join(dir, e.filename);
+        const ext = path.extname(e.filename);
+        const base = e.filename.slice(0, e.filename.length - ext.length);
+        for (let n = 2; fs.existsSync(dest); n++) dest = path.join(dir, `${base} (${n})${ext}`);
+        fs.writeFileSync(dest, buf);
+        added++;
+      } catch (err) {
+        console.error('[export] no se pudo incluir', e.key, err.message);
+      }
+    }
+    if (!added) {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+      return res.status(400).json({ error: 'Esta operación todavía no tiene archivos subidos.' });
+    }
+    const zipPath = path.join(tmpRoot, 'expediente.zip');
+    execFileSync('zip', ['-r', '-q', zipPath, rootName], { cwd: tmpRoot, timeout: 120000 });
+    logActivity(deal.id, req.session.userId, 'expediente_exported', `${added} archivo(s)`);
+
+    const downloadName = `Expediente - ${rootName}.zip`;
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${downloadName.replace(/[^\x20-\x7e]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`);
+    res.on('close', () => fs.rmSync(tmpRoot, { recursive: true, force: true }));
+    fs.createReadStream(zipPath).pipe(res);
+  } catch (err) {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+    if (!res.headersSent) res.status(500).json({ error: 'No se pudo armar el expediente.' });
+    console.error('[export]', deal.id, err.message);
+  }
 });
 
 // GET /api/deals/:id/activity — línea de tiempo de la operación (quién
