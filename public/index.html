@@ -19,9 +19,15 @@
     --shadow-card:0 1px 2px rgba(33,22,19,0.04), 0 8px 20px -12px rgba(33,22,19,0.12);
   }
   *{box-sizing:border-box;}
-  body{margin:0;}
-  .app{background:var(--stone); color:var(--ink); font-family:'Inter',sans-serif; border-radius:18px; overflow:hidden; border:0.5px solid var(--line); box-shadow:var(--shadow-card);}
-  .head-band{position:relative; background:var(--stone-card); color:var(--ink); padding:14px 28px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; border-bottom:1px solid var(--line);}
+  /* Armazón de aplicación de altura completa (como Stripe/Linear): la barra
+     de arriba fija, el menú lateral ocupando TODO el alto de la pantalla, y
+     solo el contenido de la derecha con scroll propio. Antes la página
+     entera hacía scroll y el menú terminaba donde terminaban sus botones,
+     dejando media columna vacía debajo. */
+  html, body{margin:0; height:100%;}
+  .app{background:var(--stone); color:var(--ink); font-family:'Inter',sans-serif; overflow:hidden;
+    height:100vh; display:flex; flex-direction:column;}
+  .head-band{position:relative; background:var(--stone-card); color:var(--ink); padding:14px 28px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; border-bottom:1px solid var(--line); flex-shrink:0;}
   .brand-mark{display:flex; align-items:center; gap:12px;}
   .brand-mark svg{display:block; flex-shrink:0; width:28px; height:28px;}
   .navbar-wordmark{font-family:'Cormorant Garamond',serif; font-weight:700; font-size:19px; letter-spacing:1px; color:var(--oxblood-deep);}
@@ -41,29 +47,36 @@
      siempre en el mismo lugar, sin que nada de la página las empuje hacia
      abajo. Dentro de una operación, sus secciones cuelgan del menú como
      sub-elementos — no hay que bajar a buscar una barra de pestañas. */
-  .app-body{display:flex; align-items:stretch; min-height:520px;}
-  /* Se queda pegado al hacer scroll: en una lista larga de documentos la
-     navegación sigue a la vista, no hay que regresar hasta arriba. */
+  .app-body{flex:1; min-height:0; display:flex; align-items:stretch;}
+  /* Columna completa de arriba abajo, con su propio scroll si la lista de
+     secciones creciera. Nunca se corta a media pantalla. */
   .sidebar{width:236px; flex-shrink:0; background:var(--stone-card); border-right:1px solid var(--line);
-    padding:18px 12px; display:flex; flex-direction:column; gap:2px;
-    position:sticky; top:0; align-self:flex-start; max-height:100vh; overflow-y:auto;}
-  .body-wrap{flex:1; min-width:0; padding:24px 26px; min-height:400px;}
-  .side-group{font-size:10.5px; letter-spacing:0.08em; text-transform:uppercase; color:var(--ink-faint);
-    font-weight:600; margin:18px 0 6px; padding:0 10px;}
-  .side-group:first-child{margin-top:0;}
-  .side-item{display:flex; align-items:center; gap:9px; width:100%; padding:8px 10px; border:0; border-radius:8px;
-    background:none; color:var(--ink-soft); font-size:13.5px; font-family:inherit; text-align:left; cursor:pointer;
-    line-height:1.25; transition:background 0.12s, color 0.12s;}
+    padding:18px 12px; display:flex; flex-direction:column; gap:2px; height:100%; overflow-y:auto;}
+  .body-wrap{flex:1; min-width:0; padding:24px 26px; overflow-y:auto; height:100%;}
+  .side-group{font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink-faint);
+    font-weight:600; margin:20px 0 7px; padding:0 12px;}
+  .side-group:first-child{margin-top:2px;}
+  /* La barrita tinta de la izquierda marca la sección activa sin gritar —
+     el fondo tenue solo no se distinguía de un simple hover. */
+  .side-item{position:relative; display:flex; align-items:center; gap:10px; width:100%; padding:9px 11px; border:0;
+    border-radius:9px; background:none; color:var(--ink-soft); font-size:13.5px; font-family:inherit; text-align:left;
+    cursor:pointer; line-height:1.25; transition:background 0.14s ease, color 0.14s ease;}
   .side-item:hover{background:var(--stone); color:var(--ink);}
   .side-item.active{background:var(--oxblood-soft); color:var(--oxblood-deep); font-weight:600;}
-  .side-item i{font-size:15px; flex-shrink:0; opacity:0.85;}
+  .side-item.active::before{content:''; position:absolute; left:0; top:7px; bottom:7px; width:3px;
+    border-radius:0 3px 3px 0; background:var(--oxblood-deep);}
+  .side-item i{font-size:16px; flex-shrink:0; opacity:0.8;}
+  .side-item.active i{opacity:1;}
+  .side-item span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .side-item .side-count{margin-left:auto; background:var(--oxblood-deep); color:#F6F4F0; border-radius:9px;
     font-size:10.5px; font-weight:600; min-width:18px; height:18px; display:inline-flex; align-items:center;
     justify-content:center; padding:0 5px;}
   .side-item.active .side-count{background:var(--oxblood);}
   .side-sub{padding-left:20px; font-size:13px;}
   .side-divider{height:1px; background:var(--line); margin:14px 4px;}
-  .side-account{border-top:1px solid var(--line); padding:12px 10px 2px; margin-top:8px;}
+  /* Pegado al fondo de la columna, separado por su línea — el espaciador
+     flexible que lo empuja lo pone buildSidebarAccount. */
+  .side-account{border-top:1px solid var(--line); padding:14px 10px 4px; margin-top:10px; flex-shrink:0;}
   /* Ventana angosta: el menú se guarda detrás del botón de hamburguesa y
      entra deslizándose por la izquierda, como Stripe — el contenido se
      queda con todo el ancho y la navegación sigue completa (con sus
@@ -73,11 +86,11 @@
   .sidebar-scrim{display:none;}
   @media (max-width:900px){
     .menu-toggle{display:flex;}
-    .app-body{display:block;}
-    .sidebar{position:fixed; top:0; left:0; bottom:0; z-index:80; width:264px; max-height:none;
-      transform:translateX(-100%); transition:transform 0.22s ease; box-shadow:0 0 40px rgba(33,22,19,0.18);}
+    .sidebar{position:fixed; top:0; left:0; bottom:0; height:auto; z-index:80; width:min(280px, 84vw);
+      transform:translateX(-100%); transition:transform 0.22s ease; box-shadow:0 0 40px rgba(33,22,19,0.22);}
     .sidebar.open{transform:translateX(0);}
     .sidebar-scrim.open{display:block; position:fixed; inset:0; background:rgba(33,22,19,0.35); z-index:79;}
+    .body-wrap{padding:18px 16px;}
   }
   .banner{background:var(--gold-soft); color:#5B4620; font-size:12px; padding:10px 14px; border-radius:10px; margin-bottom:18px; line-height:1.5;}
   .section-title{font-family:'Cormorant Garamond',serif; font-weight:600; font-size:19px; margin:0 0 12px; color:var(--oxblood-deep);}
@@ -1642,13 +1655,16 @@ function buildSidebar(){
 function render(){
   const viewKey = currentViewKey();
   const sameView = viewKey === _lastViewKey;
-  const scrollY = window.scrollY;
+  // El scroll ahora vive en la columna de contenido, no en la ventana (el
+  // armazón es de altura fija para que el menú lateral llegue hasta abajo).
+  const scroller = document.getElementById('body');
+  const scrollY = scroller ? scroller.scrollTop : 0;
   _lastViewKey = viewKey;
   renderInner();
   if(sameView){
-    window.scrollTo(0, scrollY);
+    if(scroller) scroller.scrollTop = scrollY;
   } else {
-    window.scrollTo(0, 0);
+    if(scroller) scroller.scrollTop = 0;
   }
 }
 
