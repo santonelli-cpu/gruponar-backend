@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS users (
   status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('pending','active')),
   agency TEXT,
   phone TEXT,
+  avatar_url TEXT,
+  bio TEXT,
   totp_secret TEXT,
   totp_enabled INTEGER NOT NULL DEFAULT 0,
   two_factor_method TEXT,

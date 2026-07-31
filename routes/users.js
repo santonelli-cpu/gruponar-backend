@@ -1,8 +1,10 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
+const multer = require('multer');
 const db = require('../db');
-const { requireRole, resolveAgency, KNOWN_AGENCIES } = require('./auth');
+const gcsStorage = require('../lib/gcsStorage');
+const { requireAuth, requireRole, resolveAgency, KNOWN_AGENCIES } = require('./auth');
 const { validateBody, z } = require('../lib/validateBody');
 const { rateLimitWrite, rateLimitEmail } = require('../lib/apiRateLimits');
 const mailer = require('../lib/email');
@@ -57,8 +59,86 @@ router.post('/', requireRole('admin'), rateLimitWrite, validateBody(createUserSc
 });
 
 router.get('/', requireRole('admin'), (req, res) => {
-  const users = db.prepare('SELECT id, name, email, role, status, agency, created_at FROM users ORDER BY created_at DESC').all();
+  const users = db.prepare('SELECT id, name, email, role, status, agency, phone, bio, avatar_url AS avatarUrl, created_at FROM users ORDER BY created_at DESC').all();
   res.json(users);
+});
+
+// ── Mi perfil ────────────────────────────────────────────────────────────
+// Cualquier usuario edita SU propia tarjeta: nombre, teléfono, agencia/
+// empresa y una línea de presentación. Pensado sobre todo para agentes y
+// abogados externos, que son la cara visible ante los clientes de la
+// operación. El correo NO se cambia aquí (es el identificador de login;
+// eso sigue siendo del admin vía PATCH /:id/profile).
+// OJO: van ANTES que las rutas /:id/... para que ':id' no capture 'me'.
+const myProfileSchema = z.object({
+  name: z.string().trim().min(1, 'Escribe un nombre.').max(200).optional(),
+  phone: z.string().trim().max(30).optional(),
+  agency: z.string().trim().max(200).optional(),
+  bio: z.string().trim().max(600).optional()
+}).strict();
+
+router.patch('/me/profile', requireAuth, rateLimitWrite, validateBody(myProfileSchema), (req, res) => {
+  const me = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
+  if (!me) return res.status(401).json({ error: 'No autenticado.' });
+  const next = {
+    name: req.body.name !== undefined ? req.body.name : me.name,
+    phone: req.body.phone !== undefined ? req.body.phone : me.phone,
+    agency: req.body.agency !== undefined ? req.body.agency : me.agency,
+    bio: req.body.bio !== undefined ? req.body.bio : me.bio
+  };
+  db.prepare('UPDATE users SET name = ?, phone = ?, agency = ?, bio = ? WHERE id = ?')
+    .run(next.name, next.phone || null, next.agency || null, next.bio || null, me.id);
+  res.json({ ok: true, ...next });
+});
+
+// Foto de perfil o logo de la empresa — imagen chica a Cloud Storage bajo
+// _avatars/ (prefijo propio, nunca choca con los archivos de operaciones).
+// La clave lleva un sufijo aleatorio: además de evitar caché vieja tras un
+// cambio, evita colisiones entre entornos que comparten bucket.
+const avatarUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, ['image/png', 'image/jpeg', 'image/webp'].includes(file.mimetype))
+});
+
+router.post('/me/avatar', requireAuth, rateLimitWrite, avatarUpload.single('avatar'), async (req, res) => {
+  if (!gcsStorage.isConfigured()) return res.status(501).json({ error: 'Cloud Storage no está configurado.' });
+  if (!req.file) return res.status(400).json({ error: 'Sube una imagen PNG, JPG o WebP de máximo 5 MB.' });
+  const me = db.prepare('SELECT id, avatar_url FROM users WHERE id = ?').get(req.session.userId);
+  const ext = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp' }[req.file.mimetype];
+  const key = `_avatars/u${me.id}-${crypto.randomBytes(8).toString('hex')}${ext}`;
+  try {
+    await gcsStorage.uploadBuffer(key, req.file.buffer, req.file.mimetype);
+    if (me.avatar_url) gcsStorage.deleteFile(me.avatar_url).catch(() => {});
+    db.prepare('UPDATE users SET avatar_url = ? WHERE id = ?').run(key, me.id);
+    res.json({ ok: true, avatarUrl: key });
+  } catch (err) {
+    console.error('[avatar]', err.message);
+    res.status(500).json({ error: 'No se pudo guardar la imagen.' });
+  }
+});
+
+router.delete('/me/avatar', requireAuth, rateLimitWrite, async (req, res) => {
+  const me = db.prepare('SELECT id, avatar_url FROM users WHERE id = ?').get(req.session.userId);
+  if (me && me.avatar_url) {
+    gcsStorage.deleteFile(me.avatar_url).catch(() => {});
+    db.prepare('UPDATE users SET avatar_url = NULL WHERE id = ?').run(me.id);
+  }
+  res.json({ ok: true });
+});
+
+// La foto de cualquier usuario, para mostrarla junto a su nombre (equipo,
+// agentes de una operación). Solo usuarios autenticados; una foto de perfil
+// no es un documento sensible, no hace falta scoping por operación.
+router.get('/:id/avatar', requireAuth, async (req, res) => {
+  const user = db.prepare('SELECT avatar_url FROM users WHERE id = ?').get(req.params.id);
+  if (!user || !user.avatar_url || !gcsStorage.isConfigured()) return res.status(404).json({ error: 'Sin foto.' });
+  const contentType = { '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp' }[user.avatar_url.slice(user.avatar_url.lastIndexOf('.'))];
+  try {
+    await gcsStorage.streamToResponse(user.avatar_url, res, { inline: true, contentType });
+  } catch (err) {
+    if (!res.headersSent) res.status(404).json({ error: 'Sin foto.' });
+  }
 });
 
 // PATCH /api/users/:id/approve — activa una cuenta autoregistrada

@@ -612,7 +612,7 @@ router.get('/:id', requireAuth, (req, res) => {
   });
 
   const agents = db.prepare(`
-    SELECT dp.id AS dealPartyId, u.id AS userId, u.name, u.email, u.agency, u.status, u.role, dp.represents_side AS representsSide
+    SELECT dp.id AS dealPartyId, u.id AS userId, u.name, u.email, u.agency, u.status, u.role, u.bio, u.avatar_url AS avatarUrl, dp.represents_side AS representsSide
     FROM deal_parties dp JOIN users u ON u.id = dp.user_id
     WHERE dp.deal_id = ? AND dp.role_in_deal = 'agent'
     ORDER BY u.name
@@ -969,7 +969,7 @@ router.post('/:id/parties/:partyId/remind', requireRole('admin', 'agent', 'lawye
 router.get('/:id/available-agents', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const agents = db.prepare(`
-    SELECT id, name, email, agency, status, role FROM users
+    SELECT id, name, email, agency, status, role, avatar_url AS avatarUrl FROM users
     WHERE role IN ('agent', 'external_lawyer', 'lawyer') AND status IN ('active', 'pending')
       AND id NOT IN (SELECT user_id FROM deal_parties WHERE deal_id = ? AND role_in_deal = 'agent')
       AND id != COALESCE((SELECT created_by FROM deals WHERE id = ?), 0)

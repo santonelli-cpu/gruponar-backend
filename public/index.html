@@ -690,6 +690,10 @@ const STRINGS = {
     allPartiesChecklist: 'Checklist de todas las partes', dealSingular: 'Operación',
     closingFollowup: 'Seguimiento del cierre', eSignature: 'Firma electrónica',
     tabYourDocs: 'Tus documentos', tabYourKyc: 'Tu KYC', tabCosts: 'Gastos de cierre', tabTracker: 'Seguimiento', tabDocs: 'Documentos',
+    editProfile: 'Editar perfil', profileName: 'Nombre', profilePhone: 'Teléfono', profileAgency: 'Agencia / Empresa',
+    profileAgencyOptional: 'Opcional', profileBio: 'Presentación', profileBioPh: 'Una línea sobre ti o tu empresa',
+    profilePhoto: 'Foto o logo (PNG/JPG, máx. 5 MB)', profileRemovePhoto: 'Quitar foto', profileSaved: 'Perfil actualizado.',
+    profileNameRequired: 'Escribe un nombre.', genericError: 'Algo salió mal. Inténtalo de nuevo.',
     eSignHintStaff: 'Sube el documento y envíalo a firma — comprador y vendedor firman de forma embebida, sin salir de la plataforma.',
     eSignHintClient: 'Cuando tu coordinador envíe un documento a firma, aparecerá aquí para que lo firmes en línea.',
     docusignNotSent: 'Sin enviar', docusignSent: 'Enviado', docusignDelivered: 'Entregado', docusignCompleted: 'Firmado', docusignDeclined: 'Rechazado', docusignVoided: 'Anulado',
@@ -968,6 +972,10 @@ const STRINGS = {
     allPartiesChecklist: 'Checklist for all parties', dealSingular: 'Deal',
     closingFollowup: 'Closing follow-up', eSignature: 'E-signature',
     tabYourDocs: 'Your documents', tabYourKyc: 'Your KYC', tabCosts: 'Closing costs', tabTracker: 'Follow-up', tabDocs: 'Documents',
+    editProfile: 'Edit profile', profileName: 'Name', profilePhone: 'Phone', profileAgency: 'Agency / Company',
+    profileAgencyOptional: 'Optional', profileBio: 'About', profileBioPh: 'One line about you or your company',
+    profilePhoto: 'Photo or logo (PNG/JPG, max 5 MB)', profileRemovePhoto: 'Remove photo', profileSaved: 'Profile updated.',
+    profileNameRequired: 'Please enter a name.', genericError: 'Something went wrong. Please try again.',
     eSignHintStaff: 'Upload the document and send it for signature — buyer and seller sign embedded, without leaving the platform.',
     eSignHintClient: "When your coordinator sends a document for signature, it'll show up here for you to sign online.",
     docusignNotSent: 'Not sent', docusignSent: 'Sent', docusignDelivered: 'Delivered', docusignCompleted: 'Signed', docusignDeclined: 'Declined', docusignVoided: 'Voided',
@@ -2000,28 +2008,95 @@ document.getElementById('mainTabs').addEventListener('click', e=>{
 });
 document.getElementById('header-logout').addEventListener('click', logout);
 
+// Círculo con foto (si el usuario subió una) o iniciales — `user` puede ser
+// currentUser ({id, avatarUrl}) o un agente de una operación ({userId,
+// avatarUrl}).
+function avatarHtml(user, size){
+  const s = size || 44;
+  const style = `width:${s}px; height:${s}px; font-size:${Math.max(10, Math.round(s/3.2))}px; flex-shrink:0;`;
+  if(user && user.avatarUrl){
+    return `<span class="session-avatar" style="${style} overflow:hidden;"><img src="/api/users/${user.userId || user.id}/avatar" alt="" style="width:100%; height:100%; object-fit:cover; display:block;"></span>`;
+  }
+  return `<span class="session-avatar" style="${style}">${escapeHtml(personInitials(user && user.name || ''))}</span>`;
+}
+
 // ---------- ADMIN ----------
+let profileEditOpen = false;
+
+function buildProfileEditor(){
+  const box = document.createElement('div');
+  box.style.cssText = 'margin-top:14px; padding-top:14px; border-top:0.5px solid var(--line); display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px; width:100%;';
+  const isFacilitator = ['agent','external_lawyer'].includes(currentUser.role);
+  box.innerHTML = `
+    <label>${t('profileName')}<input type="text" id="prof-name" value="${escapeHtml(currentUser.name||'')}" maxlength="200"></label>
+    <label>${t('profilePhone')}<input type="text" id="prof-phone" value="${escapeHtml(currentUser.phone||'')}" maxlength="30" placeholder="+52 ..."></label>
+    <label>${t('profileAgency')}<input type="text" id="prof-agency" value="${escapeHtml(currentUser.agency||'')}" maxlength="200" ${isFacilitator ? '' : `placeholder="${t('profileAgencyOptional')}"`}></label>
+    <label>${t('profileBio')}<input type="text" id="prof-bio" value="${escapeHtml(currentUser.bio||'')}" maxlength="600" placeholder="${t('profileBioPh')}"></label>
+    <label>${t('profilePhoto')}<input type="file" id="prof-avatar" accept="image/png,image/jpeg,image/webp"></label>
+    <div style="display:flex; gap:8px; align-items:flex-end;">
+      <button class="btn primary" id="prof-save"><i class="ti ti-check" aria-hidden="true"></i> ${t('save')}</button>
+      ${currentUser.avatarUrl ? `<button class="btn" id="prof-remove-avatar"><i class="ti ti-photo-off" aria-hidden="true"></i> ${t('profileRemovePhoto')}</button>` : ''}
+    </div>
+  `;
+  box.querySelector('#prof-save').onclick = (e) => withButtonLoading(e.currentTarget, async () => {
+    const payload = {
+      name: box.querySelector('#prof-name').value.trim(),
+      phone: box.querySelector('#prof-phone').value.trim(),
+      agency: box.querySelector('#prof-agency').value.trim(),
+      bio: box.querySelector('#prof-bio').value.trim()
+    };
+    if(!payload.name){ showToast(t('profileNameRequired'), 'error'); return; }
+    let r = await fetch('/api/users/me/profile', { method:'PATCH', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify(payload) });
+    if(!r.ok){ const j = await r.json().catch(()=>({})); showToast(j.error || t('genericError'), 'error'); return; }
+    const file = box.querySelector('#prof-avatar').files[0];
+    if(file){
+      const fd = new FormData(); fd.append('avatar', file);
+      r = await fetch('/api/users/me/avatar', { method:'POST', credentials:'include', body: fd });
+      if(!r.ok){ const j = await r.json().catch(()=>({})); showToast(j.error || t('genericError'), 'error'); return; }
+    }
+    const me = await fetch('/api/auth/me', { credentials:'include' }).then(x=>x.json());
+    currentUser = { ...currentUser, ...me };
+    profileEditOpen = false;
+    showToast(t('profileSaved'), 'success');
+    render();
+  });
+  const removeBtn = box.querySelector('#prof-remove-avatar');
+  if(removeBtn) removeBtn.onclick = (e) => withButtonLoading(e.currentTarget, async () => {
+    await fetch('/api/users/me/avatar', { method:'DELETE', credentials:'include' });
+    currentUser.avatarUrl = null;
+    showToast(t('profileSaved'), 'success');
+    render();
+  });
+  return box;
+}
+
 function renderAdmin(body){
   if(adminView === 'list' || adminView === 'dashboard' || adminView === 'team' || adminView === 'clients' || adminView === 'trash' || adminView === null){
     const secCard = document.createElement('div');
     secCard.className = 'card';
-    const initials = currentUser.name.trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
     secCard.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:14px;">
         <div style="display:flex; gap:14px;">
-          <div class="session-avatar">${escapeHtml(initials)}</div>
+          ${avatarHtml(currentUser, 44)}
           <div>
             <div style="font-size:12px; color:var(--ink-soft);">${t('activeSession')}</div>
             <div style="font-weight:600; font-size:15px; margin:2px 0 8px;">${escapeHtml(currentUser.name)} <span style="font-weight:400; color:var(--ink-soft); font-size:12.5px;">— ${escapeHtml(currentUser.email)}</span></div>
             <span class="badge" style="background:var(--oxblood-soft); color:var(--oxblood);">${roleDisplayLabel(currentUser.role)}</span>
+            ${currentUser.agency ? `<span class="badge" style="background:var(--stone); border:0.5px solid var(--line); color:var(--ink-soft); margin-left:4px;">${escapeHtml(currentUser.agency)}</span>` : ''}
+            ${currentUser.bio ? `<div class="field-hint" style="margin-top:8px; max-width:520px;">${escapeHtml(currentUser.bio)}</div>` : ''}
             <div class="field-hint" style="margin-top:10px; max-width:520px;">${t('sessionHint')}</div>
           </div>
         </div>
-        <button class="btn" id="do-logout"><i class="ti ti-logout" aria-hidden="true"></i> ${t('logout')}</button>
+        <div style="display:flex; gap:8px;">
+          <button class="btn" id="prof-toggle"><i class="ti ti-user-edit" aria-hidden="true"></i> ${t('editProfile')}</button>
+          <button class="btn" id="do-logout"><i class="ti ti-logout" aria-hidden="true"></i> ${t('logout')}</button>
+        </div>
       </div>
     `;
     body.appendChild(secCard);
     secCard.querySelector('#do-logout').onclick = logout;
+    secCard.querySelector('#prof-toggle').onclick = () => { profileEditOpen = !profileEditOpen; render(); };
+    if(profileEditOpen) secCard.appendChild(buildProfileEditor());
 
     const nav = document.createElement('div');
     nav.style.cssText = 'display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;';
@@ -4864,7 +4939,7 @@ function buildPersonRow(dealId, a, opts){
   row.style.cssText = 'display:flex; align-items:center; gap:12px; padding:8px 2px;' + (opts.bordered !== false ? ' border-bottom:0.5px solid var(--line);' : '');
   const isAgentLike = ['agent', 'external_lawyer'].includes(a.role);
   row.innerHTML = `
-    <span class="session-avatar" style="width:36px; height:36px; font-size:12px; flex-shrink:0;">${escapeHtml(personInitials(a.name))}</span>
+    ${avatarHtml(a, 36)}
     <span style="flex:1; min-width:0;">
       <div style="font-size:13px; font-weight:500; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
         <span style="overflow:hidden; text-overflow:ellipsis;">${escapeHtml(a.name)}</span>
@@ -5026,7 +5101,7 @@ function openAddPeopleModal(dealId){
         row.onmouseenter = () => row.style.background = 'var(--stone)';
         row.onmouseleave = () => row.style.background = '';
         row.innerHTML = `
-          <span class="session-avatar" style="width:32px; height:32px; font-size:11px; flex-shrink:0;">${escapeHtml(personInitials(a.name))}</span>
+          ${avatarHtml(a, 32)}
           <span style="flex:1; min-width:0;">
             <div style="font-size:13px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(a.name)}</div>
             <div class="field-hint" style="margin:0;">${escapeHtml(a.email)}</div>

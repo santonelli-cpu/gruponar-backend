@@ -112,6 +112,10 @@ ensureColumn('users', 'totp_enabled', 'totp_enabled INTEGER NOT NULL DEFAULT 0')
 // autenticador — un comprador/vendedor de una sola operación puede
 // preferir un código por correo, que ya sabe usar.
 ensureColumn('users', 'two_factor_method', 'two_factor_method TEXT');
+// Perfil visible (sobre todo agentes/abogados externos): foto o logo de su
+// empresa en Cloud Storage y una línea de presentación.
+ensureColumn('users', 'avatar_url', 'avatar_url TEXT');
+ensureColumn('users', 'bio', 'bio TEXT');
 
 // Qué escrow company usa la operación — determina qué plantilla KYC/escrow
 // se ofrece (Armour o TLA). Sin CHECK aquí, igual que el resto de columnas

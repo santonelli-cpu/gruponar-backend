@@ -353,7 +353,7 @@ router.post('/logout', (req, res) => {
 
 router.get('/me', (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'No autenticado.' });
-  const user = db.prepare('SELECT id, name, email, role, agency FROM users WHERE id = ?').get(req.session.userId);
+  const user = db.prepare('SELECT id, name, email, role, agency, phone, bio, avatar_url AS avatarUrl FROM users WHERE id = ?').get(req.session.userId);
   if (!user) return res.status(401).json({ error: 'No autenticado.' });
   res.json(user);
 });
