@@ -1712,7 +1712,12 @@ router.get('/:id/export', requireRole('admin', 'lawyer'), rateLimitExpensive, as
 // GET /api/deals/:id/activity — línea de tiempo de la operación (quién
 // subió/aprobó/completó qué y cuándo). Solo staff: el detalle de actividad
 // entre partes (ej. qué subió el vendedor) no le corresponde al comprador.
-router.get('/:id/activity', requireRole('admin', 'lawyer', 'external_lawyer', 'agent'), (req, res) => {
+// Solo admin/abogado interno: la bitácora nombra a las partes ("agregó a
+// jimena", "mandó a firma el KYC de jimena") y los documentos de AMBOS
+// lados. Un agente representa a un solo lado y no debe enterarse de lo del
+// otro, así que aquí no entra — ve el avance de su lado en su propia
+// sección de documentos.
+router.get('/:id/activity', requireRole('admin', 'lawyer'), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const rows = db.prepare(`
     SELECT a.id, a.action, a.detail, a.created_at, u.name AS userName

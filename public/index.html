@@ -3648,7 +3648,9 @@ function buildAdminDealDetail(deal){
     ['tracker', t('navSecTracker'), pendingTasksCount],
     ['people', t('navSecPeople'), 0],
     ['contract', t('navSecContract'), 0],
-    ['activity', t('navSecActivity'), 0]
+    // La bitácora nombra partes y documentos de los dos lados — solo
+    // admin/abogado interno (mismo criterio que el endpoint).
+    ...(['admin','lawyer'].includes(currentUser.role) ? [['activity', t('navSecActivity'), 0]] : [])
   ];
   sidebarSections(TABS, dealDetailTab, (id) => { dealDetailTab = id; render(); });
   const tab = dealDetailTab;

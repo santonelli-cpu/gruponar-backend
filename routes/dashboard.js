@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { requireAuth } = require('./auth');
-const { UNRESTRICTED_ROLES } = require('../lib/access');
+const { UNRESTRICTED_ROLES, AGENT_LIKE_ROLES } = require('../lib/access');
 
 const router = express.Router();
 
@@ -34,10 +34,44 @@ function visibleDealIdsSql(req) {
   };
 }
 
+// Un agente (o abogado externo) solo representa a UN lado de cada
+// operación: el del comprador nunca debe enterarse de qué le falta al
+// vendedor, ni siquiera de su nombre. El detalle de la operación ya
+// filtraba por lado (ver GET /api/deals/:id), pero este panel contaba y
+// listaba TODO lo de la operación — un agente del comprador veía aquí el
+// nombre de la parte vendedora y sus documentos pendientes.
+//
+// Devuelve un fragmento de SQL para pegar en el WHERE de una consulta
+// sobre `documents d` (o cualquiera con deal_id + deal_party_entity_id):
+// deja pasar los documentos de la Propiedad (sin parte) y los de las
+// partes del lado que representa en ESA operación. Vacío para admin,
+// abogado interno y comprador/vendedor (ellos ya están acotados por otras
+// reglas). Un comprador/vendedor solo ve su propia operación completa,
+// como hasta ahora.
+// Gestoría y Banco son trabajo interno del despacho (CLG, avalúo, formatos
+// del banco) — mismo criterio que el detalle de la operación: quien no es
+// admin, abogado interno o abogado externo no los ve, y por lo tanto
+// tampoco deben contarse entre sus pendientes.
+function sectionScopeSql(req, sectionColumn) {
+  return ['admin', 'lawyer', 'external_lawyer'].includes(req.session.role) ? '' : ` AND ${sectionColumn} IS NULL`;
+}
+
+function sideScopeSql(req, partyIdColumn, dealIdColumn) {
+  if (!AGENT_LIKE_ROLES.includes(req.session.role)) return '';
+  return ` AND (${partyIdColumn} IS NULL OR ${partyIdColumn} IN (
+    SELECT dpe.id FROM deal_party_entities dpe
+    JOIN deal_parties agente ON agente.deal_id = dpe.deal_id
+      AND agente.user_id = ${Number(req.session.userId)} AND agente.role_in_deal = 'agent'
+    WHERE dpe.deal_id = ${dealIdColumn}
+      AND (agente.represents_side IS NULL OR dpe.side = agente.represents_side)
+  ))`;
+}
+
 // GET /api/dashboard — totales, desglose por escenario, y lista de
 // documentos/tareas estancados o esperando firma.
 router.get('/', requireAuth, (req, res) => {
   const { sql: dealsSql, params } = visibleDealIdsSql(req);
+  const docSideScope = sideScopeSql(req, 'd.deal_party_entity_id', 'd.deal_id') + sectionScopeSql(req, 'd.section');
 
   const totalDeals = db.prepare(`SELECT COUNT(*) AS c FROM deals WHERE id IN (${dealsSql})`).get(...params).c;
 
@@ -46,7 +80,7 @@ router.get('/', requireAuth, (req, res) => {
   `).all(...params);
 
   const documentsPending = db.prepare(`
-    SELECT COUNT(*) AS c FROM documents WHERE deal_id IN (${dealsSql}) AND status = 'pending'
+    SELECT COUNT(*) AS c FROM documents d WHERE d.deal_id IN (${dealsSql}) AND d.status = 'pending'${docSideScope}
   `).get(...params).c;
 
   const tasksPending = db.prepare(`
@@ -67,7 +101,7 @@ router.get('/', requireAuth, (req, res) => {
     FROM documents d
     JOIN deals ON deals.id = d.deal_id
     LEFT JOIN deal_party_entities dpe ON dpe.id = d.deal_party_entity_id
-    WHERE d.deal_id IN (${dealsSql}) AND d.status = 'pending'
+    WHERE d.deal_id IN (${dealsSql}) AND d.status = 'pending'${docSideScope}
     ORDER BY deals.property ASC, d.created_at ASC
   `).all(...params);
 
@@ -200,16 +234,20 @@ router.get('/notifications', requireAuth, (req, res) => {
       ORDER BY d.reviewed_at DESC LIMIT 20
     `).all(req.session.userId);
   } else {
-    // Staff y facilitadores: la línea de tiempo reciente de sus operaciones.
+    // La bitácora nombra partes y documentos de AMBOS lados, así que a un
+    // agente/abogado externo solo se le devuelve lo que hizo él mismo — lo
+    // del otro lado del negocio no es asunto suyo (misma regla que GET
+    // /api/deals/:id/activity, que directamente no les abre).
+    const ownOnly = AGENT_LIKE_ROLES.includes(role) ? ' AND a.user_id = ?' : '';
     updates = db.prepare(`
       SELECT 'activity' AS type, a.action, a.detail, u.name AS userName,
         deals.id AS dealId, deals.property, a.created_at AS at
       FROM deal_activity a
       JOIN deals ON deals.id = a.deal_id
       LEFT JOIN users u ON u.id = a.user_id
-      WHERE a.deal_id IN (${dealsSql}) AND a.created_at > datetime('now', '-14 days')
+      WHERE a.deal_id IN (${dealsSql}) AND a.created_at > datetime('now', '-14 days')${ownOnly}
       ORDER BY a.id DESC LIMIT 20
-    `).all(...params);
+    `).all(...(ownOnly ? [...params, req.session.userId] : params));
   }
 
   actionRequired.sort((a, b) => (b.at || '').localeCompare(a.at || ''));
