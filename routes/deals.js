@@ -42,7 +42,12 @@ const partyFields = {
 };
 const partyInArraySchema = z.object({ ...partyFields, side: z.enum(['buyer', 'seller']) }).strict();
 const createPartySchema = z.object({ ...partyFields, side: z.enum(['buyer', 'seller']) }).strict();
-const updatePartySchema = z.object({ ...partyFields }).strict();
+// `side` se acepta pero se IGNORA al editar: el formulario de la parte es
+// el mismo para dar de alta y para editar, así que siempre lo manda, pero
+// una parte no cambia de lado (el handler usa el suyo de la base). Sin esta
+// llave, .strict() rechazaba cada edición con "Unrecognized key: side" —
+// y con ella se caía justo el paso de ligarle su cuenta al cliente.
+const updatePartySchema = z.object({ ...partyFields, side: z.enum(['buyer', 'seller']).optional() }).strict();
 
 const createDealSchema = z.object({
   scenario: z.enum(['purchase', 'trust', 'transfer', 'trust_termination']),
@@ -952,6 +957,158 @@ router.post('/:id/parties/:partyId/remind', requireRole('admin', 'agent', 'lawye
   `).run(party.id);
   res.json({ ok: true, count: pending.length });
 });
+
+// ── Clientes que se repiten ─────────────────────────────────────────────
+// El mismo comprador/vendedor vuelve con otra propiedad. En vez de teclear
+// otra vez su nombre y su correo exacto (y de que le vuelvan a pedir los
+// mismos documentos), aquí se lista a los clientes de operaciones
+// anteriores para engancharlos a esta con un clic — el mismo patrón que
+// "agregar agente" (GET available-agents + POST agents).
+//
+// Alcance: admin y abogado interno ven a todos los clientes de las
+// operaciones que ya pueden ver; agente y abogado externo, solo a los de
+// SUS operaciones — la lista de clientes del despacho no es de todos.
+router.get('/:id/past-clients', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const side = req.query.side === 'seller' ? 'seller' : 'buyer';
+
+  const restricted = !UNRESTRICTED_ROLES.includes(req.session.role);
+  const visibleDealsSql = restricted
+    ? `AND (d.created_by = @userId OR d.id IN (SELECT deal_id FROM deal_parties WHERE user_id = @userId))`
+    : '';
+
+  const rows = db.prepare(`
+    SELECT u.id AS userId, u.name AS accountName, u.email,
+      dpe.id AS lastPartyId, dpe.name AS partyName, dpe.party_type AS partyType,
+      dpe.ownership_mode AS ownershipMode, dpe.parent_entity_name AS parentEntityName,
+      dpe.parent_entity_type AS parentEntityType, dpe.parent_has_trust_above AS parentHasTrustAbove,
+      dpe.parent_trust_name AS parentTrustName, dpe.direct_trust_name AS directTrustName,
+      d.id AS lastDealId, d.property AS lastDealProperty, d.start_date AS lastDealDate,
+      (SELECT COUNT(*) FROM documents doc WHERE doc.deal_party_entity_id = dpe.id AND doc.file_url IS NOT NULL) AS reusableDocs
+    FROM users u
+    JOIN deal_parties dp ON dp.user_id = u.id AND dp.relationship = 'titular'
+    JOIN deal_party_entities dpe ON dpe.id = dp.deal_party_entity_id
+    JOIN deals d ON d.id = dp.deal_id
+    WHERE u.role IN ('buyer', 'seller') AND u.status = 'active'
+      AND d.id != @dealId AND d.deleted_at IS NULL
+      AND u.id NOT IN (SELECT user_id FROM deal_parties WHERE deal_id = @dealId)
+      ${visibleDealsSql}
+    ORDER BY u.name COLLATE NOCASE, d.id DESC
+  `).all({ dealId: Number(req.params.id), userId: req.session.userId });
+
+  // Una fila por cliente: la de su operación más reciente (la consulta ya
+  // viene ordenada por deal.id descendente dentro de cada persona).
+  const seen = new Set();
+  const clients = rows.filter(r => (seen.has(r.userId) ? false : seen.add(r.userId)));
+  res.json({ side, clients });
+});
+
+// POST /api/deals/:id/parties/from-client { side, userId, copyDocuments }
+// — crea la parte con los mismos datos que traía en su operación anterior,
+// le liga su cuenta de siempre y, si se pide, le trae los documentos que ya
+// había entregado para que solo tenga que actualizar los que caducaron.
+const fromClientSchema = z.object({
+  side: z.enum(['buyer', 'seller']),
+  userId: z.number().int().positive(),
+  copyDocuments: z.boolean().optional()
+}).strict();
+
+router.post('/:id/parties/from-client', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, validateBody(fromClientSchema), async (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const deal = db.prepare('SELECT * FROM deals WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+  if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
+  const { side, userId, copyDocuments } = req.body;
+
+  const user = db.prepare("SELECT id, name, email, role FROM users WHERE id = ? AND role IN ('buyer','seller') AND status = 'active'").get(userId);
+  if (!user) return res.status(404).json({ error: 'Ese cliente ya no existe o no es una cuenta de comprador/vendedor.' });
+  if (db.prepare('SELECT 1 FROM deal_parties WHERE deal_id = ? AND user_id = ?').get(deal.id, userId)) {
+    return res.status(409).json({ error: 'Esa persona ya está en esta operación.' });
+  }
+  if (db.prepare('SELECT COUNT(*) c FROM deal_party_entities WHERE deal_id = ? AND side = ?').get(deal.id, side).c >= MAX_PARTIES_PER_SIDE) {
+    return res.status(400).json({ error: `Máximo ${MAX_PARTIES_PER_SIDE} por lado.` });
+  }
+
+  // Su parte más reciente, de donde se copian forma y documentos.
+  const prior = db.prepare(`
+    SELECT dpe.* FROM deal_parties dp
+    JOIN deal_party_entities dpe ON dpe.id = dp.deal_party_entity_id
+    JOIN deals d ON d.id = dp.deal_id
+    WHERE dp.user_id = ? AND dp.relationship = 'titular' AND d.id != ? AND d.deleted_at IS NULL
+    ORDER BY d.id DESC LIMIT 1
+  `).get(userId, deal.id);
+  if (!prior) return res.status(404).json({ error: 'Ese cliente no tiene una operación anterior de dónde copiar.' });
+
+  const p = {
+    name: prior.name,
+    partyType: prior.party_type,
+    ownershipMode: prior.ownership_mode || undefined,
+    parentEntityName: prior.parent_entity_name || undefined,
+    parentEntityType: prior.parent_entity_type || undefined,
+    parentHasTrustAbove: !!prior.parent_has_trust_above,
+    parentTrustName: prior.parent_trust_name || undefined,
+    directTrustName: prior.direct_trust_name || undefined,
+    owners: db.prepare('SELECT name FROM deal_party_owners WHERE deal_party_entity_id = ? ORDER BY sort_order').all(prior.id)
+  };
+  // Se valida igual que un alta normal (misma función que POST /parties) en
+  // vez de confiar en que lo copiado de la operación anterior sigue siendo
+  // una parte bien formada.
+  const invalid = validateParty({ ...p, side });
+  if (invalid) return res.status(400).json({ error: invalid });
+
+  let partyId;
+  db.transaction(() => {
+    const nextOrder = db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM deal_party_entities WHERE deal_id = ? AND side = ?').get(deal.id, side).n;
+    partyId = insertPartyWithDocs(deal.id, deal.scenario, side, nextOrder, p);
+    db.prepare('INSERT INTO deal_parties (deal_id, user_id, role_in_deal, deal_party_entity_id, relationship) VALUES (?,?,?,?,?)')
+      .run(deal.id, userId, side, partyId, 'titular');
+  })();
+
+  let documentsCopied = 0;
+  let copyError = null;
+  if (copyDocuments) {
+    try {
+      documentsCopied = await copyPartyDocuments(deal.id, prior.id, partyId, req.session.userId);
+    } catch (err) {
+      copyError = err.message || 'No se pudieron copiar los documentos.';
+      console.error('[from-client] copia de documentos', err.message);
+    }
+  }
+  logActivity(deal.id, req.session.userId, 'person_added', p.name);
+  res.json({ ok: true, partyId, documentsCopied, copyError });
+});
+
+// Trae a la parte nueva los archivos que esta misma persona ya había
+// entregado antes, emparejando por nombre de documento. Se COPIA el objeto
+// en Cloud Storage (no se comparte: borrar la operación vieja borra todo su
+// prefijo) y llega como "por revisar", nunca como aprobado: una constancia
+// de domicilio de hace dos años ya no sirve, y el punto es que el equipo
+// vea rápido cuáles siguen vigentes y cuáles hay que actualizar.
+async function copyPartyDocuments(dealId, fromPartyId, toPartyId, userId) {
+  if (!gcsStorage.isConfigured()) return 0;
+  const oldDocs = db.prepare('SELECT * FROM documents WHERE deal_party_entity_id = ? AND file_url IS NOT NULL').all(fromPartyId);
+  const newDocs = db.prepare('SELECT * FROM documents WHERE deal_party_entity_id = ?').all(toPartyId);
+  let copied = 0;
+  for (const old of oldDocs) {
+    const target = newDocs.find(n => n.name === old.name && (n.sub_label || '') === (old.sub_label || ''));
+    if (!target || target.file_url) continue;
+    try {
+      if (!await gcsStorage.existsFile(old.file_url)) continue;
+      const destKey = path.join(String(dealId), genFilename(old.original_name || `${old.name}.pdf`));
+      await gcsStorage.copyFile(old.file_url, destKey);
+      db.prepare(`
+        UPDATE documents SET status = 'done', file_url = ?, original_name = ?, mime_type = ?, size_bytes = ?,
+          uploaded_by = ?, uploaded_at = datetime('now'), review_status = 'pending', review_note = NULL,
+          reviewed_by = NULL, reviewed_at = NULL
+        WHERE id = ?
+      `).run(destKey, old.original_name, old.mime_type, old.size_bytes, userId, target.id);
+      copied++;
+    } catch (err) {
+      console.error('[from-client] no se pudo copiar', old.file_url, err.message);
+    }
+  }
+  if (copied) logActivity(dealId, userId, 'docs_copied_from_past_deal', String(copied));
+  return copied;
+}
 
 // GET /api/deals/:id/available-agents — agentes/abogados externos/abogados
 // internos (con cuenta, activos O pendientes de aprobación) que todavía NO

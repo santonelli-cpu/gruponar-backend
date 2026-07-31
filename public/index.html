@@ -736,6 +736,13 @@ const STRINGS = {
     kycAutoFilledFrom: 'Se llena solo con los datos de "{source}" — no hay que capturarlos otra vez.',
     kycSecondSignature: 'Falta una firma más: el expediente de LPR Luxury.',
     sideMain: 'Plataforma', sideSections: 'Esta operación', tabOverview: 'Resumen',
+    pastClientsTitle: '¿Ya es cliente?', pastClientsHint: 'Engánchalo con un clic: se agrega con los mismos datos y su cuenta de siempre.',
+    pastClientsLoading: 'Buscando clientes anteriores…', pastClientsEmpty: 'Todavía no hay clientes de otras operaciones para reutilizar.',
+    pastClientsSearchPh: 'Buscar por nombre o correo…', pastClientsNoMatch: 'Ningún cliente coincide.',
+    pastClientFrom: 'De: {property}', pastClientDocs: '{count} documento(s) reutilizables', pastClientCopyDocs: 'traer sus documentos',
+    pastClientAdd: 'Agregar', pastClientAdded: '{name} se agregó a esta operación.',
+    pastClientAddedWithDocs: '{name} se agregó con {count} documento(s) — revísalos y actualiza los que ya no estén vigentes.',
+    actDocsCopied: 'trajo documentos de una operación anterior',
     eSignHintStaff: 'Sube el documento y envíalo a firma — comprador y vendedor firman de forma embebida, sin salir de la plataforma.',
     eSignHintClient: 'Cuando tu coordinador envíe un documento a firma, aparecerá aquí para que lo firmes en línea.',
     docusignNotSent: 'Sin enviar', docusignSent: 'Enviado', docusignDelivered: 'Entregado', docusignCompleted: 'Firmado', docusignDeclined: 'Rechazado', docusignVoided: 'Anulado',
@@ -1025,6 +1032,13 @@ const STRINGS = {
     kycAutoFilledFrom: 'Filled in automatically from "{source}" — no need to type it again.',
     kycSecondSignature: 'One more signature to go: the LPR Luxury record.',
     sideMain: 'Platform', sideSections: 'This deal', tabOverview: 'Overview',
+    pastClientsTitle: 'Already a client?', pastClientsHint: 'Add them in one click — same details, same account as before.',
+    pastClientsLoading: 'Looking up past clients…', pastClientsEmpty: 'No clients from other deals to reuse yet.',
+    pastClientsSearchPh: 'Search by name or email…', pastClientsNoMatch: 'No client matches.',
+    pastClientFrom: 'From: {property}', pastClientDocs: '{count} reusable document(s)', pastClientCopyDocs: 'bring their documents',
+    pastClientAdd: 'Add', pastClientAdded: '{name} was added to this deal.',
+    pastClientAddedWithDocs: '{name} was added with {count} document(s) — review them and replace any that are out of date.',
+    actDocsCopied: 'brought documents from a previous deal',
     eSignHintStaff: 'Upload the document and send it for signature — buyer and seller sign embedded, without leaving the platform.',
     eSignHintClient: "When your coordinator sends a document for signature, it'll show up here for you to sign online.",
     docusignNotSent: 'Not sent', docusignSent: 'Sent', docusignDelivered: 'Delivered', docusignCompleted: 'Signed', docusignDeclined: 'Declined', docusignVoided: 'Voided',
@@ -3426,6 +3440,73 @@ function buildPartiesSection(deal){
   const wrap = document.createElement('div');
   const addFormFor = { seller: null, buyer: null }; // toggles, no estado global
 
+  // Clientes de operaciones anteriores — se cargan al abrir "Agregar" y se
+  // enganchan con un clic, trayendo (si se quiere) los documentos que ya
+  // habían entregado, para solo actualizar los que caducaron.
+  function buildPastClientPicker(deal, side){
+    const box = document.createElement('div');
+    box.style.cssText = 'margin-top:10px; padding:12px 14px; background:var(--stone); border-radius:10px;';
+    box.innerHTML = `<div class="field-hint" style="margin:0;">${t('pastClientsLoading')}</div>`;
+
+    apiFetch(`/api/deals/${deal.id}/past-clients?side=${side}`).then(({ clients }) => {
+      if(!clients.length){
+        box.innerHTML = `<div class="field-hint" style="margin:0;">${t('pastClientsEmpty')}</div>`;
+        return;
+      }
+      box.innerHTML = `
+        <div style="font-weight:600; font-size:12.5px; margin-bottom:4px;">${t('pastClientsTitle')}</div>
+        <div class="field-hint" style="margin:0 0 8px;">${t('pastClientsHint')}</div>
+        <input type="text" id="past-client-q-${side}" placeholder="${t('pastClientsSearchPh')}" style="width:100%; font-size:12.5px; margin-bottom:8px;">
+        <div id="past-client-list-${side}"></div>
+      `;
+      const list = box.querySelector(`#past-client-list-${side}`);
+      const draw = (filter) => {
+        list.innerHTML = '';
+        const q = (filter || '').trim().toLowerCase();
+        const shown = clients.filter(c => !q || c.partyName.toLowerCase().includes(q) || c.email.toLowerCase().includes(q));
+        if(!shown.length){
+          list.innerHTML = `<div class="field-hint" style="margin:0;">${t('pastClientsNoMatch')}</div>`;
+          return;
+        }
+        shown.slice(0, 8).forEach(c => {
+          const row = document.createElement('div');
+          row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:10px; padding:7px 0; border-bottom:0.5px solid var(--line); flex-wrap:wrap;';
+          row.innerHTML = `
+            <span style="min-width:0;">
+              <div style="font-size:13px; font-weight:500;">${escapeHtml(c.partyName)} <span class="field-hint" style="margin:0; display:inline;">${escapeHtml(c.email)}</span></div>
+              <div class="field-hint" style="margin:1px 0 0;">${t('pastClientFrom', { property: escapeHtml(c.lastDealProperty) })}${c.reusableDocs ? ` · ${t('pastClientDocs', { count: c.reusableDocs })}` : ''}</div>
+            </span>
+            <span style="display:flex; gap:8px; align-items:center; flex-shrink:0;">
+              ${c.reusableDocs ? `<label class="field-hint" style="margin:0; display:inline-flex; gap:5px; align-items:center;"><input type="checkbox" class="copy-docs" checked> ${t('pastClientCopyDocs')}</label>` : ''}
+              <button class="btn primary" style="font-size:11px;">${t('pastClientAdd')}</button>
+            </span>
+          `;
+          const btn = row.querySelector('button');
+          btn.onclick = () => withButtonLoading(btn, async () => {
+            const copyBox = row.querySelector('.copy-docs');
+            try{
+              const r = await apiFetch(`/api/deals/${deal.id}/parties/from-client`, {
+                method: 'POST',
+                body: JSON.stringify({ side, userId: c.userId, copyDocuments: !!(copyBox && copyBox.checked) })
+              });
+              showToast(r.documentsCopied
+                ? t('pastClientAddedWithDocs', { name: c.partyName, count: r.documentsCopied })
+                : t('pastClientAdded', { name: c.partyName }), 'success');
+              if(r.copyError) showToast(r.copyError, 'error');
+              await openDeal(deal.id);
+            }catch(e){ showToast(e.message, 'error'); }
+          });
+          list.appendChild(row);
+        });
+      };
+      draw('');
+      const search = box.querySelector(`#past-client-q-${side}`);
+      search.oninput = (e) => draw(e.target.value);
+    }).catch(() => { box.remove(); });
+
+    return box;
+  }
+
   function renderSide(side, label){
     const card = document.createElement('div'); card.className = 'card';
     const header = document.createElement('div');
@@ -3506,6 +3587,11 @@ function buildPartiesSection(deal){
     addBtn.onclick = () => {
       if(addSlot.childElementCount){ addSlot.innerHTML = ''; return; }
       const allowed = side === 'seller' ? SCENARIOS[deal.scenario].sellerTypes : SCENARIOS[deal.scenario].buyerTypes;
+      // Antes del formulario en blanco: los clientes que ya pasaron por
+      // otra operación. Los mismos compradores/vendedores se repiten, y
+      // volver a teclear su nombre y su correo exacto (y volver a pedirle
+      // los mismos documentos) era trabajo de más para todos.
+      addSlot.appendChild(buildPastClientPicker(deal, side));
       const block = buildPartyFieldsBlock(allowed);
       block.style.marginTop = '8px';
       const saveBtn = document.createElement('button');
@@ -3888,7 +3974,8 @@ const ACTIVITY_META = {
   kyc_sent:              { icon: 'ti-signature',   key: 'actKycSent' },
   contract_sent:         { icon: 'ti-file-text',   key: 'actContractSent' },
   progress_summary_sent: { icon: 'ti-mail-forward', key: 'actProgressSummarySent' },
-  expediente_exported:   { icon: 'ti-file-zip',    key: 'actExpedienteExported' }
+  expediente_exported:   { icon: 'ti-file-zip',    key: 'actExpedienteExported' },
+  docs_copied_from_past_deal: { icon: 'ti-copy',   key: 'actDocsCopied' }
 };
 
 function buildActivitySection(deal){
