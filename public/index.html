@@ -742,6 +742,7 @@ const STRINGS = {
     pastClientsLoading: 'Buscando clientes anteriores…', pastClientsEmpty: 'Todavía no hay clientes de otras operaciones para reutilizar.',
     pastClientsSearchPh: 'Buscar por nombre o correo…', pastClientsNoMatch: 'Ningún cliente coincide.',
     pastClientFrom: 'De: {property}', pastClientDocs: '{count} documento(s) reutilizables', pastClientCopyDocs: 'traer sus documentos',
+    portalAllDeals: 'Mis operaciones', portalPendingOnYou: '{count} pendiente(s) tuyos', noClosingDateYet: 'Sin fecha de cierre todavía',
     pastClientAdd: 'Agregar', pastClientAdded: '{name} se agregó a esta operación.',
     pastClientAddedWithDocs: '{name} se agregó con {count} documento(s) — revísalos y actualiza los que ya no estén vigentes.',
     actDocsCopied: 'trajo documentos de una operación anterior',
@@ -1038,6 +1039,7 @@ const STRINGS = {
     pastClientsLoading: 'Looking up past clients…', pastClientsEmpty: 'No clients from other deals to reuse yet.',
     pastClientsSearchPh: 'Search by name or email…', pastClientsNoMatch: 'No client matches.',
     pastClientFrom: 'From: {property}', pastClientDocs: '{count} reusable document(s)', pastClientCopyDocs: 'bring their documents',
+    portalAllDeals: 'My deals', portalPendingOnYou: '{count} waiting on you', noClosingDateYet: 'No closing date yet',
     pastClientAdd: 'Add', pastClientAdded: '{name} was added to this deal.',
     pastClientAddedWithDocs: '{name} was added with {count} document(s) — review them and replace any that are out of date.',
     actDocsCopied: 'brought documents from a previous deal',
@@ -1105,6 +1107,10 @@ let dealDetailTabDeal = null;
 // para renderPortal) — se resetea al cambiar de operación o de "ver como".
 let portalTab = 'docs';
 let portalTabKey = null;
+// Con más de una operación, el Portal abre en un panel con todas (igual que
+// el Dashboard del admin, pero solo con lo suyo) en vez de meterse directo
+// a una: un agente con cinco cierres necesita ver primero el conjunto.
+let portalView = 'overview';
 // Campana de notificaciones (ver módulo al final del script).
 let notifData = null;
 let notifOpen = false;
@@ -1525,7 +1531,7 @@ function myPartyInDeal(deal){
 // arriba, que es lo esperado.
 let _lastViewKey = null;
 function currentViewKey(){
-  return [authenticated, mainTab, adminView, activeDealId, dealDetailTab, portalRole, portalPartyId, portalTab].join('|');
+  return [authenticated, mainTab, adminView, activeDealId, dealDetailTab, portalRole, portalPartyId, portalTab, portalView, portalDealId].join('|');
 }
 
 // ---------- MENÚ LATERAL ----------
@@ -5902,6 +5908,53 @@ function buildNextStepCallout(deal, myParty){
   return box;
 }
 
+// Panel de todas MIS operaciones — el equivalente del Dashboard del admin
+// para quien no es staff: un comprador con dos propiedades, o un agente
+// con varios cierres, necesita ver el conjunto antes de meterse a una.
+// Lo pendiente de cada quien sale de la campana (/api/dashboard/
+// notifications), que ya viene acotada por rol y por lado, en vez de
+// cargar cada operación completa nada más para contar.
+function buildPortalOverview(body){
+  const title = document.createElement('div');
+  title.className = 'section-title';
+  title.textContent = t('portalAllDeals');
+  body.appendChild(title);
+
+  const pendingByDeal = {};
+  (notifData ? notifData.actionRequired : []).forEach(item => {
+    pendingByDeal[item.dealId] = (pendingByDeal[item.dealId] || 0) + 1;
+  });
+
+  const grid = document.createElement('div');
+  grid.style.cssText = 'display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:12px;';
+  deals.forEach(d => {
+    const s = SCENARIOS[d.scenario];
+    const pct = overallPct(d);
+    const pend = pendingByDeal[d.id] || 0;
+    const card = document.createElement('div');
+    card.className = 'deal-card';
+    card.innerHTML = `
+      <div class="deal-title">${escapeHtml(d.property)}</div>
+      <span class="badge ${s.badgeClass}">${s.labelShort}</span>
+      ${d.status === 'completed' ? `<span class="badge" style="background:var(--jade-soft); color:var(--jade); margin-left:4px;">${t('dealCompletedBadge')}</span>` : ''}
+      <div class="deal-sub" style="margin-top:8px;">${escapeHtml(dealPartyNames(d,'seller'))} → ${escapeHtml(dealPartyNames(d,'buyer'))}</div>
+      <div style="margin-top:10px; display:flex; align-items:center; gap:8px;">
+        <div style="flex:1; height:6px; background:var(--stone); border-radius:4px; overflow:hidden;">
+          <div style="width:${pct}%; height:100%; background:var(--jade);"></div>
+        </div>
+        <span class="field-hint" style="margin:0;">${pct}%</span>
+      </div>
+      <div class="field-hint" style="margin-top:6px;">
+        ${d.closingDate ? `<i class="ti ti-calendar-event" aria-hidden="true"></i> ${escapeHtml(d.closingDate)} · ${escapeHtml(closingDaysLeftLabel(d.closingDate))}` : t('noClosingDateYet')}
+      </div>
+      ${pend ? `<div style="margin-top:8px;"><span class="badge" style="background:var(--oxblood-soft); color:var(--oxblood-deep);">${t('portalPendingOnYou', { count: pend })}</span></div>` : ''}
+    `;
+    card.onclick = () => { portalView = 'deal'; portalDealId = d.id; portalRole = 'agent'; portalPartyId = null; render(); };
+    grid.appendChild(card);
+  });
+  body.appendChild(grid);
+}
+
 function renderPortal(body){
   // Solo admin/agente/abogado pueden "ver como" cualquier persona — es una
   // vista previa interna. Un comprador/vendedor real siempre ve solo su
@@ -5933,16 +5986,27 @@ function renderPortal(body){
   if(portalDealId && !deals.some(d => d.id === portalDealId)) portalDealId = null;
   if(!portalDealId) portalDealId = deals[0].id;
 
-  // Con varias operaciones (agente con varios clientes, o admin/abogado en
-  // vista previa) la lista vive en el menú lateral, arriba de las secciones
-  // de la que está abierta — como Stripe: siempre visible, sin robarle
-  // altura al contenido.
-  if(deals.length > 1){
+  // Con varias operaciones (agente con varios clientes, comprador con dos
+  // propiedades, o admin/abogado en vista previa): primero el panel con
+  // todas, y la lista en el menú lateral — como Stripe: siempre visible,
+  // sin robarle altura al contenido.
+  const multiDeal = deals.length > 1;
+  if(multiDeal){
     sidebarGroup(t('yourOperations'));
+    sidebarItem({
+      label: t('portalAllDeals'), icon: 'ti-layout-dashboard', active: portalView === 'overview',
+      onClick: () => { portalView = 'overview'; render(); }
+    });
     deals.forEach(d => sidebarItem({
-      label: d.property, sub: true, active: d.id === portalDealId,
-      onClick: () => { portalDealId = d.id; portalRole = 'agent'; portalPartyId = null; render(); }
+      label: d.property, sub: true, active: portalView === 'deal' && d.id === portalDealId,
+      onClick: () => { portalView = 'deal'; portalDealId = d.id; portalRole = 'agent'; portalPartyId = null; render(); }
     }));
+    if(portalView === 'overview'){
+      buildPortalOverview(body);
+      return;
+    }
+  } else {
+    portalView = 'deal';
   }
 
   const deal = deals.find(d=>d.id===portalDealId);
