@@ -555,11 +555,15 @@ function buildSidebarAccount(){
     </div>
     <div style="display:flex; gap:6px; margin-top:8px;">
       <button class="btn" id="side-prof" style="font-size:11px; padding:5px 10px; flex:1;"><i class="ti ti-user-edit" aria-hidden="true"></i> ${t('editProfile')}</button>
+      <button class="btn" id="side-lang" style="font-size:11px; padding:5px 10px;" title="Switch language / Cambiar idioma">${lang === 'es' ? 'EN' : 'ES'}</button>
       <button class="btn" id="side-logout" style="font-size:11px; padding:5px 10px;" title="${t('logout')}"><i class="ti ti-logout" aria-hidden="true"></i></button>
     </div>
   `;
   el.appendChild(box);
   box.querySelector('#side-logout').onclick = logout;
+  // En celular el idioma y "cerrar sesión" ya no están arriba (saturaban la
+  // barra); viven aquí, en el mismo lugar donde está la cuenta.
+  box.querySelector('#side-lang').onclick = () => setLang(lang === 'es' ? 'en' : 'es');
   box.querySelector('#side-prof').onclick = () => {
     profileEditOpen = !profileEditOpen;
     if(profileEditOpen && mainTab === 'admin' && (activeDealId || adminView === 'newDeal')){ activeDealId = null; adminView = 'list'; }

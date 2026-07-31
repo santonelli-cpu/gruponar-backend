@@ -98,6 +98,12 @@
     .seg .tab-btn{padding:6px 12px; font-size:12px;}
     #tab-portal{font-size:0;}
     #tab-portal::after{content:'Portal'; font-size:12px;}
+    /* Idioma y cerrar sesión bajan al menú "Más" (ver buildSidebarAccount):
+       arriba solo quedan la marca, el selector de vista y la campana. */
+    #lang-toggle, #header-logout{display:none;}
+    /* El emblema como cuadrito de marca, igual que en el mockup. */
+    .brand-mark svg{width:26px; height:26px; background:var(--oxblood-deep); border-radius:7px; padding:4px;}
+    .brand-mark svg polygon{fill:#F6F4F0;}
     .navbar-caption, .navbar-divider{display:none;}
     .brand-mark{gap:8px; min-width:0;}
     .brand-mark svg{width:22px; height:22px;}
@@ -214,6 +220,20 @@
   .parties-line{font-size:14px; color:var(--ink); margin:0 0 4px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
   .parties-line .muted{color:var(--ink-faint); font-size:12.5px;}
   .location-line{font-size:12.5px; color:var(--ink-soft); margin:0 0 10px; display:flex; align-items:center; gap:5px;}
+  /* Cada parte en su renglón, con su tipo — con nombres de empresa largos,
+     la línea única "vendedor → comprador" se rompía sin poder leerse. */
+  .party-stack{display:flex; flex-direction:column; gap:3px; margin:0 0 8px;}
+  .party-line{font-size:14.5px; display:flex; align-items:center; gap:7px; flex-wrap:wrap; line-height:1.4;}
+  .party-line b{font-weight:500;}
+  .party-line i{color:var(--ink-faint); font-size:13px;}
+  .party-line .tag{font-size:12px; color:var(--ink-faint);}
+  /* Agentes agrupados por despacho: de qué firma es cada quien importa. */
+  .agents-block{margin:8px 0 0; font-size:12.5px; color:var(--ink-soft); line-height:1.7;}
+  .agents-block .firm{color:var(--ink); font-weight:500;}
+  .head-divider{height:0.5px; background:var(--line); margin:14px 0;}
+  .escrow-block .k{font-size:11px; letter-spacing:0.05em; text-transform:uppercase; color:var(--ink-faint); font-weight:600;}
+  .escrow-block .v{font-size:16px; font-weight:600; margin-top:2px;}
+  .stat-tile .value.value-empty{color:var(--ink-faint); font-weight:500;}
   .stat-row{display:flex; gap:32px; padding:14px 0; border-top:0.5px solid var(--line); border-bottom:0.5px solid var(--line); margin-bottom:16px; flex-wrap:wrap;}
   .stat{display:flex; flex-direction:column; gap:3px;}
   .stat-label{font-size:11px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:0.06em; font-weight:500;}
@@ -323,6 +343,13 @@
   .stat-tile .label{font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.05em; font-weight:600; margin:0 0 6px;}
   .stat-tile .value{font-size:21px; font-weight:600; margin:0; letter-spacing:-0.01em; line-height:1.15;}
   .stat-tile .sub{font-size:11.5px; color:var(--ink-faint); margin-top:3px;}
+  /* Va aquí, después de la definición base, para ganarle por orden: con dos
+     columnas en celular, 21px parte "2026-07-29" en dos renglones. */
+  @media (max-width:900px){
+    .stat-tile{padding:11px 12px;}
+    .stat-tile .label{font-size:10px;}
+    .stat-tile .value{font-size:16px;}
+  }
 
   .callout{display:flex; align-items:center; justify-content:space-between; gap:16px; background:var(--gold-soft); border-left:3px solid var(--oxblood); border-radius:12px; padding:14px 16px;}
   .callout-text{font-size:13px; color:var(--oxblood-deep); line-height:1.5;}

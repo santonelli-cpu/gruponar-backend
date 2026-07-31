@@ -495,10 +495,15 @@ function buildAdminDealDetail(deal){
   // acciones) siempre visible, y abajo UNA sección a la vez en vez de las
   // 12 apiladas de antes. Al abrir OTRA operación se regresa a la primera
   // pestaña; dentro de la misma, la pestaña activa sobrevive a los render().
-  if(dealDetailTabDeal !== deal.id){ dealDetailTabDeal = deal.id; dealDetailTab = 'parties'; }
+  if(dealDetailTabDeal !== deal.id){ dealDetailTabDeal = deal.id; dealDetailTab = 'general'; }
   const pendingDocsCount = deal.documents.filter(d => d.status !== 'done').length;
   const pendingTasksCount = deal.tasks.filter(tk => tk.status !== 'done').length;
   const TABS = [
+    // "General" guarda lo editable y las acciones. Antes vivían pegadas al
+    // encabezado, así que el selector de escrow, las dos fechas y los cuatro
+    // botones se veían en TODAS las pestañas, empujando hacia abajo lo que
+    // de verdad se venía a ver.
+    ['general', t('navSecGeneral'), 0],
     ['parties', t('navSecParties'), 0],
     ['docs', t('navSecDocs'), pendingDocsCount],
     ['kyc', t('tabKycSignatures'), 0],
@@ -515,10 +520,22 @@ function buildAdminDealDetail(deal){
   // "ir a la sección de KYC" del tracker cambia de pestaña y luego scrollea).
   function sectionAnchor(el, id){ el.id = id; el.style.scrollMarginTop = '46px'; return el; }
 
+  // Encabezado: SOLO la identidad de la operación y su avance. Cada parte en
+  // su propio renglón con su tipo (antes iban apretadas en una línea con una
+  // flecha en medio, ilegible en celular con nombres de empresa largos), y
+  // los agentes agrupados por despacho — importa de qué firma es cada quien.
   const header = document.createElement('div');
-  header.className = 'card';
-  const sellerNamesHtml = sellerParties(deal).map(p=>`${escapeHtml(p.name)} <span class="muted">(${TYPE_LABEL[p.partyType]})</span>`).join(', ');
-  const buyerNamesHtml = buyerParties(deal).map(p=>`${escapeHtml(p.name)} <span class="muted">(${TYPE_LABEL[p.partyType]})</span>`).join(', ');
+  header.className = 'card js-pills-anchor';
+  const partyLineHtml = (p, withArrow) => `
+    <div class="party-line">
+      ${withArrow ? '<i class="ti ti-arrow-down-right" aria-hidden="true"></i>' : ''}
+      <b>${escapeHtml(p.name)}</b> <span class="tag">${TYPE_LABEL[p.partyType]}</span>
+    </div>`;
+  const agentsByFirm = {};
+  (deal.agents || []).forEach(a => {
+    const firm = a.agency || t('noAgencyLabel');
+    (agentsByFirm[firm] = agentsByFirm[firm] || []).push(a.name);
+  });
   const docsPct = pctDocs(deal), tasksPct = pctTasks(deal);
   header.innerHTML = `
     <div class="deal-head-row">
@@ -526,22 +543,33 @@ function buildAdminDealDetail(deal){
       <span class="badge ${s.badgeClass}">${s.labelShort}</span>
       ${deal.status==='completed' ? `<span class="badge" style="background:var(--jade-soft); color:var(--jade);">${t('dealCompletedBadge')}</span>` : ''}
     </div>
-    <div class="parties-line">${sellerNamesHtml} <i class="ti ti-arrow-right" aria-hidden="true" style="color:var(--ink-faint); font-size:13px;"></i> ${buyerNamesHtml}</div>
+    <div class="party-stack">
+      ${sellerParties(deal).map(p => partyLineHtml(p, false)).join('')}
+      ${buyerParties(deal).map((p, i) => partyLineHtml(p, i === 0)).join('')}
+    </div>
     <div class="location-line"><i class="ti ti-map-pin" aria-hidden="true"></i> <span class="field-editable" id="deal-development-display" title="${t('clickToEdit')}">${DEVELOPMENT_LABEL[deal.development||'punta_mita']}</span></div>
-    ${deal.agents && deal.agents.length ? `
-      <div class="location-line" style="margin-bottom:14px;">
-        <i class="ti ti-users" aria-hidden="true"></i>
-        ${deal.agents.map(a => `${escapeHtml(a.name)}${a.agency ? ` <span class="muted">(${escapeHtml(a.agency)})</span>` : ''}`).join(' · ')}
+    ${Object.keys(agentsByFirm).length ? `
+      <div class="agents-block">
+        ${Object.entries(agentsByFirm).map(([firm, names]) =>
+          `<div><span class="firm">${escapeHtml(firm)}</span> · ${escapeHtml(names.join(', '))}</div>`).join('')}
       </div>
     ` : ''}
 
-    <div class="stat-row">
-      <div class="stat"><span class="stat-label">${t('propertyLabelColon')}</span><span class="stat-value field-editable" id="deal-price-display" title="${t('clickToEdit')}">${deal.currency||'USD'} ${Number(deal.price||0).toLocaleString()}${deal.furniturePrice ? ' + '+t('furnitureLabel')+' '+Number(deal.furniturePrice).toLocaleString() : ''}</span></div>
-      <div class="stat"><span class="stat-label">${t('startLabel')}</span><span class="stat-value field-editable" id="deal-startdate-display" title="${t('clickToEdit')}">${deal.startDate || '—'}</span></div>
-      <div class="stat"><span class="stat-label">${t('escrowCompany')}</span><span class="stat-value">${deal.escrowCompany==='tla' ? 'TLA Financial Services' : 'Armour Secure'}</span></div>
+    <div class="head-divider"></div>
+
+    <div class="escrow-block">
+      <div class="k">${t('escrowCompany')}</div>
+      <div class="v">${deal.escrowCompany==='tla' ? 'TLA Financial Services' : 'Armour Secure'}</div>
     </div>
 
-    <div class="progress-row">
+    <div class="stat-grid" style="margin-top:12px;">
+      <div class="stat-tile"><p class="label">${t('propertyLabelColon')}</p><p class="value field-editable" id="deal-price-display" title="${t('clickToEdit')}">${deal.currency||'USD'} ${Number(deal.price||0).toLocaleString()}${deal.furniturePrice ? ' + '+t('furnitureLabel')+' '+Number(deal.furniturePrice).toLocaleString() : ''}</p></div>
+      <div class="stat-tile"><p class="label">${t('startLabel')}</p><p class="value field-editable" id="deal-startdate-display" title="${t('clickToEdit')}">${deal.startDate || '—'}</p></div>
+      <div class="stat-tile"><p class="label">${t('closingDateLabel')}</p><p class="value${deal.closingDate ? '' : ' value-empty'}">${deal.closingDate || '—'}</p></div>
+      <div class="stat-tile"><p class="label">${t('ddEndLabel')}</p><p class="value${deal.dueDiligenceEndDate ? '' : ' value-empty'}">${deal.dueDiligenceEndDate || '—'}</p></div>
+    </div>
+
+    <div class="progress-row" style="margin-top:16px; margin-bottom:0;">
       <div class="progress-block">
         <div class="progress-top"><span class="progress-name">${t('documentsLabel')}</span><span class="progress-pct">${docsPct}%</span></div>
         <div class="progress-track"><div class="progress-fill" style="width:${docsPct}%"></div></div>
@@ -551,28 +579,38 @@ function buildAdminDealDetail(deal){
         <div class="progress-track"><div class="progress-fill" style="width:${tasksPct}%"></div></div>
       </div>
     </div>
-
-    <div class="field-row-clean">
-      <label>${t('escrowCompany')}
-        <select id="escrow-company-select">
-          <option value="armour" ${deal.escrowCompany==='armour'?'selected':''}>Armour Secure</option>
-          <option value="tla" ${deal.escrowCompany==='tla'?'selected':''}>TLA Financial Services</option>
-        </select>
-      </label>
-      <label>${t('closingDateLabel')} <input type="date" id="closing-date-input" value="${deal.closingDate}"></label>
-      <label>${t('ddEndLabel')} <input type="date" id="dd-end-date-input" value="${deal.dueDiligenceEndDate}"></label>
-    </div>
-
-    <div class="action-row" style="display:flex; gap:8px; flex-wrap:wrap;">
-      ${deal.driveFolderUrl
-        ? `<a class="btn" href="${deal.driveFolderUrl}" target="_blank"><i class="ti ti-folder" aria-hidden="true"></i> ${t('openInDrive')}</a>`
-        : `<button class="btn" id="create-drive-folder-btn"><i class="ti ti-folder-plus" aria-hidden="true"></i> ${t('createDriveFolder')}</button>`}
-      ${['admin','lawyer'].includes(currentUser.role) ? `<a class="btn" href="/api/deals/${deal.id}/export" title="${t('exportZipTitle')}"><i class="ti ti-file-zip" aria-hidden="true"></i> ${t('exportZip')}</a>` : ''}
-      <button class="btn ${deal.status==='completed' ? '' : 'success'}" id="toggleDealStatusBtn">${deal.status==='completed' ? `<i class="ti ti-rotate" aria-hidden="true"></i> ${t('reopenDeal')}` : `<i class="ti ti-check" aria-hidden="true"></i> ${t('markDealCompleted')}`}</button>
-      <button class="btn danger" id="delDeal"><i class="ti ti-trash" aria-hidden="true"></i> ${t('deleteDeal')}</button>
-    </div>
   `;
   wrap.appendChild(header);
+
+  // Pestaña "General": lo editable y las acciones, ya no pegadas al
+  // encabezado en todas las pestañas.
+  let generalPanel = null;
+  if(tab === 'general'){
+    generalPanel = document.createElement('div');
+    generalPanel.className = 'card';
+    generalPanel.innerHTML = `
+      <div class="field-row-clean" style="margin-bottom:18px;">
+        <label>${t('escrowCompany')}
+          <select id="escrow-company-select">
+            <option value="armour" ${deal.escrowCompany==='armour'?'selected':''}>Armour Secure</option>
+            <option value="tla" ${deal.escrowCompany==='tla'?'selected':''}>TLA Financial Services</option>
+          </select>
+        </label>
+        <label>${t('closingDateLabel')} <input type="date" id="closing-date-input" value="${deal.closingDate}"></label>
+        <label>${t('ddEndLabel')} <input type="date" id="dd-end-date-input" value="${deal.dueDiligenceEndDate}"></label>
+      </div>
+
+      <div class="action-row" style="display:flex; gap:8px; flex-wrap:wrap;">
+        ${deal.driveFolderUrl
+          ? `<a class="btn" href="${deal.driveFolderUrl}" target="_blank"><i class="ti ti-folder" aria-hidden="true"></i> ${t('openInDrive')}</a>`
+          : `<button class="btn" id="create-drive-folder-btn"><i class="ti ti-folder-plus" aria-hidden="true"></i> ${t('createDriveFolder')}</button>`}
+        ${['admin','lawyer'].includes(currentUser.role) ? `<a class="btn" href="/api/deals/${deal.id}/export" title="${t('exportZipTitle')}"><i class="ti ti-file-zip" aria-hidden="true"></i> ${t('exportZip')}</a>` : ''}
+        <button class="btn ${deal.status==='completed' ? '' : 'success'}" id="toggleDealStatusBtn">${deal.status==='completed' ? `<i class="ti ti-rotate" aria-hidden="true"></i> ${t('reopenDeal')}` : `<i class="ti ti-check" aria-hidden="true"></i> ${t('markDealCompleted')}`}</button>
+        <button class="btn danger" id="delDeal"><i class="ti ti-trash" aria-hidden="true"></i> ${t('deleteDeal')}</button>
+      </div>
+    `;
+    wrap.appendChild(generalPanel);
+  }
 
   // Edición directa en el lugar (título, desarrollo, precio/muebles/moneda,
   // fecha de inicio) — antes había que abrir un formulario aparte más abajo
@@ -639,56 +677,61 @@ function buildAdminDealDetail(deal){
     input.onchange = () => saveDealField({ startDate: input.value || null });
     input.onblur = () => { if(input.value === current) render(); };
   };
-  header.querySelector('#toggleDealStatusBtn').onclick = async () => {
-    const nextStatus = deal.status === 'completed' ? 'active' : 'completed';
-    if(nextStatus === 'completed' && !await confirmDialog(t('confirmMarkCompleted'))) return;
-    try{
-      await apiFetch(`/api/deals/${deal.id}`, { method:'PATCH', body: JSON.stringify({ status: nextStatus }) });
-      await openDeal(deal.id);
-    }catch(e){ showToast(e.message, 'error'); }
-  };
-  const driveFolderBtn = header.querySelector('#create-drive-folder-btn');
-  if(driveFolderBtn){
-    driveFolderBtn.onclick = async () => {
-      driveFolderBtn.disabled = true; driveFolderBtn.textContent = t('driveFolderCreating');
+  // Los campos editables y las acciones ahora viven en la pestaña General,
+  // así que solo hay que conectarlos cuando esa pestaña está abierta.
+  if(generalPanel){
+    generalPanel.querySelector('#toggleDealStatusBtn').onclick = async () => {
+      const nextStatus = deal.status === 'completed' ? 'active' : 'completed';
+      if(nextStatus === 'completed' && !await confirmDialog(t('confirmMarkCompleted'))) return;
       try{
-        await apiFetch(`/api/deals/${deal.id}/drive-folder`, { method:'POST' });
+        await apiFetch(`/api/deals/${deal.id}`, { method:'PATCH', body: JSON.stringify({ status: nextStatus }) });
         await openDeal(deal.id);
-      }catch(e){ showToast(e.message, 'error'); driveFolderBtn.disabled = false; driveFolderBtn.innerHTML = `<i class="ti ti-folder-plus" aria-hidden="true"></i> ${t('createDriveFolder')}`; }
+      }catch(e){ showToast(e.message, 'error'); }
+    };
+    const driveFolderBtn = generalPanel.querySelector('#create-drive-folder-btn');
+    if(driveFolderBtn){
+      driveFolderBtn.onclick = async () => {
+        driveFolderBtn.disabled = true; driveFolderBtn.textContent = t('driveFolderCreating');
+        try{
+          await apiFetch(`/api/deals/${deal.id}/drive-folder`, { method:'POST' });
+          await openDeal(deal.id);
+        }catch(e){ showToast(e.message, 'error'); driveFolderBtn.disabled = false; driveFolderBtn.innerHTML = `<i class="ti ti-folder-plus" aria-hidden="true"></i> ${t('createDriveFolder')}`; }
+      };
+    }
+    generalPanel.querySelector('#escrow-company-select').onchange = async (e) => {
+      const next = e.target.value;
+      if(!await confirmDialog(t('confirmChangeEscrow', { company: next==='armour'?'Armour Secure':'TLA Financial Services' }))){
+        e.target.value = deal.escrowCompany;
+        return;
+      }
+      try{
+        await apiFetch('/api/deals/' + deal.id, { method:'PATCH', body: JSON.stringify({ escrowCompany: next }) });
+        await openDeal(deal.id);
+      }catch(err){ showToast(err.message, 'error'); e.target.value = deal.escrowCompany; }
+    };
+    generalPanel.querySelector('#closing-date-input').onchange = async (e) => {
+      try{
+        await apiFetch('/api/deals/' + deal.id, { method:'PATCH', body: JSON.stringify({ closingDate: e.target.value || null }) });
+        deal.closingDate = e.target.value;
+        render();
+      }catch(err){ showToast(err.message, 'error'); e.target.value = deal.closingDate; }
+    };
+    generalPanel.querySelector('#dd-end-date-input').onchange = async (e) => {
+      try{
+        await apiFetch('/api/deals/' + deal.id, { method:'PATCH', body: JSON.stringify({ dueDiligenceEndDate: e.target.value || null }) });
+        deal.dueDiligenceEndDate = e.target.value;
+        render();
+      }catch(err){ showToast(err.message, 'error'); e.target.value = deal.dueDiligenceEndDate; }
+    };
+    generalPanel.querySelector('#delDeal').onclick = async () => {
+      if(!await confirmDialog(t('confirmDeleteDeal'), { danger: true })) return;
+      try{
+        await apiFetch('/api/deals/' + deal.id, { method: 'DELETE' });
+        deals = deals.filter(d=>d.id!==deal.id);
+        activeDealId = null; render();
+      }catch(e){ showToast(e.message, 'error'); }
     };
   }
-  header.querySelector('#escrow-company-select').onchange = async (e) => {
-    const next = e.target.value;
-    if(!await confirmDialog(t('confirmChangeEscrow', { company: next==='armour'?'Armour Secure':'TLA Financial Services' }))){
-      e.target.value = deal.escrowCompany;
-      return;
-    }
-    try{
-      await apiFetch('/api/deals/' + deal.id, { method:'PATCH', body: JSON.stringify({ escrowCompany: next }) });
-      await openDeal(deal.id);
-    }catch(err){ showToast(err.message, 'error'); e.target.value = deal.escrowCompany; }
-  };
-  header.querySelector('#closing-date-input').onchange = async (e) => {
-    try{
-      await apiFetch('/api/deals/' + deal.id, { method:'PATCH', body: JSON.stringify({ closingDate: e.target.value || null }) });
-      deal.closingDate = e.target.value;
-    }catch(err){ showToast(err.message, 'error'); e.target.value = deal.closingDate; }
-  };
-  header.querySelector('#dd-end-date-input').onchange = async (e) => {
-    try{
-      await apiFetch('/api/deals/' + deal.id, { method:'PATCH', body: JSON.stringify({ dueDiligenceEndDate: e.target.value || null }) });
-      deal.dueDiligenceEndDate = e.target.value;
-      render();
-    }catch(err){ showToast(err.message, 'error'); e.target.value = deal.dueDiligenceEndDate; }
-  };
-  header.querySelector('#delDeal').onclick = async () => {
-    if(!await confirmDialog(t('confirmDeleteDeal'), { danger: true })) return;
-    try{
-      await apiFetch('/api/deals/' + deal.id, { method: 'DELETE' });
-      deals = deals.filter(d=>d.id!==deal.id);
-      activeDealId = null; render();
-    }catch(e){ showToast(e.message, 'error'); }
-  };
 
   // Actos jurídicos — texto libre que redacta admin/abogado interno con el
   // acto exacto de esta operación (lo que se lleva a la notaría). Se

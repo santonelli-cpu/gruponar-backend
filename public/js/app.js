@@ -189,6 +189,9 @@ function buildMobileSectionPills(){
   const body = document.getElementById('body');
   const pills = document.createElement('nav');
   pills.className = 'section-pills';
+  // Van DEBAJO de la tarjeta de resumen, no arriba: primero se ve de qué
+  // operación se trata y cómo va, y ya con eso se navega.
+  const anchor = body.querySelector('.js-pills-anchor');
   _sidebarSectionItems.forEach(it => {
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -197,7 +200,7 @@ function buildMobileSectionPills(){
     btn.onclick = it.onClick;
     pills.appendChild(btn);
   });
-  body.insertBefore(pills, body.firstChild);
+  if(anchor) anchor.after(pills); else body.insertBefore(pills, body.firstChild);
   const activo = pills.querySelector('button.active');
   if(activo) activo.scrollIntoView({ block: 'nearest', inline: 'center' });
 }
