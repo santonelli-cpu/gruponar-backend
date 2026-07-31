@@ -650,8 +650,12 @@ const STRINGS = {
     allCaughtUp: 'Estás al día — nada pendiente de tu parte.',
     pendingDocsLabel: 'documentos pendientes',
     nextStepLabel: 'Siguiente paso', viewSection: 'Ver sección',
-    nextStepSignature: 'tienes un documento esperando tu firma: {name}.',
-    nextStepUpload: 'sube tu documento pendiente: {name}.',
+    nextStepSignature: 'Firma pendiente: {name}',
+    nextStepUpload: 'Sube: {name}',
+    nextStepKycSign: 'Firma tu expediente KYC',
+    waitingOnYouTitle: 'Te toca a ti ({count})', waitingOnYouMore: '+ {count} pendiente(s) más — revisa tus checklists abajo.',
+    signLabel: 'Firmar', uploadLabel: 'Subir',
+    myTasksTitle: 'Mis tareas ({count})',
     loadingFile: 'Cargando expediente...',
     viewAs: 'Ver como', agentSeesAll: 'Agente (ve todo)',
     yourDocsChecklist: 'Tu checklist de documentos (KYC)', yourKycFile: 'Tu expediente KYC',
@@ -910,8 +914,12 @@ const STRINGS = {
     allCaughtUp: "You're all caught up — nothing pending on your end.",
     pendingDocsLabel: 'pending documents',
     nextStepLabel: 'Next step', viewSection: 'View section',
-    nextStepSignature: 'you have a document waiting for your signature: {name}.',
-    nextStepUpload: 'upload your pending document: {name}.',
+    nextStepSignature: 'Signature pending: {name}',
+    nextStepUpload: 'Upload: {name}',
+    nextStepKycSign: 'Sign your KYC file',
+    waitingOnYouTitle: "Waiting on you ({count})", waitingOnYouMore: '+ {count} more pending — see your checklists below.',
+    signLabel: 'Sign', uploadLabel: 'Upload',
+    myTasksTitle: 'My tasks ({count})',
     loadingFile: 'Loading file...',
     viewAs: 'View as', agentSeesAll: 'Agent (sees everything)',
     yourDocsChecklist: 'Your document checklist (KYC)', yourKycFile: 'Your KYC file',
@@ -2170,6 +2178,27 @@ function buildDashboard(){
     ${d.dealsByScenario.length ? `<div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap;">${d.dealsByScenario.map(s=>`<span class="badge">${(SCENARIOS[s.scenario]&&SCENARIOS[s.scenario].labelShort)||s.scenario}: ${s.count}</span>`).join('')}</div>` : ''}
   `;
   wrap.appendChild(totalsCard);
+
+  // "Mis tareas" — lo asignado A MÍ, primero que todo lo demás: un abogado
+  // (o admin) entra al Dashboard y ve directo qué le toca sin abrir
+  // operación por operación.
+  if(d.myTasks && d.myTasks.length){
+    const myTitle = document.createElement('div');
+    myTitle.className = 'section-title'; myTitle.textContent = t('myTasksTitle', { count: d.myTasks.length });
+    wrap.appendChild(myTitle);
+    const myCard = document.createElement('div'); myCard.className = 'card';
+    d.myTasks.forEach((item, i) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:8px 0; cursor:pointer; gap:10px;' + (i < d.myTasks.length - 1 ? ' border-bottom:0.5px solid var(--line);' : '');
+      row.innerHTML = `
+        <span style="font-size:13px;">${escapeHtml(lang==='en'?item.label_en:item.label_es)} <span class="field-hint" style="margin:0;">· ${escapeHtml(item.property)}</span></span>
+        <span class="field-hint" style="margin:0; flex-shrink:0;">${t('viewDeal')} <i class="ti ti-arrow-right" aria-hidden="true"></i></span>
+      `;
+      row.onclick = () => { adminView='list'; activeDealId=item.dealId; openDeal(item.dealId); };
+      myCard.appendChild(row);
+    });
+    wrap.appendChild(myCard);
+  }
 
   if(d.totalDeals > 0){
     const ucTitle = document.createElement('div');
@@ -5288,30 +5317,67 @@ function buildPortalStatGrid(deal, myParty){
 // Un solo aviso con lo más urgente pendiente de ESTA parte — prioriza
 // firmas (nadie más puede hacerlo por ellos) sobre subir documentos. Solo
 // tiene sentido cuando se ve una parte específica, no en "ve todo" de staff.
+// "Te toca a ti" — hasta 3 acciones que dependen del CLIENTE ahora mismo,
+// cada una con su botón para brincar directo. Solo cosas realmente
+// accionables: firmas que YA le llegaron (sent/delivered — una tarea de
+// firma que el equipo aún no manda no es asunto suyo todavía), su KYC
+// esperando firma, y documentos suyos por subir. Si no hay nada accionable,
+// no se muestra nada: silencio = vas al día.
 function buildNextStepCallout(deal, myParty){
   if(!myParty) return null;
   const { uploads, signatures } = pendingItemsForParty(deal, myParty);
-  if(!signatures.length && !uploads.length) return null;
+
+  const items = [];
+  signatures.filter(task => ['sent', 'delivered'].includes(task.docusignStatus)).forEach(task => {
+    items.push({
+      label: t('nextStepSignature', { name: lang==='en' ? task.en : task.es }),
+      anchor: 'portal-esignature-section', btnLabel: t('signLabel')
+    });
+  });
+  // KYC de mi parte esperando MI firma (si el cache ya lo trae — la sección
+  // del portal lo carga sola al entrar, así que casi siempre está).
+  const kycData = kycCache[deal.id + '-' + myParty.id + '-escrow'];
+  if(kycData && !kycData.error && kycData.status === 'sent'){
+    items.push({ label: t('nextStepKycSign'), anchor: 'portal-kyc-section', btnLabel: t('signLabel') });
+  }
+  uploads.forEach(doc => {
+    const isPaymentProof = [ESCROW_PAYMENT_PROOF_DOC_NAME, NOTARY_PAYMENT_PROOF_DOC_NAME].includes(doc.name);
+    items.push({
+      label: t('nextStepUpload', { name: localizeDocName(doc.name) }),
+      anchor: isPaymentProof ? 'portal-closing-costs-section' : (doc.partyId === null ? 'portal-property-section' : 'portal-mydocs-section'),
+      btnLabel: t('uploadLabel')
+    });
+  });
+
+  if(!items.length) return null;
+  const extra = items.length - 3;
   const box = document.createElement('div');
   box.className = 'callout';
-  if(signatures.length){
-    const task = signatures[0];
-    box.innerHTML = `<p class="callout-text"><b>${t('nextStepLabel')}:</b> ${t('nextStepSignature', { name: escapeHtml(lang==='en' ? task.en : task.es) })}</p>`;
+  box.style.flexDirection = 'column';
+  box.style.alignItems = 'stretch';
+  const head = document.createElement('p');
+  head.className = 'callout-text';
+  head.style.marginBottom = '8px';
+  head.innerHTML = `<b>${t('waitingOnYouTitle', { count: items.length })}</b>`;
+  box.appendChild(head);
+  items.slice(0, 3).forEach(item => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:10px; padding:5px 0;';
+    const label = document.createElement('span');
+    label.style.cssText = 'font-size:13px;';
+    label.textContent = item.label;
     const btn = document.createElement('button');
-    btn.className = 'btn primary'; btn.style.whiteSpace = 'nowrap';
-    btn.textContent = t('viewSection');
-    btn.onclick = () => { document.getElementById('portal-esignature-section')?.scrollIntoView({ behavior:'smooth', block:'start' }); };
-    box.appendChild(btn);
-  } else {
-    const doc = uploads[0];
-    const isPaymentProof = [ESCROW_PAYMENT_PROOF_DOC_NAME, NOTARY_PAYMENT_PROOF_DOC_NAME].includes(doc.name);
-    box.innerHTML = `<p class="callout-text"><b>${t('nextStepLabel')}:</b> ${t('nextStepUpload', { name: escapeHtml(localizeDocName(doc.name)) })}</p>`;
-    const anchorId = isPaymentProof ? 'portal-closing-costs-section' : 'portal-property-section';
-    const btn = document.createElement('button');
-    btn.className = 'btn primary'; btn.style.whiteSpace = 'nowrap';
-    btn.textContent = isPaymentProof ? t('viewClosingCosts') : t('viewSection');
-    btn.onclick = () => { document.getElementById(anchorId)?.scrollIntoView({ behavior:'smooth', block:'start' }); };
-    box.appendChild(btn);
+    btn.className = 'btn primary'; btn.style.cssText = 'white-space:nowrap; font-size:11.5px; padding:4px 12px; flex-shrink:0;';
+    btn.textContent = item.btnLabel;
+    btn.onclick = () => { document.getElementById(item.anchor)?.scrollIntoView({ behavior:'smooth', block:'start' }); };
+    row.appendChild(label); row.appendChild(btn);
+    box.appendChild(row);
+  });
+  if(extra > 0){
+    const more = document.createElement('div');
+    more.className = 'field-hint'; more.style.margin = '4px 0 0';
+    more.textContent = t('waitingOnYouMore', { count: extra });
+    box.appendChild(more);
   }
   return box;
 }
@@ -5449,13 +5515,13 @@ function renderPortal(body){
   body.appendChild(ncard);
 
   if(myParty){
-    const secTitle = document.createElement('div'); secTitle.className='section-title'; secTitle.textContent=t('yourDocsChecklist');
+    const secTitle = document.createElement('div'); secTitle.className='section-title'; secTitle.id='portal-mydocs-section'; secTitle.textContent=t('yourDocsChecklist');
     body.appendChild(secTitle);
     const card = document.createElement('div'); card.className='card';
     card.appendChild(buildDocListForParty(deal, myParty, false));
     body.appendChild(card);
 
-    const kt = document.createElement('div'); kt.className='section-title'; kt.textContent=t('yourKycFile');
+    const kt = document.createElement('div'); kt.className='section-title'; kt.id='portal-kyc-section'; kt.textContent=t('yourKycFile');
     body.appendChild(kt);
     const kcard = document.createElement('div'); kcard.className='card';
     kcard.appendChild(buildKycSection(deal, myParty, false));

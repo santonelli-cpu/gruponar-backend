@@ -79,6 +79,17 @@ router.get('/', requireAuth, (req, res) => {
     ORDER BY deals.property ASC, t.sort_order ASC
   `).all(...params);
 
+  // Tareas del tracker asignadas A MÍ (ver tasks.assigned_to) y sin
+  // terminar — el bloque "Mis tareas" arriba del Dashboard: un abogado
+  // entra y ve directo qué le toca, sin abrir operación por operación.
+  const myTasks = db.prepare(`
+    SELECT t.id AS taskId, t.label_es, t.label_en, t.status, deals.id AS dealId, deals.property
+    FROM tasks t JOIN deals ON deals.id = t.deal_id
+    WHERE t.assigned_to = ? AND t.status != 'done'
+      AND deals.status = 'active' AND deals.deleted_at IS NULL
+    ORDER BY deals.property ASC, t.sort_order ASC
+  `).all(req.session.userId);
+
   const signaturesAwaiting = db.prepare(`
     SELECT t.id AS taskId, t.label_es, t.label_en, t.docusign_status, deals.id AS dealId, deals.property
     FROM tasks t JOIN deals ON deals.id = t.deal_id
@@ -119,6 +130,7 @@ router.get('/', requireAuth, (req, res) => {
     tasksInProgress,
     pendingDocuments,
     pendingTasks,
+    myTasks,
     signaturesAwaiting,
     upcomingClosings,
     staleDays: STALE_DAYS
