@@ -16,7 +16,7 @@ Plataforma de coordinación de cierres inmobiliarios: centraliza en un solo luga
 | Backend | Node 22 + Express | `server.js` monta todo; apagado limpio en SIGTERM |
 | Base de datos | better-sqlite3 (WAL) | `db/schema.sql` (instalación desde cero) + migraciones idempotentes en `db/index.js` (corren en cada arranque) |
 | Sesiones | connect-sqlite3 | `sessions.db` en el Disk persistente |
-| Frontend | SPA vanilla JS en **un solo archivo**: `public/index.html` (~6,500 líneas) | i18n ES/EN inline, `render()` reconstruye el DOM completo (preserva scroll en la misma vista) |
+| Frontend | SPA vanilla JS: `public/index.html` (marcado) + `public/styles.css` + `public/js/*.js` | Los módulos comparten el mismo ámbito global y se cargan **en orden** (ver el pie de `index.html`); `render()` reconstruye el DOM completo (preserva el scroll de `#body` en la misma vista) |
 | Archivos | Google Cloud Storage, bucket `gruponar-documentos` | Claves `<dealId>/<hex>.ext`; machotes bajo `contract-templates/`; respaldos bajo `_backups/` |
 | Firmas | DocuSign eSignature (JWT grant) | Llave privada **solo** en Render; anchors `/sig1/` (comprador) `/sig2/` (vendedor), sufijos `_2/_3` para multi-firmante |
 | Drive | OAuth del admin (refresh token en `app_settings`) | Carpetas por deal: Propiedad/Vendedor/Comprador/Escrow/Gestoría/Banco (se crean solas) |
@@ -132,7 +132,7 @@ Levanta el servidor real con DB temporal y cubre: health/404/JSON-malformado, lo
 4. **Plantillas de operación** (pre-carga de machote/notario/escrow típicos por desarrollo).
 5. **Webhook DocuSign Connect** con HMAC — elimina el clic de "Verificar estado".
 6. Pendientes menores del backlog: #34 (unificar KYC Armour/TLA+LPR), #35 (rediseño de costos de cierre), #40 ("Sign now" vs "Send" en vista cliente), #42 (estado del dropdown de notaría), #43 (escenario editable post-creación), #44 (dashboard multi-deal del agente en Portal).
-7. **Deuda técnica**: partir `public/index.html` en módulos; consolidar migraciones viejas de `db/index.js` en el schema base (los tests ya las cubren).
+7. **Deuda técnica**: consolidar migraciones viejas de `db/index.js` en el schema base (los tests ya las cubren). *(Partir `public/index.html` en módulos: hecho — ver la sección 11.)* Siguiente apretón de seguridad posible: quitar `'unsafe-inline'` de `style-src` en la CSP, lo que implica sacar los atributos `style="..."` de la interfaz a clases.
 
 ### White-label (si se retoma)
 No multi-tenantizar el código todavía. Etapa 1: una instancia de Render por cliente (el `render.yaml` ya es infra-as-code; la paleta son variables CSS; cada instancia con su DocuSign/Drive/Resend). Multi-tenant real solo cuando duela administrar 3+ instancias. Cobrar **por cierre**, no por usuario.
@@ -166,7 +166,17 @@ data/scenario-docs.json    Checklists por escenario (property/gestoria/banco/por
 data/scenario-tasks.json   Tracker por escenario
 data/kyc-templates/        Definiciones de campos KYC
 templates/                 .docx fuente de KYC/escrow
-public/index.html          TODO el frontend (SPA, i18n ES/EN inline)
+public/index.html          Marcado del portal (65 líneas; carga los módulos de abajo en orden)
+public/styles.css          Estilos del portal
+public/js/i18n.js          Idiomas, textos y etiquetas
+public/js/core.js          Estado, API, adaptadores, menú lateral y render()
+public/js/auth-views.js    Login, 2FA, registro, recuperar contraseña
+public/js/admin.js         Perfil, Dashboard, Equipo, Clientes, Papelera
+public/js/deal-detail.js   Detalle de la operación: partes, KYC y documentos
+public/js/deal-docs.js     Propiedad, gastos de cierre, tracker, personas, contrato
+public/js/portal.js        Portal del cliente y del agente
+public/js/app.js           Versión, notificaciones y arranque (loadData al final)
+public/js/{invite,reset-password,sign-return}.js  Scripts de las páginas sueltas
 test/smoke.test.js         Suite completa (npm test)
 ```
 
