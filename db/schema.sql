@@ -2,13 +2,24 @@
 -- Roles: admin, agent, lawyer, buyer, seller
 -- Una persona puede estar ligada a varias operaciones (deal_parties)
 
+-- Definición COMPLETA y actual — una instalación desde cero debe quedar
+-- idéntica a una base migrada. Si la creas sin alguna columna que los
+-- ensureColumn de db/index.js agregan, no pasa nada (los agregan solos);
+-- pero el CHECK de role SÍ tiene que traer todos los roles actuales, o
+-- ensureUserRoleAllowsExternalLawyer recreará la tabla en el primer
+-- arranque sin necesidad.
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL CHECK(role IN ('admin','agent','lawyer','buyer','seller')),
+  role TEXT NOT NULL CHECK(role IN ('admin','agent','lawyer','external_lawyer','buyer','seller')),
   status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('pending','active')),
+  agency TEXT,
+  phone TEXT,
+  totp_secret TEXT,
+  totp_enabled INTEGER NOT NULL DEFAULT 0,
+  two_factor_method TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -210,4 +221,30 @@ CREATE TABLE IF NOT EXISTS document_reminders_log (
 CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,
   value TEXT
+);
+
+-- Historial de actividad por operación — cada acción relevante (documento
+-- subido/aprobado, paso del tracker completado, KYC enviado, persona
+-- agregada...) deja una fila aquí. Es lo que alimenta la línea de tiempo
+-- del detalle de la operación: quién hizo qué y cuándo, sin reconstruirlo
+-- después desde columnas sueltas.
+CREATE TABLE IF NOT EXISTS deal_activity (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+  user_id INTEGER REFERENCES users(id),
+  action TEXT NOT NULL,
+  detail TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_deal_activity_deal ON deal_activity(deal_id, id);
+
+-- Recordatorios de fechas límite ya mandados (lib/deadlineReminders.js) —
+-- una fila por operación+tipo+fecha objetivo, para no repetir el correo si
+-- el chequeo diario corre varias veces (o el servidor se reinicia).
+CREATE TABLE IF NOT EXISTS deadline_reminders_log (
+  deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  target_date TEXT NOT NULL,
+  sent_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (deal_id, kind, target_date)
 );

@@ -19,6 +19,7 @@ const googleDriveRouter = require('./routes/googleDrive');
 const settingsRouter = require('./routes/settings');
 const { runAutomaticReminders } = require('./lib/reminders');
 const { checkAndSendPredialReminders } = require('./lib/predialReminder');
+const { checkAndSendDeadlineReminders } = require('./lib/deadlineReminders');
 const { createRateLimiter } = require('./lib/rateLimit');
 
 const app = express();
@@ -164,3 +165,10 @@ setInterval(() => runAutomaticReminders().catch(err => console.error('[reminders
 // importar cuántas veces se reinicie el servidor esa semana).
 setTimeout(() => checkAndSendPredialReminders().catch(err => console.error('[predial-reminder] error:', err.message)), 90 * 1000);
 setInterval(() => checkAndSendPredialReminders().catch(err => console.error('[predial-reminder] error:', err.message)), 24 * 60 * 60 * 1000);
+
+// Fechas límite (cierre / fin de due diligence) a 7 y a 2 días — aviso
+// interno al equipo (lib/deadlineReminders.js); una vez al día, con
+// registro en base de datos para nunca avisar doble.
+const APP_BASE_URL = process.env.APP_BASE_URL || 'https://portal.gruponar.com';
+setTimeout(() => checkAndSendDeadlineReminders(APP_BASE_URL).catch(err => console.error('[deadline-reminder] error:', err.message)), 2 * 60 * 1000);
+setInterval(() => checkAndSendDeadlineReminders(APP_BASE_URL).catch(err => console.error('[deadline-reminder] error:', err.message)), 24 * 60 * 60 * 1000);

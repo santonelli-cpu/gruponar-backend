@@ -5,6 +5,7 @@ const multer = require('multer');
 const docusign = require('docusign-esign');
 const db = require('../db');
 const { requireAuth, requireRole } = require('./auth');
+const { logActivity } = require('../lib/activity');
 const { canAccessDeal, myDealPartyEntityId, myRepresentsSide, AGENT_LIKE_ROLES } = require('../lib/access');
 const { dealDir, genFilename } = require('../lib/storage');
 const gcsStorage = require('../lib/gcsStorage');
@@ -421,6 +422,7 @@ async function sendKycEnvelope(deal, party, submission, template, embedUserId) {
 
   db.prepare("UPDATE kyc_submissions SET status = 'sent', docusign_envelope_id = ?, docusign_status = 'sent', updated_at = datetime('now') WHERE id = ?")
     .run(result.envelopeId, submission.id);
+  logActivity(deal.id, null, 'kyc_sent', party.name);
 
   return result.envelopeId;
 }

@@ -1,11 +1,12 @@
 {
   "name": "gruponar-closing-platform-backend",
   "version": "0.1.0",
-  "description": "Backend real (auth con roles, base de datos, API de operaciones) para la plataforma de coordinación de cierres de Grupo Nar.",
+  "description": "Backend real (auth con roles, base de datos, API de operaciones) para la plataforma de coordinaci\u00f3n de cierres de Grupo Nar.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "seed": "node db/seed.js"
+    "seed": "node db/seed.js",
+    "test": "node --test"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.21.0",

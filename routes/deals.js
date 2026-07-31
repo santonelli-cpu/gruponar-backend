@@ -88,7 +88,8 @@ const updateAgentSchema = z.object({
 const addDocumentSchema = z.object({
   name: z.string().trim().min(1, 'Falta el nombre del documento.').max(300),
   dealPartyEntityId: z.number().int().positive().nullable().optional(),
-  subLabel: z.string().trim().max(200).optional()
+  subLabel: z.string().trim().max(200).optional(),
+  section: z.enum(['gestoria', 'banco']).optional()
 }).strict();
 
 const updateDocumentSchema = z.object({
@@ -102,14 +103,18 @@ const reviewDocumentSchema = z.object({
 }).strict();
 
 const updateTaskSchema = z.object({
-  status: z.enum(['pending', 'progress', 'done'])
+  status: z.enum(['pending', 'progress', 'done']).optional(),
+  assignedTo: z.number().int().positive().nullable().optional()
 }).strict();
 
 // Comprador/vendedor solo puede tocar documentos de su propia parte; un
 // agente que ya eligió a qué lado representa solo los de ese lado; los de
 // la Propiedad (deal_party_entity_id NULL) son de cualquiera con acceso a
-// la operación; admin/abogado sin restricción.
+// la operación; admin/abogado sin restricción. Los de Gestoría/Banco
+// (doc.section) son solo de admin/abogados — GET /:id ya se los oculta a
+// comprador/vendedor/agente, esto cierra el acceso directo por ID.
 function canTouchDoc(req, dealId, doc) {
+  if (doc.section) return ['admin', 'lawyer', 'external_lawyer'].includes(req.session.role);
   if (doc.deal_party_entity_id === null) return true;
   const role = myRoleInDeal(req, dealId);
   if (['admin', 'lawyer'].includes(role)) return true;
@@ -124,6 +129,7 @@ function canTouchDoc(req, dealId, doc) {
 const mailer = require('../lib/email');
 const driveClient = require('../lib/googleDriveClient');
 const gcsStorage = require('../lib/gcsStorage');
+const { logActivity } = require('../lib/activity');
 
 const router = express.Router();
 
@@ -146,12 +152,15 @@ async function tryCreateDriveFolder(req, dealId, property) {
 // bloquea ni revienta la subida real si Drive no está conectado o falla.
 // (kyc.js/contracts.js/docusign.js tienen su propia versión chica de esta
 // misma idea, no se comparte código entre archivos de rutas en este repo.)
-async function syncDocumentToDrive(req, dealId, deal_party_entity_id, filename, buffer, mimeType) {
+async function syncDocumentToDrive(req, dealId, deal_party_entity_id, filename, buffer, mimeType, section) {
   if (!driveClient.isConfigured() || !driveClient.isConnected()) return;
   const deal = db.prepare('SELECT drive_folder_id FROM deals WHERE id = ?').get(dealId);
   if (!deal || !deal.drive_folder_id) return;
-  let subfolder = 'Propiedad';
-  if (deal_party_entity_id !== null && deal_party_entity_id !== undefined) {
+  // Gestoría/Banco tienen su propia subcarpeta en Drive (se crea sola la
+  // primera vez, ver uploadFileToDealSubfolder) — igual que las secciones
+  // originales Propiedad/Vendedor/Comprador.
+  let subfolder = section === 'gestoria' ? 'Gestoría' : section === 'banco' ? 'Banco' : 'Propiedad';
+  if (!section && deal_party_entity_id !== null && deal_party_entity_id !== undefined) {
     const party = db.prepare('SELECT side FROM deal_party_entities WHERE id = ?').get(deal_party_entity_id);
     if (party) subfolder = party.side === 'seller' ? 'Vendedor' : 'Comprador';
   }
@@ -268,6 +277,13 @@ function insertPropertyDocs(dealId, scenario) {
   const names = SCENARIO_DOCS[scenario].property || [];
   const insertDoc = db.prepare("INSERT INTO documents (deal_id, deal_party_entity_id, name, created_at) VALUES (?,NULL,?,datetime('now'))");
   names.forEach(name => insertDoc.run(dealId, name));
+  // Secciones Gestoría y Banco — solo los escenarios con fideicomiso las
+  // traen en scenario-docs.json; para compraventa directa estos arrays no
+  // existen y no se inserta nada.
+  const insertSectionDoc = db.prepare("INSERT INTO documents (deal_id, deal_party_entity_id, name, section, created_at) VALUES (?,NULL,?,?,datetime('now'))");
+  ['gestoria', 'banco'].forEach(section => {
+    (SCENARIO_DOCS[scenario][section] || []).forEach(name => insertSectionDoc.run(dealId, name, section));
+  });
 }
 
 function insertPartyWithDocs(dealId, scenario, side, sortOrder, p) {
@@ -535,6 +551,7 @@ router.post('/', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rat
       r.welcomeEmailError = error;
     }));
     res.status(201).json({ id: result.id, partyResults: result.partyResults });
+    logActivity(result.id, req.session.userId, 'deal_created', property);
     tryCreateDriveFolder(req, result.id, property);
   } catch (err) {
     res.status(500).json({ error: err.message || 'Error al crear la operación.' });
@@ -605,7 +622,13 @@ router.get('/:id', requireAuth, (req, res) => {
   }
 
   const documents = db.prepare('SELECT * FROM documents WHERE deal_id = ?').all(deal.id);
-  const tasks = db.prepare('SELECT * FROM tasks WHERE deal_id = ? ORDER BY sort_order').all(deal.id);
+  // assigned_to_name para mostrar "Asignada a X" sin otro fetch — el
+  // frontend de un abogado no tiene la lista completa de usuarios.
+  const tasks = db.prepare(`
+    SELECT t.*, u.name AS assigned_to_name
+    FROM tasks t LEFT JOIN users u ON u.id = t.assigned_to
+    WHERE t.deal_id = ? ORDER BY t.sort_order
+  `).all(deal.id);
 
   // Un agente que ya eligió a qué lado representa solo ve las partes (y sus
   // documentos) de ese lado — el otro lado puede tener su propio agente y no
@@ -619,6 +642,11 @@ router.get('/:id', requireAuth, (req, res) => {
     const visiblePartyIds = new Set(parties.filter(p => p.side === side).map(p => p.id));
     visibleParties = parties.filter(p => visiblePartyIds.has(p.id));
     visibleDocuments = documents.filter(d => d.deal_party_entity_id === null || visiblePartyIds.has(d.deal_party_entity_id));
+  }
+  // Gestoría/Banco son trabajo interno de los abogados (CLG, avalúo,
+  // formatos del banco...) — comprador/vendedor/agente no las ven.
+  if (!['admin', 'lawyer', 'external_lawyer'].includes(req.session.role)) {
+    visibleDocuments = visibleDocuments.filter(d => !d.section);
   }
 
   res.json({ ...deal, parties: visibleParties, agents, documents: visibleDocuments, tasks });
@@ -682,6 +710,7 @@ router.post('/:id/parties', requireRole('admin', 'agent', 'lawyer', 'external_la
   if (count >= MAX_PARTIES_PER_SIDE) return res.status(400).json({ error: `Máximo ${MAX_PARTIES_PER_SIDE} personas por lado.` });
 
   const partyId = insertPartyWithDocs(req.params.id, deal.scenario, p.side, count, p);
+  logActivity(req.params.id, req.session.userId, 'person_added', p.name);
 
   // Correo opcional: da de alta la cuenta de una vez, para poder mandar a
   // firmar documentos sin que la parte tenga que registrarse ella misma.
@@ -957,6 +986,7 @@ router.post('/:id/agents', requireRole('admin', 'agent', 'lawyer', 'external_law
   if (already) return res.status(409).json({ error: 'Ese agente ya está en esta operación.' });
   db.prepare("INSERT INTO deal_parties (deal_id, user_id, role_in_deal, represents_side) VALUES (?,?,'agent',?)").run(req.params.id, userId, representsSide || null);
   res.status(201).json({ ok: true });
+  logActivity(req.params.id, req.session.userId, 'person_added', user.name);
 
   // Aviso por correo (best-effort, no bloquea la respuesta) — el agente ya
   // tiene cuenta, solo le avisamos que esta operación se agregó a la suya.
@@ -1081,7 +1111,16 @@ router.post('/:id/drive-folder', requireRole('admin', 'agent', 'lawyer', 'extern
 // un admin/agente para algo tan simple como "necesito otra fila".
 router.post('/:id/documents', requireRole('admin', 'agent', 'lawyer', 'external_lawyer', 'buyer', 'seller'), rateLimitWrite, validateBody(addDocumentSchema), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
-  const { name, dealPartyEntityId, subLabel } = req.body;
+  const { name, dealPartyEntityId, subLabel, section } = req.body;
+
+  // Gestoría/Banco son secciones de trabajo de los abogados — un
+  // comprador/vendedor/agente ni siquiera las ve (GET /:id se las filtra).
+  if (section && !['admin', 'lawyer', 'external_lawyer'].includes(req.session.role)) {
+    return res.status(403).json({ error: 'No autorizado para agregar documentos en esta sección.' });
+  }
+  if (section && dealPartyEntityId) {
+    return res.status(400).json({ error: 'Un documento de Gestoría/Banco es de la operación, no de una parte.' });
+  }
 
   let partyId = null;
   if (dealPartyEntityId !== undefined && dealPartyEntityId !== null) {
@@ -1099,8 +1138,8 @@ router.post('/:id/documents', requireRole('admin', 'agent', 'lawyer', 'external_
     partyId = party.id;
   }
 
-  const info = db.prepare("INSERT INTO documents (deal_id, deal_party_entity_id, sub_label, name, created_at) VALUES (?,?,?,?,datetime('now'))")
-    .run(req.params.id, partyId, (subLabel || '').trim() || null, name.trim());
+  const info = db.prepare("INSERT INTO documents (deal_id, deal_party_entity_id, sub_label, name, section, created_at) VALUES (?,?,?,?,?,datetime('now'))")
+    .run(req.params.id, partyId, (subLabel || '').trim() || null, name.trim(), section || null);
   res.status(201).json({ id: info.lastInsertRowid });
 });
 
@@ -1164,6 +1203,7 @@ router.patch('/:id/documents/:docId/review', requireRole('admin', 'lawyer'), rat
     UPDATE documents SET review_status = ?, review_note = ?, reviewed_by = ?, reviewed_at = datetime('now')
     WHERE id = ? AND deal_id = ?
   `).run(reviewStatus, reviewStatus === 'rejected' ? (reviewNote || null) : null, req.session.userId, req.params.docId, req.params.id);
+  logActivity(req.params.id, req.session.userId, reviewStatus === 'approved' ? 'doc_approved' : 'doc_rejected', doc.name);
   res.json({ ok: true });
 });
 
@@ -1188,7 +1228,8 @@ router.post('/:id/documents/:docId/file', requireAuth, rateLimitUpload, (req, re
         WHERE id=? AND deal_id=?
       `).run(key, req.file.originalname, req.file.mimetype, req.file.size, req.session.userId, req.params.docId, req.params.id);
       res.json({ ok: true });
-      syncDocumentToDrive(req, req.params.id, doc.deal_party_entity_id, `${doc.name}${doc.sub_label ? ' - ' + doc.sub_label : ''} - ${req.file.originalname}`, req.file.buffer, req.file.mimetype);
+      logActivity(req.params.id, req.session.userId, 'doc_uploaded', doc.name);
+      syncDocumentToDrive(req, req.params.id, doc.deal_party_entity_id, `${doc.name}${doc.sub_label ? ' - ' + doc.sub_label : ''} - ${req.file.originalname}`, req.file.buffer, req.file.mimetype, doc.section);
     } catch (uploadErr) {
       res.status(502).json({ error: uploadErr.message || 'Error al subir el archivo.' });
     }
@@ -1246,10 +1287,48 @@ router.get('/:id/documents/:docId/file', requireAuth, async (req, res) => {
 // quien coordina el cierre quien sabe si ese paso de verdad se completó.
 router.patch('/:id/tasks/:taskId', requireRole('admin', 'lawyer'), rateLimitWrite, validateBody(updateTaskSchema), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
-  const { status } = req.body;
-  db.prepare('UPDATE tasks SET status = ? WHERE id = ? AND deal_id = ?')
-    .run(status, req.params.taskId, req.params.id);
+  const { status, assignedTo } = req.body;
+  const task = db.prepare('SELECT * FROM tasks WHERE id = ? AND deal_id = ?').get(req.params.taskId, req.params.id);
+  if (!task) return res.status(404).json({ error: 'Tarea no encontrada.' });
+
+  if (status !== undefined) {
+    // completed_at: la fecha real en que se completó el paso — alimenta la
+    // línea de tiempo y el resumen de avance; se limpia si se reabre.
+    db.prepare("UPDATE tasks SET status = ?, completed_at = CASE WHEN ? = 'done' THEN datetime('now') ELSE NULL END WHERE id = ? AND deal_id = ?")
+      .run(status, status, req.params.taskId, req.params.id);
+    if (status === 'done' && task.status !== 'done') {
+      logActivity(req.params.id, req.session.userId, 'task_done', task.label_es);
+    } else if (status !== 'done' && task.status === 'done') {
+      logActivity(req.params.id, req.session.userId, 'task_reopened', task.label_es);
+    }
+  }
+
+  // Asignar la tarea a un abogado interno (o a un admin, o a nadie con
+  // null) — solo admin decide quién lleva cada paso.
+  if (assignedTo !== undefined) {
+    if (req.session.role !== 'admin') {
+      return res.status(403).json({ error: 'Solo un administrador puede asignar tareas.' });
+    }
+    if (assignedTo !== null) {
+      const assignee = db.prepare("SELECT id, name FROM users WHERE id = ? AND role IN ('lawyer', 'admin') AND status = 'active'").get(assignedTo);
+      if (!assignee) return res.status(400).json({ error: 'Solo se puede asignar a un abogado interno o admin activo.' });
+      logActivity(req.params.id, req.session.userId, 'task_assigned', `${task.label_es} → ${assignee.name}`);
+    }
+    db.prepare('UPDATE tasks SET assigned_to = ? WHERE id = ? AND deal_id = ?')
+      .run(assignedTo, req.params.taskId, req.params.id);
+  }
+
   res.json({ ok: true });
+});
+
+// GET /api/deals/:id/team-assignees — admins y abogados internos activos, a
+// quienes se les puede asignar una tarea del tracker. Visible para
+// admin/abogado (los que ven la sección de asignación) — /api/users
+// completo es solo de admin, esto expone únicamente id/nombre.
+router.get('/:id/team-assignees', requireRole('admin', 'lawyer'), (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const rows = db.prepare("SELECT id, name, role FROM users WHERE role IN ('lawyer', 'admin') AND status = 'active' ORDER BY name").all();
+  res.json(rows);
 });
 
 // DELETE /api/deals/:id — a la papelera, no se borra de una vez. Antes un
@@ -1264,6 +1343,7 @@ router.delete('/:id', requireRole('admin', 'agent', 'lawyer', 'external_lawyer')
   const info = db.prepare("UPDATE deals SET deleted_at = datetime('now'), deleted_by = ? WHERE id = ? AND deleted_at IS NULL")
     .run(req.session.userId, req.params.id);
   if (!info.changes) return res.status(404).json({ error: 'Operación no encontrada.' });
+  logActivity(req.params.id, req.session.userId, 'deal_trashed', null);
   res.json({ ok: true });
 });
 
@@ -1273,7 +1353,63 @@ router.post('/:id/restore', requireRole('admin'), rateLimitWrite, (req, res) => 
   const info = db.prepare("UPDATE deals SET deleted_at = NULL, deleted_by = NULL WHERE id = ? AND deleted_at IS NOT NULL")
     .run(req.params.id);
   if (!info.changes) return res.status(404).json({ error: 'No hay ninguna operación borrada con ese id.' });
+  logActivity(req.params.id, req.session.userId, 'deal_restored', null);
   res.json({ ok: true });
+});
+
+// GET /api/deals/:id/activity — línea de tiempo de la operación (quién
+// subió/aprobó/completó qué y cuándo). Solo staff: el detalle de actividad
+// entre partes (ej. qué subió el vendedor) no le corresponde al comprador.
+router.get('/:id/activity', requireRole('admin', 'lawyer', 'external_lawyer', 'agent'), (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const rows = db.prepare(`
+    SELECT a.id, a.action, a.detail, a.created_at, u.name AS userName
+    FROM deal_activity a LEFT JOIN users u ON u.id = a.user_id
+    WHERE a.deal_id = ?
+    ORDER BY a.id DESC
+    LIMIT 60
+  `).all(req.params.id);
+  res.json(rows);
+});
+
+// POST /api/deals/:id/send-progress-summary — manda a las partes ligadas
+// (titular y apoderado de cada lado) el resumen del tracker: pasos ya
+// completados y cuál sigue. Lo dispara admin/abogado interno a mano
+// ("mandar resumen de esta semana") — deliberadamente no es automático:
+// quien coordina decide cuándo hay avance que valga la pena comunicar.
+router.post('/:id/send-progress-summary', requireRole('admin', 'lawyer'), rateLimitEmail, async (req, res) => {
+  if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
+  const deal = db.prepare('SELECT * FROM deals WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+  if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
+  if (!mailer.isConfigured()) return res.status(501).json({ error: 'Resend no está configurado todavía (falta RESEND_API_KEY).' });
+
+  const tasks = db.prepare('SELECT * FROM tasks WHERE deal_id = ? ORDER BY sort_order').all(req.params.id);
+  const recipients = db.prepare(`
+    SELECT u.name, u.email, dpe.side FROM deal_parties dp
+    JOIN users u ON u.id = dp.user_id
+    JOIN deal_party_entities dpe ON dpe.id = dp.deal_party_entity_id
+    WHERE dp.deal_id = ? AND dp.role_in_deal IN ('buyer','seller')
+  `).all(req.params.id);
+  if (!recipients.length) return res.status(400).json({ error: 'Ninguna parte tiene cuenta ligada todavía — no hay a quién mandarle el resumen.' });
+
+  const url = `${req.protocol}://${req.get('host')}/`;
+  const results = await Promise.all(recipients.map(r => {
+    const lang = mailer.resolveClientLang(deal.scenario, r.side);
+    const isEn = lang === 'en';
+    const completedSteps = tasks.filter(t => t.status === 'done').map(t => isEn ? t.label_en : t.label_es);
+    const next = tasks.find(t => t.status !== 'done');
+    return mailer.sendProgressSummaryEmail({
+      to: r.email, name: r.name, dealProperty: deal.property,
+      completedSteps, nextStep: next ? (isEn ? next.label_en : next.label_es) : null,
+      url, lang
+    });
+  }));
+  const failed = results.find(r => !r.ok);
+  if (failed) return res.status(502).json({ error: failed.error });
+
+  db.prepare("UPDATE deals SET last_progress_email_at = datetime('now') WHERE id = ?").run(req.params.id);
+  logActivity(req.params.id, req.session.userId, 'progress_summary_sent', `${recipients.length} destinatario(s)`);
+  res.json({ ok: true, count: recipients.length });
 });
 
 // DELETE /api/deals/:id/permanent — solo admin, el borrado de verdad (lo

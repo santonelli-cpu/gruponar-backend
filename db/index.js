@@ -689,6 +689,12 @@ function ensureUserRoleAllowsExternalLawyer() {
 
   db.pragma('foreign_keys = OFF');
   db.transaction(() => {
+    // OJO: copiar TODAS las columnas actuales de users (los ensureColumn de
+    // arriba ya corrieron, así que existen todas) — la versión anterior de
+    // esta migración solo copiaba las que existían cuando se escribió, y en
+    // una base que llegara aquí con las columnas de 2FA ya agregadas las
+    // TIRABA en silencio al recrear la tabla. Lo cachó el smoke test en una
+    // base desde cero.
     db.exec(`
       CREATE TABLE users_migration_new (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -698,10 +704,14 @@ function ensureUserRoleAllowsExternalLawyer() {
         role TEXT NOT NULL CHECK(role IN ('admin','agent','lawyer','external_lawyer','buyer','seller')),
         status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('pending','active')),
         agency TEXT,
+        phone TEXT,
+        totp_secret TEXT,
+        totp_enabled INTEGER NOT NULL DEFAULT 0,
+        two_factor_method TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
-      INSERT INTO users_migration_new (id, name, email, password_hash, role, status, agency, created_at)
-        SELECT id, name, email, password_hash, role, status, agency, created_at FROM users;
+      INSERT INTO users_migration_new (id, name, email, password_hash, role, status, agency, phone, totp_secret, totp_enabled, two_factor_method, created_at)
+        SELECT id, name, email, password_hash, role, status, agency, phone, totp_secret, totp_enabled, two_factor_method, created_at FROM users;
       DROP TABLE users;
       ALTER TABLE users_migration_new RENAME TO users;
     `);
@@ -757,5 +767,59 @@ function ensureDealPartiesAllowAttorneyInFact() {
   console.log('[migration] deal_parties ahora acepta un apoderado (relationship=\'attorney_in_fact\') por parte');
 }
 ensureDealPartiesAllowAttorneyInFact();
+
+// A quién (abogado interno/admin) le toca cada tarea del tracker — el admin
+// asigna desde el detalle de la operación. completed_at registra CUÁNDO se
+// completó de verdad (antes solo había el estado, sin fecha) — alimenta la
+// línea de tiempo y el resumen de avance por correo.
+ensureColumn('tasks', 'assigned_to', 'assigned_to INTEGER');
+ensureColumn('tasks', 'completed_at', 'completed_at TEXT');
+
+// Sección de un documento a nivel de operación: NULL = Propiedad (como
+// siempre), 'gestoria' o 'banco' = las dos secciones nuevas para los
+// escenarios con fideicomiso (constitución/cesión/extinción), visibles solo
+// para admin/abogados. Ver data/scenario-docs.json.
+ensureColumn('documents', 'section', 'section TEXT');
+
+// Cuándo se mandó el último resumen de avance del tracker a las partes
+// (POST /api/deals/:id/send-progress-summary) — para mostrar "último
+// resumen: hace N días" y que no se mande doble por accidente.
+ensureColumn('deals', 'last_progress_email_at', 'last_progress_email_at TEXT');
+
+// Backfill aditivo: documentos de Gestoría/Banco para operaciones de
+// fideicomiso que ya existían antes de estas secciones — solo inserta lo
+// que falte (por nombre+sección), nunca toca lo que ya está.
+{
+  const SCENARIO_DOCS_FILE = require('../data/scenario-docs.json');
+  const insertSectionDoc = db.prepare("INSERT INTO documents (deal_id, deal_party_entity_id, name, section, created_at) VALUES (?,NULL,?,?,datetime('now'))");
+  const sectionDeals = db.prepare("SELECT id, scenario FROM deals WHERE scenario IN ('trust','transfer','trust_termination')").all();
+  let added = 0;
+  sectionDeals.forEach(deal => {
+    ['gestoria', 'banco'].forEach(section => {
+      const wanted = (SCENARIO_DOCS_FILE[deal.scenario] && SCENARIO_DOCS_FILE[deal.scenario][section]) || [];
+      const existing = new Set(
+        db.prepare('SELECT name FROM documents WHERE deal_id = ? AND section = ?').all(deal.id, section).map(d => d.name)
+      );
+      wanted.forEach(name => {
+        if (!existing.has(name)) { insertSectionDoc.run(deal.id, name, section); added++; }
+      });
+    });
+  });
+  if (added) console.log(`[migration] ${added} documento(s) de Gestoría/Banco agregados a operaciones de fideicomiso existentes`);
+}
+
+// Backfill aditivo: la tarea "Carta de instrucción al banco" también aplica
+// a constitución de fideicomiso (antes solo cesión/extinción la tenían en
+// data/scenario-tasks.json) — para operaciones trust ya creadas se agrega
+// al final del tracker (reordenar las existentes movería pasos que el
+// equipo ya tiene ubicados por número).
+db.prepare(`
+  INSERT INTO tasks (deal_id, label_en, label_es, requires_signature, doc_type, sort_order, created_at)
+  SELECT d.id, 'Instruction letter sent to the bank', 'Carta de instrucción al banco', 0, 'manual',
+    (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM tasks t WHERE t.deal_id = d.id), datetime('now')
+  FROM deals d
+  WHERE d.scenario = 'trust'
+    AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.deal_id = d.id AND t.label_es = 'Carta de instrucción al banco')
+`).run();
 
 module.exports = db;

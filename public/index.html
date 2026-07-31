@@ -404,6 +404,18 @@ const STRINGS = {
     searchByName: 'Buscar por nombre...', allRoles: 'Todos', noClientsMatch: 'Ningún cliente coincide con la búsqueda/filtro.',
     nameLabel: 'Nombre', roleLabel: 'Rol', agencyLabel: 'Agencia',
     networkError: 'Sin conexión con el servidor — revisa tu internet e intenta de nuevo.',
+    gestoriaSection: 'Gestoría', bancoSection: 'Banco',
+    assignedTo: 'Asignada a', assignedToNobody: 'Sin asignar',
+    sendProgressSummary: 'Enviar resumen de avance a las partes',
+    confirmSendProgressSummary: '¿Mandar por correo a comprador y vendedor el resumen de pasos completados y cuál sigue?',
+    progressSummarySent: 'Resumen enviado a {count} destinatario(s).',
+    lastProgressSummary: 'Último resumen enviado: {date}',
+    activityTitle: 'Actividad', activityEmpty: 'Todavía no hay actividad registrada en esta operación.',
+    actDealCreated: 'creó la operación', actDealTrashed: 'mandó la operación a la papelera', actDealRestored: 'restauró la operación',
+    actDocUploaded: 'subió un documento', actDocApproved: 'aprobó un documento', actDocRejected: 'rechazó un documento',
+    actTaskDone: 'completó un paso del tracker', actTaskReopened: 'reabrió un paso del tracker', actTaskAssigned: 'asignó una tarea',
+    actPersonAdded: 'agregó a una persona', actKycSent: 'KYC enviado a firma', actContractSent: 'envió el contrato a firma',
+    actProgressSummarySent: 'envió el resumen de avance a las partes',
     loginTitle: 'Iniciar sesión', loginSub: 'Ingresa con tu correo y contraseña.',
     loginEmailPh: 'correo@ejemplo.com', loginPasswordPh: 'Contraseña', loginSubmit: 'Entrar', loginSubmitting: 'Entrando...',
     loginNoAccount: '¿Eres agente o abogado y no tienes cuenta?', loginCreateAccount: 'Crear cuenta',
@@ -650,6 +662,18 @@ const STRINGS = {
     searchByName: 'Search by name...', allRoles: 'All', noClientsMatch: 'No client matches that search/filter.',
     nameLabel: 'Name', roleLabel: 'Role', agencyLabel: 'Agency',
     networkError: 'Could not reach the server — check your connection and try again.',
+    gestoriaSection: 'Gestoría (permits & certificates)', bancoSection: 'Bank',
+    assignedTo: 'Assigned to', assignedToNobody: 'Unassigned',
+    sendProgressSummary: 'Send progress summary to the parties',
+    confirmSendProgressSummary: 'Email buyer and seller the summary of completed steps and what comes next?',
+    progressSummarySent: 'Summary sent to {count} recipient(s).',
+    lastProgressSummary: 'Last summary sent: {date}',
+    activityTitle: 'Activity', activityEmpty: 'No activity recorded on this deal yet.',
+    actDealCreated: 'created the deal', actDealTrashed: 'moved the deal to trash', actDealRestored: 'restored the deal',
+    actDocUploaded: 'uploaded a document', actDocApproved: 'approved a document', actDocRejected: 'rejected a document',
+    actTaskDone: 'completed a tracker step', actTaskReopened: 'reopened a tracker step', actTaskAssigned: 'assigned a task',
+    actPersonAdded: 'added a person', actKycSent: 'KYC sent for signature', actContractSent: 'sent the contract for signature',
+    actProgressSummarySent: 'sent the progress summary to the parties',
     loginTitle: 'Log in', loginSub: 'Enter your email and password.',
     loginEmailPh: 'email@example.com', loginPasswordPh: 'Password', loginSubmit: 'Log in', loginSubmitting: 'Logging in...',
     loginNoAccount: 'Are you an agent or lawyer without an account?', loginCreateAccount: 'Create account',
@@ -919,6 +943,21 @@ let notaryPaymentNote = undefined;
 // arranca abierta y una con muchos arranca cerrada (ver buildDashboard).
 let dashboardExpandedGroups = {};
 let docChecklistExpanded = {};
+let teamAssigneesCache = undefined;
+let activityCache = {};
+
+async function loadTeamAssignees(dealId){
+  teamAssigneesCache = null; // en vuelo — no volver a pedir en cada render
+  try{ teamAssigneesCache = await apiFetch(`/api/deals/${dealId}/team-assignees`); }
+  catch(e){ teamAssigneesCache = []; }
+  render();
+}
+
+async function loadActivity(dealId){
+  try{ activityCache[dealId] = await apiFetch(`/api/deals/${dealId}/activity`); }
+  catch(e){ activityCache[dealId] = { error: e.message }; }
+  render();
+}
 let driveStatus = null;
 let escrowFormOpenFor = null;
 let activeDealId = null;
@@ -1007,6 +1046,7 @@ function adaptDoc(d){
   return {
     id: d.id, name: d.name, subLabel: d.sub_label, status: d.status,
     fileUrl: d.file_url, originalName: d.original_name, partyId: d.deal_party_entity_id,
+    section: d.section || null,
     subChecks: d.sub_checks_json ? JSON.parse(d.sub_checks_json) : {},
     reviewStatus: d.review_status || 'pending', reviewNote: d.review_note || null
   };
@@ -1025,7 +1065,8 @@ function adaptTask(t){
   return {
     id: t.id, en: t.label_en, es: t.label_es, status: t.status, sign: !!t.requires_signature,
     docType: t.doc_type || 'manual', signSide: t.sign_side || null,
-    docusignStatus: t.docusign_status, documentOriginalName: t.document_original_name
+    docusignStatus: t.docusign_status, documentOriginalName: t.document_original_name,
+    assignedTo: t.assigned_to || null, assignedToName: t.assigned_to_name || null
   };
 }
 // Un vendedor/comprador individual, o una entidad (LLC/persona moral) con su
@@ -1054,6 +1095,7 @@ function adaptDealSummary(row){
     escrowCompany: row.escrow_company || 'armour',
     closingDate: row.closing_date || '', dueDiligenceEndDate: row.due_diligence_end_date || '',
     status: row.status || 'active', closedAt: row.closed_at || null, legalActs: row.legal_acts || '',
+    lastProgressEmailAt: row.last_progress_email_at || null,
     driveFolderId: row.drive_folder_id || null, driveFolderUrl: row.drive_folder_url || null,
     parties: (row.parties || []).map(adaptParty),
     agents: row.agents || [],
@@ -1144,6 +1186,9 @@ async function openDeal(dealId){
     const adapted = adaptDealDetail(full);
     const idx = deals.findIndex(d=>d.id===dealId);
     if(idx>=0) deals[idx] = adapted; else deals.push(adapted);
+    // La línea de tiempo se refresca junto con la operación — casi
+    // cualquier acción que dispara openDeal también generó actividad nueva.
+    delete activityCache[dealId];
   }catch(e){
     alert(e.message);
     // La operación ya no existe (alguien más la borró) o ya no la puedes
@@ -3312,6 +3357,21 @@ function buildAdminDealDetail(deal){
   notaryCard.appendChild(buildNotaryClosingCostsSection(deal, true));
   wrap.appendChild(notaryCard);
 
+  // Gestoría y Banco — solo escenarios con fideicomiso y solo
+  // admin/abogados (a comprador/vendedor/agente el backend ni les manda
+  // estos documentos). Cada una se refleja en su subcarpeta de Drive.
+  if(['admin','lawyer','external_lawyer'].includes(currentUser.role) && deal.scenario !== 'purchase'){
+    [['gestoria', t('gestoriaSection')], ['banco', t('bancoSection')]].forEach(([section, label]) => {
+      if(!deal.documents.some(d => d.section === section)) return;
+      const secTitle = document.createElement('div');
+      secTitle.className = 'section-title'; secTitle.textContent = label;
+      wrap.appendChild(secTitle);
+      const secCard = document.createElement('div'); secCard.className = 'card';
+      secCard.appendChild(buildSectionDocsCard(deal, section));
+      wrap.appendChild(secCard);
+    });
+  }
+
   const docsTitle = document.createElement('div');
   docsTitle.className = 'section-title'; docsTitle.textContent = t('docsChecklist');
   wrap.appendChild(docsTitle);
@@ -3352,7 +3412,65 @@ function buildAdminDealDetail(deal){
   contractCard.appendChild(buildContractSection(deal, ['admin', 'lawyer'].includes(currentUser.role)));
   wrap.appendChild(contractCard);
 
+  // Línea de tiempo — quién hizo qué y cuándo en esta operación. Solo
+  // staff (el backend igual lo restringe); colapsada por default para no
+  // alargar más la página.
+  const activityTitle = document.createElement('div');
+  activityTitle.className = 'section-title'; activityTitle.textContent = t('activityTitle');
+  wrap.appendChild(activityTitle);
+  wrap.appendChild(buildActivitySection(deal));
+
   return wrap;
+}
+
+const ACTIVITY_META = {
+  deal_created:          { icon: 'ti-flag',        key: 'actDealCreated' },
+  deal_trashed:          { icon: 'ti-trash',       key: 'actDealTrashed' },
+  deal_restored:         { icon: 'ti-rotate',      key: 'actDealRestored' },
+  doc_uploaded:          { icon: 'ti-upload',      key: 'actDocUploaded' },
+  doc_approved:          { icon: 'ti-check',       key: 'actDocApproved' },
+  doc_rejected:          { icon: 'ti-x',           key: 'actDocRejected' },
+  task_done:             { icon: 'ti-circle-check', key: 'actTaskDone' },
+  task_reopened:         { icon: 'ti-rotate-2',    key: 'actTaskReopened' },
+  task_assigned:         { icon: 'ti-user-check',  key: 'actTaskAssigned' },
+  person_added:          { icon: 'ti-user-plus',   key: 'actPersonAdded' },
+  kyc_sent:              { icon: 'ti-signature',   key: 'actKycSent' },
+  contract_sent:         { icon: 'ti-file-text',   key: 'actContractSent' },
+  progress_summary_sent: { icon: 'ti-mail-forward', key: 'actProgressSummarySent' }
+};
+
+function buildActivitySection(deal){
+  const card = document.createElement('div');
+  card.className = 'card';
+  const data = activityCache[deal.id];
+  if(data === undefined){
+    card.innerHTML = `<div class="field-hint" style="margin:0;">${t('loading')}</div>`;
+    loadActivity(deal.id);
+    return card;
+  }
+  if(data.error){
+    card.innerHTML = `<div class="field-hint" style="margin:0;">${escapeHtml(data.error)}</div>`;
+    return card;
+  }
+  if(!data.length){
+    card.innerHTML = `<div class="field-hint" style="margin:0;">${t('activityEmpty')}</div>`;
+    return card;
+  }
+  data.forEach((ev, i) => {
+    const meta = ACTIVITY_META[ev.action] || { icon: 'ti-point', key: null };
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; align-items:flex-start; gap:10px; padding:7px 0;' + (i < data.length - 1 ? ' border-bottom:0.5px solid var(--line);' : '');
+    const actionLabel = meta.key ? t(meta.key) : ev.action;
+    row.innerHTML = `
+      <span style="width:26px; height:26px; border-radius:50%; background:var(--stone); display:flex; align-items:center; justify-content:center; flex-shrink:0; color:var(--ink-soft);"><i class="ti ${meta.icon}" aria-hidden="true" style="font-size:13px;"></i></span>
+      <span style="flex:1; min-width:0;">
+        <div style="font-size:12.5px;">${ev.userName ? `<b>${escapeHtml(ev.userName)}</b> ` : ''}${actionLabel}${ev.detail ? ` — ${escapeHtml(ev.detail)}` : ''}</div>
+        <div class="field-hint" style="margin:1px 0 0;">${escapeHtml((ev.created_at || '').replace('T', ' ').slice(0, 16))} UTC</div>
+      </span>
+    `;
+    card.appendChild(row);
+  });
+  return card;
 }
 
 const KYC_STATUS_LABEL_I18N = {
@@ -3752,7 +3870,7 @@ function buildDocItemLi(deal, doc, isStaffView, readOnly){
 // Formulario chico para agregar un requisito de documento custom al
 // checklist — para property (dealPartyEntityId null) o para una parte
 // específica. Solo staff (ver buildDocItemLi arriba, mismo criterio).
-function buildAddDocumentRow(deal, dealPartyEntityId){
+function buildAddDocumentRow(deal, dealPartyEntityId, section){
   const row = document.createElement('div');
   row.style.cssText = 'margin-top:6px;';
   row.innerHTML = `
@@ -3783,7 +3901,9 @@ function buildAddDocumentRow(deal, dealPartyEntityId){
     if(!name) return;
     addBtn.disabled = true;
     try{
-      await apiFetch(`/api/deals/${deal.id}/documents`, { method:'POST', body: JSON.stringify({ name, dealPartyEntityId: dealPartyEntityId || null }) });
+      const body = { name, dealPartyEntityId: dealPartyEntityId || null };
+      if(section) body.section = section;
+      await apiFetch(`/api/deals/${deal.id}/documents`, { method:'POST', body: JSON.stringify(body) });
       await openDeal(deal.id);
     }catch(e){ alert(e.message); addBtn.disabled = false; }
   };
@@ -3930,7 +4050,9 @@ const CLOSING_COSTS_SECTION_DOC_NAMES = [NOTARY_CLOSING_DOC_NAME, ESCROW_PAYMENT
 // subirlos ni agregar un requisito nuevo: no son suyos, no los tiene.
 function buildPropertyDocsSection(deal, isStaffView, viewerSide){
   const readOnly = !isStaffView && viewerSide === 'buyer';
-  const docs = deal.documents.filter(d => d.partyId === null && !CLOSING_COSTS_SECTION_DOC_NAMES.includes(d.name));
+  // Sin section: los de Gestoría/Banco (doc.section) tienen su propia
+  // sección aparte (buildSectionDocsCard), no van dentro de Propiedad.
+  const docs = deal.documents.filter(d => d.partyId === null && !d.section && !CLOSING_COSTS_SECTION_DOC_NAMES.includes(d.name));
   const box = document.createElement('div');
   box.style.marginBottom = '14px';
   const ul = document.createElement('ul');
@@ -3938,6 +4060,22 @@ function buildPropertyDocsSection(deal, isStaffView, viewerSide){
   docs.forEach(doc => ul.appendChild(buildDocItemLi(deal, doc, isStaffView, readOnly)));
   box.appendChild(ul);
   if(!readOnly) box.appendChild(buildAddDocumentRow(deal, null));
+  return box;
+}
+
+// Secciones Gestoría y Banco — documentos de trabajo de los abogados en los
+// escenarios con fideicomiso (CLG, avalúo, no adeudos; formatos del banco,
+// carta de instrucción, VoBo). Solo staff las ve (el backend ni siquiera se
+// las manda a comprador/vendedor/agente). Mismo checklist de siempre, con
+// su "+" para agregar renglones extra.
+function buildSectionDocsCard(deal, section){
+  const docs = deal.documents.filter(d => d.section === section);
+  const box = document.createElement('div');
+  const ul = document.createElement('ul');
+  ul.className = 'doc-list';
+  docs.forEach(doc => ul.appendChild(buildDocItemLi(deal, doc, true)));
+  box.appendChild(ul);
+  box.appendChild(buildAddDocumentRow(deal, null, section));
   return box;
 }
 
@@ -4112,6 +4250,7 @@ function buildTaskList(deal, canManage){
         <div class="task-en">${escapeHtml(task.en)}${task.sign?`<span class="sign-tag">${t('requiresSignature')}</span>`:''}</div>
         <div class="task-es">${escapeHtml(task.es)}</div>
         ${isKycReview && task.status !== 'done' ? `<a href="#" class="task-go-kyc" style="font-size:11px;">${t('goToKycSection')}</a>` : ''}
+        ${canManage ? `<div class="task-assignee" style="margin-top:3px;"></div>` : (task.assignedToName ? `<div class="field-hint" style="margin:3px 0 0;">${t('assignedTo')}: ${escapeHtml(task.assignedToName)}</div>` : '')}
       </div>
     `;
     if(stampClickable) row.querySelector('.task-stamp').onclick = async () => {
@@ -4127,8 +4266,63 @@ function buildTaskList(deal, canManage){
       e.preventDefault();
       document.getElementById('admin-kyc-section')?.scrollIntoView({ behavior:'smooth', block:'start' });
     };
+    // Asignación de la tarea — admin elige a qué abogado interno/admin le
+    // toca; un abogado ve a quién está asignada (solo lectura).
+    const assigneeSlot = row.querySelector('.task-assignee');
+    if(assigneeSlot){
+      if(currentUser.role === 'admin'){
+        if(teamAssigneesCache === undefined){
+          loadTeamAssignees(deal.id);
+        } else if(Array.isArray(teamAssigneesCache)){
+          const sel = document.createElement('select');
+          sel.style.cssText = 'font-size:11px; padding:1px 5px; max-width:200px;';
+          sel.innerHTML = `<option value="">${t('assignedToNobody')}</option>` +
+            teamAssigneesCache.map(u => `<option value="${u.id}" ${task.assignedTo===u.id?'selected':''}>${escapeHtml(u.name)}</option>`).join('');
+          sel.onchange = async () => {
+            try{
+              await apiFetch(`/api/deals/${deal.id}/tasks/${task.id}`, { method:'PATCH', body: JSON.stringify({ assignedTo: sel.value ? Number(sel.value) : null }) });
+              await openDeal(deal.id);
+            }catch(e){ alert(e.message); sel.value = task.assignedTo || ''; }
+          };
+          const lbl = document.createElement('label');
+          lbl.className = 'field-hint';
+          lbl.style.cssText = 'margin:0; display:inline-flex; gap:5px; align-items:center;';
+          lbl.append(`${t('assignedTo')}:`, sel);
+          assigneeSlot.appendChild(lbl);
+        }
+      } else if(task.assignedToName){
+        assigneeSlot.innerHTML = `<span class="field-hint" style="margin:0;">${t('assignedTo')}: ${escapeHtml(task.assignedToName)}</span>`;
+      }
+    }
     ul.appendChild(row);
   });
+
+  // Resumen de avance por correo a las partes ("pasos 1-4 completados,
+  // sigue el 5") — lo dispara admin/abogado cuando hay avance que comunicar.
+  if(canManage){
+    const summaryRow = document.createElement('div');
+    summaryRow.style.cssText = 'display:flex; align-items:center; gap:10px; margin-top:12px; flex-wrap:wrap;';
+    const btn = document.createElement('button');
+    btn.className = 'btn';
+    btn.innerHTML = `<i class="ti ti-mail-forward" aria-hidden="true"></i> ${t('sendProgressSummary')}`;
+    btn.onclick = async () => {
+      if(!confirm(t('confirmSendProgressSummary'))) return;
+      btn.disabled = true;
+      try{
+        const r = await apiFetch(`/api/deals/${deal.id}/send-progress-summary`, { method:'POST' });
+        alert(t('progressSummarySent', { count: r.count }));
+        await openDeal(deal.id);
+      }catch(e){ alert(e.message); btn.disabled = false; }
+    };
+    summaryRow.appendChild(btn);
+    if(deal.lastProgressEmailAt){
+      const hint = document.createElement('span');
+      hint.className = 'field-hint'; hint.style.margin = '0';
+      hint.textContent = t('lastProgressSummary', { date: deal.lastProgressEmailAt.slice(0, 10) });
+      summaryRow.appendChild(hint);
+    }
+    ul.appendChild(summaryRow);
+  }
   return ul;
 }
 

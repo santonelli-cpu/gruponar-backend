@@ -6,6 +6,7 @@ const multer = require('multer');
 const docusign = require('docusign-esign');
 const db = require('../db');
 const { requireAuth, requireRole } = require('./auth');
+const { logActivity } = require('../lib/activity');
 const { canAccessDeal, myRoleInDeal } = require('../lib/access');
 const { genFilename } = require('../lib/storage');
 const gcsStorage = require('../lib/gcsStorage');
@@ -423,6 +424,7 @@ router.post('/deals/:id/contract/send-for-signature', requireRole('admin', 'lawy
 
     db.prepare("UPDATE deals SET contract_status = 'sent', contract_docusign_envelope_id = ?, contract_docusign_status = 'sent' WHERE id = ?")
       .run(result.envelopeId, id);
+    logActivity(id, req.session.userId, 'contract_sent', null);
 
     res.json({ ok: true, envelopeId: result.envelopeId });
   } catch (err) {

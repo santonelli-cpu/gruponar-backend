@@ -135,6 +135,17 @@
       "Spouse ID (if applicable)",
       "Wire instructions",
       "Proof of manager's authority (Constancia de facultades del gerente)"
+    ],
+    "gestoria": [
+      "CLG (Certificado de Libertad de Gravamen)",
+      "No Adeudo Predial",
+      "Avalúo",
+      "No adeudo de agua / mantenimiento"
+    ],
+    "banco": [
+      "Formatos de banco",
+      "Carta de instrucción",
+      "VoBo del banco"
     ]
   },
   "transfer": {
@@ -208,6 +219,17 @@
       "Spouse ID (if applicable)",
       "Wire instructions",
       "Proof of manager's authority (Constancia de facultades del gerente)"
+    ],
+    "gestoria": [
+      "CLG (Certificado de Libertad de Gravamen)",
+      "No Adeudo Predial",
+      "Avalúo",
+      "No adeudo de agua / mantenimiento"
+    ],
+    "banco": [
+      "Formatos de banco",
+      "Carta de instrucción",
+      "VoBo del banco"
     ]
   },
   "trust_termination": {
@@ -279,6 +301,17 @@
       "Spouse ID (if applicable)",
       "Wire instructions",
       "Proof of manager's authority (Constancia de facultades del gerente)"
+    ],
+    "gestoria": [
+      "CLG (Certificado de Libertad de Gravamen)",
+      "No Adeudo Predial",
+      "Avalúo",
+      "No adeudo de agua / mantenimiento"
+    ],
+    "banco": [
+      "Formatos de banco",
+      "Carta de instrucción",
+      "VoBo del banco"
     ]
   }
 }
