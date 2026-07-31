@@ -34,13 +34,23 @@
   .navbar-wordmark i{font-style:normal; font-weight:400; color:var(--gold);}
   .navbar-divider{width:1px; height:22px; background:var(--line-strong);}
   .navbar-caption{font-size:10.5px; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink-faint); font-weight:500;}
-  .nav-actions{display:flex; align-items:center; gap:8px;}
+  .nav-actions{display:flex; align-items:center; gap:8px; margin-left:auto;}
   .seg{display:flex; background:var(--stone); border-radius:999px; padding:3px; gap:2px;}
   .seg .tab-btn.active{background:var(--stone-card); color:var(--ink); font-weight:600; box-shadow:0 1px 2px rgba(30,23,19,0.08);}
   .navbar-pill{border:1px solid var(--line-strong); background:var(--stone-card); color:var(--ink); padding:8px 14px; border-radius:999px; font-size:12.5px; font-weight:500; cursor:pointer; font-family:'Inter',sans-serif;}
   .navbar-pill:hover{background:var(--stone);}
   .icon-btn{width:34px; height:34px; border-radius:999px; border:1px solid var(--line-strong); background:var(--stone-card); display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--ink-soft);}
   .icon-btn:hover{background:var(--stone); color:var(--oxblood);}
+  /* Botón de menú en pantalla angosta: no un ícono suelto (que parece
+     decorativo), sino una píldora que DICE en qué sección estás y que hay
+     más — un cliente que entra por primera vez tiene que ver de inmediato
+     que la primera pantalla no es todo. Va después de .icon-btn a propósito:
+     comparte su estilo base pero le gana en tamaño y forma. */
+  .icon-btn.menu-toggle{align-items:center; gap:7px; width:auto; height:auto; padding:7px 13px; border-radius:999px;
+    font-family:inherit; font-size:13px; font-weight:600; color:var(--ink); max-width:52vw;}
+  .icon-btn.menu-toggle .menu-label{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .icon-btn.menu-toggle .ti-chevron-down{font-size:14px; opacity:0.55; flex-shrink:0;}
+  .icon-btn.menu-toggle:hover{border-color:var(--oxblood); color:var(--oxblood-deep);}
   .tabs{display:flex; gap:8px; align-items:center;}
   .tab-btn{background:none; border:none; color:var(--ink-soft); padding:7px 16px; border-radius:999px; font-size:12.5px; font-weight:500; cursor:pointer; font-family:'Inter',sans-serif; transition:all 0.15s;}
   /* Menú lateral fijo (como Stripe/Linear): todas las secciones a la vista,
@@ -85,7 +95,23 @@
   .menu-toggle{display:none;}
   .sidebar-scrim{display:none;}
   @media (max-width:900px){
-    .menu-toggle{display:flex;}
+    .menu-toggle{display:inline-flex;}
+    /* Una sola fila compacta: menú, marca y acciones. El descriptivo
+       "COORDINACIÓN DE CIERRES" es decorativo y en el celular empujaba
+       todo a tres renglones. */
+    .head-band{padding:10px 12px; gap:8px; flex-wrap:nowrap;}
+    .navbar-caption, .navbar-divider{display:none;}
+    .brand-mark{gap:8px; min-width:0;}
+    .brand-mark svg{width:22px; height:22px;}
+    .navbar-wordmark{font-size:15px; letter-spacing:0.5px;}
+    .nav-actions{gap:6px;}
+    .navbar-pill{padding:7px 11px; font-size:12px;}
+  }
+  /* En celular de verdad ya no cabe la marca escrita junto al botón de menú
+     y las acciones — se queda solo el emblema, que igual identifica. */
+  @media (max-width:520px){
+    .navbar-wordmark{display:none;}
+    .icon-btn.menu-toggle{max-width:46vw;}
     .sidebar{position:fixed; top:0; left:0; bottom:0; height:auto; z-index:80; width:min(280px, 84vw);
       transform:translateX(-100%); transition:transform 0.22s ease; box-shadow:0 0 40px rgba(33,22,19,0.22);}
     .sidebar.open{transform:translateX(0);}
@@ -174,6 +200,26 @@
   .btn-spinner{display:inline-block; width:12px; height:12px; border:2px solid currentColor; border-top-color:transparent; border-radius:50%; animation:spin .7s linear infinite; vertical-align:-2px;}
   @keyframes spin{to{transform:rotate(360deg);}}
   /* Barra fija de secciones dentro del detalle de la operación */
+  /* Panel de la campana de notificaciones — en pantalla ancha cuelga de la
+     campana; en angosta ocupa casi todo el ancho, pegado abajo de la barra. */
+  #notif-panel{position:fixed; top:62px; right:16px; width:min(430px, calc(100vw - 24px)); max-height:72vh; overflow-y:auto;
+    background:var(--stone-card); border:0.5px solid var(--line); border-radius:14px;
+    box-shadow:0 10px 34px rgba(33,22,19,0.2); z-index:90; padding:16px;}
+  .notif-chip{border:1px solid var(--line-strong); background:var(--stone-card); color:var(--ink-soft); font-size:12.5px;
+    padding:8px 13px; border-radius:10px; cursor:pointer; font-family:inherit; display:inline-flex; align-items:center;
+    gap:6px; line-height:1.1;}
+  .notif-chip:hover{border-color:var(--oxblood); color:var(--oxblood);}
+  .notif-chip.active{border:2px solid var(--oxblood-deep); background:var(--oxblood-soft); color:var(--oxblood-deep);
+    font-weight:600; padding:7px 12px;}
+  .notif-chip .tab-count{background:var(--oxblood-deep); color:#F6F4F0; border-radius:9px; font-size:10.5px; font-weight:600;
+    min-width:17px; height:17px; display:inline-flex; align-items:center; justify-content:center; padding:0 4px;}
+  .notif-item{display:flex; gap:10px; padding:9px 6px; border-bottom:0.5px solid var(--line); cursor:pointer;
+    align-items:flex-start; border-radius:8px;}
+  .notif-item:hover{background:var(--stone);}
+  .notif-item:last-child{border-bottom:0;}
+  @media (max-width:900px){
+    #notif-panel{left:12px; right:12px; width:auto; max-height:70vh;}
+  }
   /* Menú "···" de acciones por documento del checklist (vista staff) */
   .doc-action-menu{position:absolute; top:32px; right:0; background:var(--stone-card); border:0.5px solid var(--line); border-radius:10px; box-shadow:0 4px 16px rgba(33,22,19,0.14); z-index:6; min-width:220px; overflow:hidden;}
   .doc-action-menu button{display:flex; align-items:center; gap:8px; width:100%; background:none; border:0; padding:9px 14px; font-size:12.5px; font-family:inherit; color:var(--ink); cursor:pointer; text-align:left;}
@@ -307,7 +353,11 @@
 <h2 class="sr-only">Plataforma de coordinación de cierres inmobiliarios de Grupo Nar: administración de operaciones, checklist de KYC por parte, seguimiento de cierre y generación de contrato de promesa, con inicio de sesión por correo y contraseña.</h2>
 <div class="app" id="app">
   <div class="head-band">
-    <button class="icon-btn menu-toggle" id="menu-toggle" title="Menú" aria-label="Menú"><i class="ti ti-menu-2" aria-hidden="true"></i></button>
+    <button class="icon-btn menu-toggle" id="menu-toggle" aria-label="Menú">
+      <i class="ti ti-menu-2" aria-hidden="true"></i>
+      <span class="menu-label">Menú</span>
+      <i class="ti ti-chevron-down" aria-hidden="true"></i>
+    </button>
     <div class="brand-mark">
       <svg viewBox="0 0 1080 1080" xmlns="http://www.w3.org/2000/svg"><g><g>
         <polygon fill="#58130E" points="89.3,763 89.3,763 492.8,359.5 896.3,763 896.3,763 938.7,763 938.7,763 492.8,317 46.9,763 46.9,763"/>
@@ -750,7 +800,7 @@ const STRINGS = {
     notifDocApproved: 'Documento aprobado', notifDocRejected: 'Documento rechazado — súbelo de nuevo',
     kycAutoFilledFrom: 'Se llena solo con los datos de "{source}" — no hay que capturarlos otra vez.',
     kycSecondSignature: 'Falta una firma más: el expediente de LPR Luxury.',
-    sideMain: 'Plataforma', sideSections: 'Esta operación', tabOverview: 'Resumen',
+    sideMain: 'Plataforma', sideSections: 'Esta operación', tabOverview: 'Resumen', menuLabel: 'Menú',
     pastClientsTitle: '¿Ya es cliente?', pastClientsHint: 'Engánchalo con un clic: se agrega con los mismos datos y su cuenta de siempre.',
     pastClientsLoading: 'Buscando clientes anteriores…', pastClientsEmpty: 'Todavía no hay clientes de otras operaciones para reutilizar.',
     pastClientsSearchPh: 'Buscar por nombre o correo…', pastClientsNoMatch: 'Ningún cliente coincide.',
@@ -1047,7 +1097,7 @@ const STRINGS = {
     notifDocApproved: 'Document approved', notifDocRejected: 'Document rejected — please upload it again',
     kycAutoFilledFrom: 'Filled in automatically from "{source}" — no need to type it again.',
     kycSecondSignature: 'One more signature to go: the LPR Luxury record.',
-    sideMain: 'Platform', sideSections: 'This deal', tabOverview: 'Overview',
+    sideMain: 'Platform', sideSections: 'This deal', tabOverview: 'Overview', menuLabel: 'Menu',
     pastClientsTitle: 'Already a client?', pastClientsHint: 'Add them in one click — same details, same account as before.',
     pastClientsLoading: 'Looking up past clients…', pastClientsEmpty: 'No clients from other deals to reuse yet.',
     pastClientsSearchPh: 'Search by name or email…', pastClientsNoMatch: 'No client matches.',
@@ -1555,6 +1605,8 @@ function currentViewKey(){
 // ejemplo) empujaba la navegación fuera de la pantalla.
 // Cajón del menú en ventana angosta — abrir/cerrar y cerrarse solo al
 // elegir una sección (si no, tapa justo lo que acabas de abrir).
+let _activeSectionLabel = '';
+
 function setSidebarOpen(open){
   document.getElementById('sidebar').classList.toggle('open', open);
   document.getElementById('sidebar-scrim').classList.toggle('open', open);
@@ -1571,6 +1623,10 @@ function sidebarGroup(title){
 }
 
 function sidebarItem({ label, icon, count, active, sub, onClick }){
+  // La última sección activa que se agrega es la más específica (las de la
+  // operación van después de las de la plataforma) — es la que el botón de
+  // menú muestra en pantalla angosta.
+  if(active) _activeSectionLabel = label;
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'side-item' + (active ? ' active' : '') + (sub ? ' side-sub' : '');
@@ -1633,6 +1689,7 @@ function buildSidebar(){
   el.innerHTML = '';
   el.style.display = authenticated ? '' : 'none';
   document.getElementById('menu-toggle').style.visibility = authenticated ? 'visible' : 'hidden';
+  _activeSectionLabel = '';
   if(!authenticated){ setSidebarOpen(false); return; }
 
   if(mainTab === 'admin'){
@@ -1696,14 +1753,23 @@ function renderInner(){
     return;
   }
   document.querySelectorAll('#mainTabs .tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===mainTab));
-  // Admin/agente ven ambas pestañas; comprador/vendedor solo el portal.
+  // Admin/agente ven ambas pestañas; a un comprador/vendedor el selector
+  // completo se le esconde: con una sola opción era una píldora que decía
+  // "Portal cliente / agente" y no llevaba a ningún lado, ocupando media
+  // barra en el celular.
+  const staffView = ['admin','agent','lawyer','external_lawyer'].includes(currentUser.role);
   const adminTabBtn = document.querySelector('#mainTabs [data-tab="admin"]');
-  if(adminTabBtn) adminTabBtn.style.display = ['admin','agent','lawyer','external_lawyer'].includes(currentUser.role) ? '' : 'none';
+  if(adminTabBtn) adminTabBtn.style.display = staffView ? '' : 'none';
+  document.getElementById('mainTabs').style.display = staffView ? '' : 'none';
   if(mainTab === 'admin') renderAdmin(body);
   else renderPortal(body);
   // Al final, para que quede hasta abajo del menú: las secciones de la
   // operación abierta se agregan durante renderAdmin/renderPortal.
   buildSidebarAccount();
+  // El botón de menú (pantalla angosta) dice dónde estás — así se entiende
+  // que hay más secciones y no solo la pantalla que se abrió.
+  const menuLabel = document.querySelector('#menu-toggle .menu-label');
+  if(menuLabel) menuLabel.textContent = _activeSectionLabel || t('menuLabel');
 }
 
 // Panel izquierdo de marca (logo + mensaje) compartido entre login/registro/
