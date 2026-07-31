@@ -137,4 +137,83 @@ router.get('/', requireAuth, (req, res) => {
   });
 });
 
+// GET /api/dashboard/notifications — alimenta la campana del navbar
+// (estilo Stripe: "Acción requerida" y "Actualizaciones"). Todo se deriva
+// de datos que ya existen — cero infraestructura nueva, cero estado por
+// notificación: se recalcula al abrir.
+router.get('/notifications', requireAuth, (req, res) => {
+  const { sql: dealsSql, params } = visibleDealIdsSql(req);
+  const role = req.session.role;
+  const actionRequired = [];
+  let updates = [];
+
+  if (['admin', 'lawyer'].includes(role)) {
+    // Tareas del tracker asignadas a mí, sin terminar.
+    db.prepare(`
+      SELECT 'task_assigned' AS type, t.label_es AS labelEs, t.label_en AS labelEn,
+        deals.id AS dealId, deals.property, COALESCE(t.created_at, '') AS at
+      FROM tasks t JOIN deals ON deals.id = t.deal_id
+      WHERE t.assigned_to = ? AND t.status != 'done'
+        AND deals.status = 'active' AND deals.deleted_at IS NULL
+    `).all(req.session.userId).forEach(r => actionRequired.push(r));
+    // Documentos ya subidos que esperan revisión (aprobar/rechazar).
+    db.prepare(`
+      SELECT 'doc_review' AS type, d.name AS labelEs, d.name AS labelEn, dpe.name AS partyName,
+        deals.id AS dealId, deals.property, COALESCE(d.uploaded_at, '') AS at
+      FROM documents d JOIN deals ON deals.id = d.deal_id
+      LEFT JOIN deal_party_entities dpe ON dpe.id = d.deal_party_entity_id
+      WHERE d.deal_id IN (${dealsSql}) AND d.file_url IS NOT NULL AND d.review_status = 'pending'
+      ORDER BY d.uploaded_at DESC LIMIT 30
+    `).all(...params).forEach(r => actionRequired.push(r));
+  }
+
+  if (['buyer', 'seller'].includes(role)) {
+    // Mis documentos por subir (de la parte ligada a mi cuenta).
+    db.prepare(`
+      SELECT 'doc_upload' AS type, d.name AS labelEs, d.name AS labelEn,
+        deals.id AS dealId, deals.property, COALESCE(d.created_at, '') AS at
+      FROM documents d
+      JOIN deal_parties dp ON dp.deal_party_entity_id = d.deal_party_entity_id
+      JOIN deals ON deals.id = d.deal_id
+      WHERE dp.user_id = ? AND d.status = 'pending' AND d.file_url IS NULL
+        AND deals.status = 'active' AND deals.deleted_at IS NULL
+      LIMIT 30
+    `).all(req.session.userId).forEach(r => actionRequired.push(r));
+    // Firmas que ya me llegaron por DocuSign y siguen abiertas.
+    db.prepare(`
+      SELECT 'sign_pending' AS type, t.label_es AS labelEs, t.label_en AS labelEn,
+        deals.id AS dealId, deals.property, COALESCE(t.created_at, '') AS at
+      FROM tasks t JOIN deals ON deals.id = t.deal_id
+      WHERE t.deal_id IN (SELECT deal_id FROM deal_parties WHERE user_id = ?)
+        AND t.requires_signature = 1 AND t.docusign_status IN ('sent','delivered')
+        AND deals.status = 'active' AND deals.deleted_at IS NULL
+    `).all(req.session.userId).forEach(r => actionRequired.push(r));
+    // Actualizaciones para el cliente: sus documentos revisados hace poco.
+    updates = db.prepare(`
+      SELECT 'doc_reviewed' AS type, d.name AS labelEs, d.name AS labelEn, d.review_status AS reviewStatus,
+        deals.id AS dealId, deals.property, COALESCE(d.reviewed_at, '') AS at
+      FROM documents d
+      JOIN deal_parties dp ON dp.deal_party_entity_id = d.deal_party_entity_id
+      JOIN deals ON deals.id = d.deal_id
+      WHERE dp.user_id = ? AND d.review_status IN ('approved','rejected')
+        AND d.reviewed_at > datetime('now', '-14 days')
+      ORDER BY d.reviewed_at DESC LIMIT 20
+    `).all(req.session.userId);
+  } else {
+    // Staff y facilitadores: la línea de tiempo reciente de sus operaciones.
+    updates = db.prepare(`
+      SELECT 'activity' AS type, a.action, a.detail, u.name AS userName,
+        deals.id AS dealId, deals.property, a.created_at AS at
+      FROM deal_activity a
+      JOIN deals ON deals.id = a.deal_id
+      LEFT JOIN users u ON u.id = a.user_id
+      WHERE a.deal_id IN (${dealsSql}) AND a.created_at > datetime('now', '-14 days')
+      ORDER BY a.id DESC LIMIT 20
+    `).all(...params);
+  }
+
+  actionRequired.sort((a, b) => (b.at || '').localeCompare(a.at || ''));
+  res.json({ actionRequired, updates });
+});
+
 module.exports = router;

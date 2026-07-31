@@ -136,6 +136,18 @@
   .deal-section-nav button.active:hover{background:var(--oxblood-soft); color:var(--oxblood-deep);}
   .deal-section-nav .tab-count{background:var(--oxblood-deep); color:#F6F4F0; border-radius:9px; font-size:11px; font-weight:600;
     min-width:18px; height:18px; display:inline-flex; align-items:center; justify-content:center; padding:0 5px;}
+  /* Campana de notificaciones (navbar) — panel estilo Stripe con chips de
+     filtro Todo / Acción requerida / Actualizaciones */
+  #notif-panel{position:fixed; top:58px; right:16px; width:min(430px, calc(100vw - 24px)); max-height:72vh; overflow-y:auto;
+    background:var(--stone-card); border:0.5px solid var(--line); border-radius:14px; box-shadow:0 10px 34px rgba(33,22,19,0.2); z-index:90; padding:16px;}
+  .notif-chip{border:1px solid var(--line-strong); background:var(--stone-card); color:var(--ink-soft); font-size:12.5px; padding:8px 13px;
+    border-radius:10px; cursor:pointer; font-family:inherit; display:inline-flex; align-items:center; gap:6px; line-height:1.1;}
+  .notif-chip.active{border:2px solid var(--oxblood-deep); background:var(--oxblood-soft); color:var(--oxblood-deep); font-weight:600; padding:7px 12px;}
+  .notif-chip .tab-count{background:var(--oxblood-deep); color:#F6F4F0; border-radius:9px; font-size:10.5px; font-weight:600;
+    min-width:17px; height:17px; display:inline-flex; align-items:center; justify-content:center; padding:0 4px;}
+  .notif-item{display:flex; gap:10px; padding:9px 4px; border-bottom:0.5px solid var(--line); cursor:pointer; align-items:flex-start; border-radius:8px;}
+  .notif-item:hover{background:var(--stone);}
+  .notif-item:last-child{border-bottom:0;}
   /* Menú "···" de acciones por documento del checklist (vista staff) */
   .doc-action-menu{position:absolute; top:32px; right:0; background:var(--stone-card); border:0.5px solid var(--line); border-radius:10px; box-shadow:0 4px 16px rgba(33,22,19,0.14); z-index:6; min-width:220px; overflow:hidden;}
   .doc-action-menu button{display:flex; align-items:center; gap:8px; width:100%; background:none; border:0; padding:9px 14px; font-size:12.5px; font-family:inherit; color:var(--ink); cursor:pointer; text-align:left;}
@@ -284,10 +296,15 @@
         <button class="tab-btn active" data-tab="admin" id="tab-admin">Admin</button>
         <button class="tab-btn" data-tab="portal" id="tab-portal">Portal cliente / agente</button>
       </div>
+      <button class="icon-btn" id="notif-bell" style="display:none; position:relative;" title="Notificaciones">
+        <i class="ti ti-bell" aria-hidden="true"></i>
+        <span id="notif-badge" style="display:none; position:absolute; top:2px; right:2px; min-width:15px; height:15px; border-radius:8px; background:var(--oxblood-deep); color:#F6F4F0; font-size:9.5px; font-weight:600; line-height:15px; text-align:center; padding:0 3px;"></span>
+      </button>
       <button class="navbar-pill" id="lang-toggle" title="Switch language / Cambiar idioma">ES</button>
       <button class="icon-btn" id="header-logout" style="display:none;" title="Log out"><i class="ti ti-logout" aria-hidden="true"></i></button>
     </div>
   </div>
+  <div id="notif-panel" style="display:none;"></div>
   <div class="body-wrap" id="body"></div>
 </div>
 
@@ -694,6 +711,10 @@ const STRINGS = {
     profileAgencyOptional: 'Opcional', profileBio: 'Presentación', profileBioPh: 'Una línea sobre ti o tu empresa',
     profilePhoto: 'Foto o logo (PNG/JPG, máx. 5 MB)', profileRemovePhoto: 'Quitar foto', profileSaved: 'Perfil actualizado.',
     profileNameRequired: 'Escribe un nombre.', genericError: 'Algo salió mal. Inténtalo de nuevo.',
+    notifTitle: 'Notificaciones', notifAll: 'Todo', notifAction: 'Acción requerida', notifUpdates: 'Actualizaciones',
+    notifEmpty: 'Estás al corriente — nada pendiente por ahora.', notifTaskAssigned: 'Tarea asignada a ti',
+    notifDocReview: 'Documento por revisar', notifDocUpload: 'Sube', notifSignPending: 'Firma pendiente',
+    notifDocApproved: 'Documento aprobado', notifDocRejected: 'Documento rechazado — súbelo de nuevo',
     eSignHintStaff: 'Sube el documento y envíalo a firma — comprador y vendedor firman de forma embebida, sin salir de la plataforma.',
     eSignHintClient: 'Cuando tu coordinador envíe un documento a firma, aparecerá aquí para que lo firmes en línea.',
     docusignNotSent: 'Sin enviar', docusignSent: 'Enviado', docusignDelivered: 'Entregado', docusignCompleted: 'Firmado', docusignDeclined: 'Rechazado', docusignVoided: 'Anulado',
@@ -976,6 +997,10 @@ const STRINGS = {
     profileAgencyOptional: 'Optional', profileBio: 'About', profileBioPh: 'One line about you or your company',
     profilePhoto: 'Photo or logo (PNG/JPG, max 5 MB)', profileRemovePhoto: 'Remove photo', profileSaved: 'Profile updated.',
     profileNameRequired: 'Please enter a name.', genericError: 'Something went wrong. Please try again.',
+    notifTitle: 'Notifications', notifAll: 'All', notifAction: 'Action required', notifUpdates: 'Updates',
+    notifEmpty: 'You are all caught up — nothing pending right now.', notifTaskAssigned: 'Task assigned to you',
+    notifDocReview: 'Document to review', notifDocUpload: 'Upload', notifSignPending: 'Signature pending',
+    notifDocApproved: 'Document approved', notifDocRejected: 'Document rejected — please upload it again',
     eSignHintStaff: 'Upload the document and send it for signature — buyer and seller sign embedded, without leaving the platform.',
     eSignHintClient: "When your coordinator sends a document for signature, it'll show up here for you to sign online.",
     docusignNotSent: 'Not sent', docusignSent: 'Sent', docusignDelivered: 'Delivered', docusignCompleted: 'Signed', docusignDeclined: 'Declined', docusignVoided: 'Voided',
@@ -1040,6 +1065,10 @@ let dealDetailTabDeal = null;
 // para renderPortal) — se resetea al cambiar de operación o de "ver como".
 let portalTab = 'docs';
 let portalTabKey = null;
+// Campana de notificaciones (ver módulo al final del script).
+let notifData = null;
+let notifOpen = false;
+let notifFilter = 'all';
 let teamAssigneesCache = undefined;
 let activityCache = {};
 
@@ -1315,6 +1344,7 @@ async function loadData(){
   }
   if(['admin','agent','lawyer','external_lawyer'].includes(currentUser.role)) loadDashboard();
   if(currentUser.role === 'admin'){ loadPendingUsers(); loadTrash(); }
+  loadNotifications();
   // Link directo a una operación (ej. desde el correo de "te agregamos a
   // esta operación") — ?dealId=123 en la URL la abre de una vez.
   const linkedDealId = Number(new URLSearchParams(window.location.search).get('dealId'));
@@ -1474,6 +1504,8 @@ function render(){
 function renderInner(){
   document.getElementById('mainTabs').style.visibility = authenticated ? 'visible' : 'hidden';
   document.getElementById('header-logout').style.display = authenticated ? '' : 'none';
+  updateNotifBadge();
+  if(!authenticated && notifOpen){ notifOpen = false; renderNotifPanel(); }
   document.getElementById('tab-admin').textContent = currentUser && currentUser.role === 'admin' ? t('tabAdmin') : t('tabStaffOperations');
   document.getElementById('tab-portal').textContent = t('tabPortal');
   document.getElementById('navbar-caption').textContent = t('gateBrandEyebrow');
@@ -6152,6 +6184,113 @@ function showUpdateBanner(){
 }
 checkAppVersion();
 setInterval(checkAppVersion, 5 * 60 * 1000);
+
+// ---------- NOTIFICACIONES (campana del navbar, estilo Stripe) ----------
+// Todo derivado del estado real (tareas asignadas, documentos por revisar
+// o subir, firmas abiertas, actividad reciente) — se recalcula al cargar y
+// al abrir el panel, sin estado por notificación en la base de datos.
+// (El estado notifData/notifOpen/notifFilter vive junto a los demás
+// globals, arriba, para que render() pueda tocarlo desde el principio.)
+async function loadNotifications(){
+  if(!authenticated){ updateNotifBadge(); return; }
+  try{
+    const r = await fetch(API_BASE + '/api/dashboard/notifications', { credentials:'include' });
+    if(r.ok) notifData = await r.json();
+  }catch(e){ /* sin red: la campana se queda como estaba */ }
+  updateNotifBadge();
+  if(notifOpen) renderNotifPanel();
+}
+
+function updateNotifBadge(){
+  const bell = document.getElementById('notif-bell');
+  const badge = document.getElementById('notif-badge');
+  bell.style.display = authenticated ? '' : 'none';
+  const n = notifData ? notifData.actionRequired.length : 0;
+  badge.style.display = n ? '' : 'none';
+  badge.textContent = n > 9 ? '9+' : String(n);
+}
+
+const NOTIF_TYPE_META = {
+  task_assigned: { icon: 'ti-user-check',  key: 'notifTaskAssigned' },
+  doc_review:    { icon: 'ti-eye-check',   key: 'notifDocReview' },
+  doc_upload:    { icon: 'ti-upload',      key: 'notifDocUpload' },
+  sign_pending:  { icon: 'ti-signature',   key: 'notifSignPending' }
+};
+
+function notifItemHtml(item){
+  const name = lang === 'es' ? (item.labelEs || '') : (item.labelEn || item.labelEs || '');
+  let icon, text;
+  if(item.type === 'activity'){
+    const meta = ACTIVITY_META[item.action] || { icon: 'ti-point', key: null };
+    icon = meta.icon;
+    const al = meta.key ? t(meta.key) : item.action;
+    text = `${item.userName ? `<b>${escapeHtml(item.userName)}</b> ` : ''}${al}${item.detail ? ` — ${escapeHtml(item.detail)}` : ''}`;
+  } else if(item.type === 'doc_reviewed'){
+    icon = item.reviewStatus === 'approved' ? 'ti-check' : 'ti-x';
+    text = `${item.reviewStatus === 'approved' ? t('notifDocApproved') : t('notifDocRejected')}: <b>${escapeHtml(name)}</b>`;
+  } else {
+    const meta = NOTIF_TYPE_META[item.type] || { icon: 'ti-point', key: null };
+    icon = meta.icon;
+    text = `${meta.key ? t(meta.key) : ''}: <b>${escapeHtml(name)}</b>${item.partyName ? ` — ${escapeHtml(item.partyName)}` : ''}`;
+  }
+  return `
+    <span style="width:26px; height:26px; border-radius:50%; background:var(--stone); display:flex; align-items:center; justify-content:center; flex-shrink:0; color:var(--ink-soft);"><i class="ti ${icon}" aria-hidden="true" style="font-size:13px;"></i></span>
+    <span style="flex:1; min-width:0;">
+      <div style="font-size:12.5px;">${text}</div>
+      <div class="field-hint" style="margin:1px 0 0;">${escapeHtml(item.property || '')}${item.at ? ' · ' + escapeHtml(String(item.at).replace('T',' ').slice(0,16)) : ''}</div>
+    </span>`;
+}
+
+function renderNotifPanel(){
+  const panel = document.getElementById('notif-panel');
+  if(!notifOpen){ panel.style.display = 'none'; return; }
+  panel.style.display = '';
+  const action = notifData ? notifData.actionRequired : [];
+  const updates = notifData ? notifData.updates : [];
+  const CHIPS = [
+    ['all', t('notifAll'), action.length + updates.length],
+    ['action', t('notifAction'), action.length],
+    ['updates', t('notifUpdates'), updates.length]
+  ];
+  const items = notifFilter === 'action' ? action : (notifFilter === 'updates' ? updates : [...action, ...updates]);
+  panel.innerHTML = `
+    <div style="font-weight:600; font-size:15px; margin-bottom:12px;">${t('notifTitle')}</div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+      ${CHIPS.map(([id, label, count]) => `<button type="button" class="notif-chip ${notifFilter===id?'active':''}" data-filter="${id}">${escapeHtml(label)}${count ? ` <span class="tab-count">${count}</span>` : ''}</button>`).join('')}
+    </div>
+    ${!items.length ? `<div class="field-hint" style="margin:10px 0 4px;">${t('notifEmpty')}</div>` : ''}
+    <div id="notif-list"></div>
+  `;
+  panel.querySelectorAll('.notif-chip').forEach(chip => {
+    chip.onclick = (e) => { e.stopPropagation(); notifFilter = chip.dataset.filter; renderNotifPanel(); };
+  });
+  const list = panel.querySelector('#notif-list');
+  items.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'notif-item';
+    row.innerHTML = notifItemHtml(item);
+    row.onclick = () => {
+      notifOpen = false; renderNotifPanel();
+      if(['admin','agent','lawyer','external_lawyer'].includes(currentUser.role)){
+        mainTab = 'admin'; adminView = 'list'; activeDealId = item.dealId; openDeal(item.dealId);
+      } else {
+        mainTab = 'portal'; portalDealId = item.dealId;
+      }
+      render();
+    };
+    list.appendChild(row);
+  });
+}
+
+document.getElementById('notif-bell').addEventListener('click', (e) => {
+  e.stopPropagation();
+  notifOpen = !notifOpen;
+  if(notifOpen) loadNotifications();
+  renderNotifPanel();
+});
+document.addEventListener('click', (e) => {
+  if(notifOpen && !e.target.closest('#notif-panel')){ notifOpen = false; renderNotifPanel(); }
+});
 
 // --- Modal de firma embebida (DocuSign) ---
 loadData();
