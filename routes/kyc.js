@@ -22,6 +22,7 @@ const { fillLprIndividualEn, SIGNATURE_ANCHOR: LPR_IND_EN_ANCHOR } = require('..
 const { fillLprMoralEs, SIGNATURE_ANCHOR: LPR_MORAL_ES_ANCHOR } = require('../lib/kycFill/lprMoralEs');
 const { fillLprMoralEn, SIGNATURE_ANCHOR: LPR_MORAL_EN_ANCHOR } = require('../lib/kycFill/lprMoralEn');
 const { convertDocxToPdf } = require('../lib/kycFill/docxFillEngine');
+const kycMirror = require('../lib/kycMirror');
 const { validateBody, z } = require('../lib/validateBody');
 const { rateLimitExpensive, rateLimitUpload, rateLimitWrite } = require('../lib/apiRateLimits');
 
@@ -207,6 +208,50 @@ function getLatestSubmission(partyId, kind) {
 // deal_parties), o admin/agente/abogado con acceso a la operación, pueden
 // ver/llenar ese expediente KYC — cada comprador/vendedor individual solo
 // puede tocar el suyo, no el de otra persona del mismo lado.
+// ── Un formulario, dos expedientes ──────────────────────────────────────
+// Cuando el agente es de LPR Luxury, la parte necesita el expediente de la
+// escrow company Y el de LPR. En vez de dos formularios, el de la escrow
+// company es el único que se llena (con una sección extra al final para lo
+// que solo LPR pide) y el de LPR se deriva de esas mismas respuestas — ver
+// lib/kycMirror.js.
+function mirrorFor(escrowTemplateKey) {
+  const source = TEMPLATES[escrowTemplateKey];
+  if (!source) return null;
+  const targetKey = kycMirror.mirrorTargetKey(source.definition);
+  const target = targetKey && TEMPLATES[targetKey];
+  if (!target) return null;
+  return {
+    targetKey,
+    target,
+    sourceDefinition: source.definition,
+    extraFields: kycMirror.extraFields(source.definition, target.definition)
+  };
+}
+
+// Escribe (o actualiza) el expediente de LPR con lo derivado del formulario
+// de la escrow company. No toca uno que ya se generó o se mandó a firma: a
+// partir de ahí el documento ya existe afuera y regenerarlo en silencio
+// dejaría al cliente firmando algo distinto de lo que revisó.
+function syncMirrorSubmission(dealId, partyId, escrowSubmission, userId) {
+  const mirror = mirrorFor(escrowSubmission.template_key);
+  if (!mirror) return null;
+  const existing = getSubmission(partyId, mirror.targetKey);
+  if (existing && (existing.status !== 'draft' || existing.docusign_envelope_id)) return existing;
+
+  const escrowAnswers = JSON.parse(escrowSubmission.answers_json || '{}');
+  const derived = kycMirror.deriveAnswers(mirror.sourceDefinition, mirror.target.definition, escrowAnswers);
+  if (!derived) return existing || null;
+
+  if (existing) {
+    db.prepare("UPDATE kyc_submissions SET answers_json = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(JSON.stringify(derived), existing.id);
+    return db.prepare('SELECT * FROM kyc_submissions WHERE id = ?').get(existing.id);
+  }
+  const info = db.prepare('INSERT INTO kyc_submissions (deal_id, deal_party_entity_id, template_key, answers_json, created_by) VALUES (?,?,?,?,?)')
+    .run(dealId, partyId, mirror.targetKey, JSON.stringify(derived), userId);
+  return db.prepare('SELECT * FROM kyc_submissions WHERE id = ?').get(info.lastInsertRowid);
+}
+
 function canWorkOnKyc(req, dealId, partyId) {
   if (!canAccessDeal(req, dealId)) return false;
   if (['admin', 'lawyer'].includes(req.session.role)) return true;
@@ -241,26 +286,67 @@ router.get('/deals/:id/kyc/:partyId', requireAuth, (req, res) => {
   if (kind === 'lpr' && !isLprAgency) return res.status(404).json({ error: 'Esta operación no tiene un agente de LPR Luxury.' });
 
   const existing = getLatestSubmission(partyId, kind);
-  const templateKey = existing ? existing.template_key : resolveTemplateKey(deal, party, req.query.lang, kind === 'lpr');
+  // Sin expediente todavía: si el de LPR va a salir del de la escrow
+  // company, se muestra ya la plantilla que de verdad se va a generar
+  // (mismo idioma que el formulario que están llenando), no la que saldría
+  // por idioma por defecto.
+  const mirrorTargetForLpr = kind === 'lpr' && !existing ? mirrorSourceFor(deal, party) : null;
+  const templateKey = existing
+    ? existing.template_key
+    : ((mirrorTargetForLpr && mirrorTargetForLpr.targetKey) || resolveTemplateKey(deal, party, req.query.lang, kind === 'lpr'));
   if (!templateKey || !TEMPLATES[templateKey]) {
     return res.status(501).json({ error: 'Todavía no hay una plantilla KYC construida para esta combinación de compañía/tipo de persona/idioma.' });
   }
   const template = TEMPLATES[templateKey];
   const submission = existing && existing.template_key === templateKey ? existing : null;
 
+  // Formulario combinado: si esta parte además necesita el expediente de
+  // LPR, sus campos exclusivos se agregan como una sección más al final de
+  // este mismo formulario (ver lib/kycMirror.js). Así el cliente contesta
+  // una sola vez y los dos documentos salen llenos.
+  let sections = template.definition.sections;
+  const mirror = kind === 'escrow' && isLprAgency ? mirrorFor(templateKey) : null;
+  if (mirror && mirror.extraFields.length) {
+    sections = sections.concat([{
+      title: template.definition.language === 'en'
+        ? `Additional details for the ${mirror.target.definition.label.split('—')[0].trim()} record`
+        : `Datos adicionales para el expediente de ${mirror.target.definition.label.split('—')[0].trim()}`,
+      fields: mirror.extraFields
+    }]);
+  }
+
   res.json({
     templateKey,
     label: template.definition.label,
-    sections: template.definition.sections,
+    sections,
     answers: submission ? JSON.parse(submission.answers_json) : {},
     status: submission ? submission.status : 'draft',
     docusignStatus: submission ? submission.docusign_status : 'not_sent',
     generatedFileUrl: submission && submission.generated_file_url ? true : false,
     availableTemplates: Object.keys(TEMPLATES)
       .filter(k => resolveTemplateKey(deal, party, 'es', kind === 'lpr') === k || resolveTemplateKey(deal, party, 'en', kind === 'lpr') === k),
-    lprRequired: kind === 'escrow' ? isLprAgency : undefined
+    lprRequired: kind === 'escrow' ? isLprAgency : undefined,
+    // El de LPR se llena solo desde este formulario (el frontend lo muestra
+    // como "se llena solo" en vez de ofrecer un segundo formulario).
+    mirrorTemplateKey: mirror ? mirror.targetKey : undefined,
+    mirroredFrom: kind === 'lpr'
+      ? ((mirrorTargetForLpr || mirrorSourceFor(deal, party) || {}).sourceLabel || null)
+      : undefined
   });
 });
+
+// Si el expediente de LPR de esta parte se llena solo desde el de la escrow
+// company, devuelve cuál es esa plantilla origen y su etiqueta (para que la
+// interfaz diga de dónde salen los datos en vez de pedir un segundo
+// formulario). null = hay que llenarlo aparte, como antes (ej. Armour
+// persona física en inglés, que no existe: no hay formulario origen).
+function mirrorSourceFor(deal, party) {
+  const escrowExisting = getLatestSubmission(party.id, 'escrow');
+  const escrowKey = escrowExisting ? escrowExisting.template_key : resolveTemplateKey(deal, party, null, false);
+  const mirror = escrowKey && mirrorFor(escrowKey);
+  if (!mirror) return null;
+  return { targetKey: mirror.targetKey, sourceKey: escrowKey, sourceLabel: TEMPLATES[escrowKey].definition.label };
+}
 
 // DELETE /api/deals/:id/kyc/:partyId — reinicia el expediente (ej. se llenó
 // con el idioma/compañía equivocada). Solo staff, y solo si todavía no se
@@ -348,14 +434,24 @@ router.post('/deals/:id/kyc/:partyId', requireAuth, rateLimitWrite, validateBody
 
   const { answers } = req.body;
   const existing = getSubmission(partyId, templateKey);
+  let submissionId;
   if (existing) {
     db.prepare("UPDATE kyc_submissions SET answers_json = ?, updated_at = datetime('now') WHERE id = ?")
       .run(JSON.stringify(answers || {}), existing.id);
+    submissionId = existing.id;
   } else {
-    db.prepare('INSERT INTO kyc_submissions (deal_id, deal_party_entity_id, template_key, answers_json, created_by) VALUES (?,?,?,?,?)')
-      .run(id, partyId, templateKey, JSON.stringify(answers || {}), req.session.userId);
+    submissionId = db.prepare('INSERT INTO kyc_submissions (deal_id, deal_party_entity_id, template_key, answers_json, created_by) VALUES (?,?,?,?,?)')
+      .run(id, partyId, templateKey, JSON.stringify(answers || {}), req.session.userId).lastInsertRowid;
   }
-  res.json({ ok: true });
+
+  // Un formulario, dos expedientes: si esta parte además necesita el de LPR
+  // Luxury, se llena solo con estas mismas respuestas (ver kycMirror).
+  let mirrored = false;
+  if (kind === 'escrow' && dealAgentIsLprAgency(id)) {
+    const saved = db.prepare('SELECT * FROM kyc_submissions WHERE id = ?').get(submissionId);
+    mirrored = !!syncMirrorSubmission(id, Number(partyId), saved, req.session.userId);
+  }
+  res.json({ ok: true, mirrored });
 });
 
 // Arma y manda el sobre de DocuSign para un expediente ya generado —
@@ -485,54 +581,82 @@ router.post('/deals/:id/kyc/:partyId/generate', requireAuth, rateLimitExpensive,
   const alreadySent = !!submission.docusign_envelope_id;
 
   try {
-    const answers = JSON.parse(submission.answers_json);
-    const fileBase = `kyc-${submission.template_key}-party${partyId}-${submission.id}`;
-    const docxPath = path.join(dealDir(id), `${fileBase}.docx`);
-    template.fill(answers, docxPath);
-    const pdfPath = convertDocxToPdf(docxPath);
-    const key = path.join(String(id), path.basename(pdfPath));
-    await gcsStorage.uploadLocalFile(key, pdfPath, 'application/pdf');
-    syncKycToDrive(req, id, party, `KYC ${template.definition.label || submission.template_key} - ${party.name}.pdf`, pdfPath);
-    fs.rmSync(docxPath, { force: true });
-    fs.rmSync(pdfPath, { force: true });
+    const result = await generateAndMaybeSend(req, deal, party, submission, template, kind);
 
-    db.prepare("UPDATE kyc_submissions SET status = 'generated', generated_file_url = ?, updated_at = datetime('now') WHERE id = ?")
-      .run(key, submission.id);
-
-    let sentForSignature = false;
-    let autoSendError = null;
-    let embedded = false;
-    let pendingReview = false;
-    if (alreadySent) {
-      // Ya se había mandado antes (esto es un reintento, o alguien editó y
-      // regeneró el PDF después de enviado) — no se vuelve a mandar el
-      // sobre, solo se refleja que sigue "afuera".
-      sentForSignature = true;
-      embedded = ['buyer', 'seller'].includes(req.session.role);
-    } else if (AGENT_LIKE_ROLES.includes(req.session.role)) {
-      pendingReview = true;
-      ensureKycReviewTask(id, party, submission.id, kind);
-    } else if (docusignClient.isConfigured()) {
-      try {
-        const freshSubmission = db.prepare('SELECT * FROM kyc_submissions WHERE id = ?').get(submission.id);
-        // Solo se embebe si quien llama es comprador/vendedor en sesión
-        // (llenando lo suyo) — staff generando a nombre del cliente siempre
-        // manda por correo normal, sin importar qué diga el frontend.
-        const embedUserId = ['buyer', 'seller'].includes(req.session.role) ? req.session.userId : null;
-        await sendKycEnvelope(deal, party, freshSubmission, template, embedUserId);
-        sentForSignature = true;
-        embedded = !!embedUserId;
-        completeKycReviewTask(submission.id);
-      } catch (err) {
-        autoSendError = err.message || 'No se pudo enviar a firma automáticamente.';
+    // Un formulario, dos expedientes: el de LPR ya quedó lleno solo al
+    // guardar (syncMirrorSubmission), así que aquí se genera y se manda
+    // junto con el de la escrow company — el cliente nunca tuvo que llenar
+    // un segundo formulario. Si algo falla, se reporta pero no tumba la
+    // generación del principal, que es el que de verdad pidió.
+    let mirror = null;
+    if (kind === 'escrow' && dealAgentIsLprAgency(id)) {
+      const mirrorSub = syncMirrorSubmission(id, Number(partyId), db.prepare('SELECT * FROM kyc_submissions WHERE id = ?').get(submission.id), req.session.userId);
+      if (mirrorSub && !mirrorSub.generated_file_url) {
+        try {
+          const mirrorResult = await generateAndMaybeSend(req, deal, party, mirrorSub, TEMPLATES[mirrorSub.template_key], 'lpr');
+          mirror = { label: TEMPLATES[mirrorSub.template_key].definition.label, ...mirrorResult };
+        } catch (err) {
+          mirror = { error: err.message || 'No se pudo generar el expediente de LPR Luxury.' };
+        }
       }
     }
 
-    res.json({ ok: true, sentForSignature, autoSendError, embedded, pendingReview });
+    res.json({ ok: true, ...result, mirror });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Error al generar el documento.' });
   }
 });
+
+// Arma el PDF de un expediente y, según quién lo pidió, lo manda a firma
+// (o deja tarea de revisión). Compartido entre el expediente de la escrow
+// company y su espejo de LPR, para que ambos sigan exactamente las mismas
+// reglas de envío.
+async function generateAndMaybeSend(req, deal, party, submission, template, kind) {
+  const alreadySent = !!submission.docusign_envelope_id;
+  const answers = JSON.parse(submission.answers_json);
+  const fileBase = `kyc-${submission.template_key}-party${party.id}-${submission.id}`;
+  const docxPath = path.join(dealDir(deal.id), `${fileBase}.docx`);
+  template.fill(answers, docxPath);
+  const pdfPath = convertDocxToPdf(docxPath);
+  const key = path.join(String(deal.id), path.basename(pdfPath));
+  await gcsStorage.uploadLocalFile(key, pdfPath, 'application/pdf');
+  syncKycToDrive(req, deal.id, party, `KYC ${template.definition.label || submission.template_key} - ${party.name}.pdf`, pdfPath);
+  fs.rmSync(docxPath, { force: true });
+  fs.rmSync(pdfPath, { force: true });
+
+  db.prepare("UPDATE kyc_submissions SET status = 'generated', generated_file_url = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(key, submission.id);
+
+  let sentForSignature = false;
+  let autoSendError = null;
+  let embedded = false;
+  let pendingReview = false;
+  if (alreadySent) {
+    // Ya se había mandado antes (esto es un reintento, o alguien editó y
+    // regeneró el PDF después de enviado) — no se vuelve a mandar el
+    // sobre, solo se refleja que sigue "afuera".
+    sentForSignature = true;
+    embedded = ['buyer', 'seller'].includes(req.session.role);
+  } else if (AGENT_LIKE_ROLES.includes(req.session.role)) {
+    pendingReview = true;
+    ensureKycReviewTask(deal.id, party, submission.id, kind);
+  } else if (docusignClient.isConfigured()) {
+    try {
+      const freshSubmission = db.prepare('SELECT * FROM kyc_submissions WHERE id = ?').get(submission.id);
+      // Solo se embebe si quien llama es comprador/vendedor en sesión
+      // (llenando lo suyo) — staff generando a nombre del cliente siempre
+      // manda por correo normal, sin importar qué diga el frontend.
+      const embedUserId = ['buyer', 'seller'].includes(req.session.role) ? req.session.userId : null;
+      await sendKycEnvelope(deal, party, freshSubmission, template, embedUserId);
+      sentForSignature = true;
+      embedded = !!embedUserId;
+      completeKycReviewTask(submission.id);
+    } catch (err) {
+      autoSendError = err.message || 'No se pudo enviar a firma automáticamente.';
+    }
+  }
+  return { sentForSignature, autoSendError, embedded, pendingReview };
+}
 
 // GET /api/deals/:id/kyc/:partyId/file — descarga autenticada del PDF generado.
 router.get('/deals/:id/kyc/:partyId/file', requireAuth, async (req, res) => {

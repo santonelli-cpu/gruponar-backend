@@ -715,6 +715,8 @@ const STRINGS = {
     notifEmpty: 'Estás al corriente — nada pendiente por ahora.', notifTaskAssigned: 'Tarea asignada a ti',
     notifDocReview: 'Documento por revisar', notifDocUpload: 'Sube', notifSignPending: 'Firma pendiente',
     notifDocApproved: 'Documento aprobado', notifDocRejected: 'Documento rechazado — súbelo de nuevo',
+    kycAutoFilledFrom: 'Se llena solo con los datos de "{source}" — no hay que capturarlos otra vez.',
+    kycSecondSignature: 'Falta una firma más: el expediente de LPR Luxury.',
     eSignHintStaff: 'Sube el documento y envíalo a firma — comprador y vendedor firman de forma embebida, sin salir de la plataforma.',
     eSignHintClient: 'Cuando tu coordinador envíe un documento a firma, aparecerá aquí para que lo firmes en línea.',
     docusignNotSent: 'Sin enviar', docusignSent: 'Enviado', docusignDelivered: 'Entregado', docusignCompleted: 'Firmado', docusignDeclined: 'Rechazado', docusignVoided: 'Anulado',
@@ -1001,6 +1003,8 @@ const STRINGS = {
     notifEmpty: 'You are all caught up — nothing pending right now.', notifTaskAssigned: 'Task assigned to you',
     notifDocReview: 'Document to review', notifDocUpload: 'Upload', notifSignPending: 'Signature pending',
     notifDocApproved: 'Document approved', notifDocRejected: 'Document rejected — please upload it again',
+    kycAutoFilledFrom: 'Filled in automatically from "{source}" — no need to type it again.',
+    kycSecondSignature: 'One more signature to go: the LPR Luxury record.',
     eSignHintStaff: 'Upload the document and send it for signature — buyer and seller sign embedded, without leaving the platform.',
     eSignHintClient: "When your coordinator sends a document for signature, it'll show up here for you to sign online.",
     docusignNotSent: 'Not sent', docusignSent: 'Sent', docusignDelivered: 'Delivered', docusignCompleted: 'Signed', docusignDeclined: 'Declined', docusignVoided: 'Voided',
@@ -3905,11 +3909,23 @@ function buildKycSection(deal, party, isStaffView, kind){
   const actions = document.createElement('div');
   actions.style.cssText = 'display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;';
 
-  const fillBtn = document.createElement('button');
-  fillBtn.className = 'btn';
-  fillBtn.textContent = data.status === 'draft' ? t('fillForm') : t('viewEditForm');
-  fillBtn.onclick = () => { kycFormOpenFor = key; render(); };
-  actions.appendChild(fillBtn);
+  // Este expediente se llena solo con el formulario de la escrow company
+  // (mismos datos, otro formato) — no se ofrece un segundo formulario, solo
+  // se avisa de dónde salen los datos.
+  const isMirrored = !!data.mirroredFrom;
+  if(isMirrored){
+    const note = document.createElement('div');
+    note.className = 'field-hint';
+    note.style.cssText = 'margin:4px 0 0;';
+    note.innerHTML = `<i class="ti ti-wand" aria-hidden="true"></i> ${t('kycAutoFilledFrom', { source: escapeHtml(data.mirroredFrom) })}`;
+    box.appendChild(note);
+  } else {
+    const fillBtn = document.createElement('button');
+    fillBtn.className = 'btn';
+    fillBtn.textContent = data.status === 'draft' ? t('fillForm') : t('viewEditForm');
+    fillBtn.onclick = () => { kycFormOpenFor = key; render(); };
+    actions.appendChild(fillBtn);
+  }
 
   if(data.generatedFileUrl){
     const viewLink = document.createElement('a');
@@ -4080,12 +4096,26 @@ function buildKycForm(deal, role, data, isStaffView, kind){
       const result = await apiFetch(`/api/deals/${deal.id}/kyc/${role}/generate${kindQs}`, { method:'POST' });
       kycFormOpenFor = null;
       await loadKyc(deal.id, role, undefined, kind);
+      // Un formulario, dos expedientes: si además salió el de LPR Luxury, se
+      // recarga también para que se vea generado/enviado en su propia fila.
+      if(result.mirror && !result.mirror.error) await loadKyc(deal.id, role, undefined, 'lpr');
       if(result.sentForSignature && result.embedded){
         // Lo llenaste tú mismo, en tu propia sesión — se manda embebido, así
-        // que puedes firmar de una vez sin ir a buscar un correo.
+        // que puedes firmar de una vez sin ir a buscar un correo. Si hay un
+        // segundo expediente (LPR), se encadena: al cerrar el primero se
+        // abre el otro, para no dejarlo a medias sin que se dé cuenta.
+        const signMirrorNext = result.mirror && result.mirror.sentForSignature && result.mirror.embedded
+          ? async () => {
+              try{
+                const { url } = await apiFetch(`/api/deals/${deal.id}/kyc/${role}/signing-url?kind=lpr`, { method:'POST' });
+                showToast(t('kycSecondSignature'));
+                openKycSigningModal(url, deal.id, role, 'lpr');
+              }catch(e){ /* queda el botón "Firmar ahora" en su fila como respaldo */ }
+            }
+          : null;
         try{
           const { url } = await apiFetch(`/api/deals/${deal.id}/kyc/${role}/signing-url${kindQs}`, { method:'POST' });
-          openKycSigningModal(url, deal.id, role, kind);
+          openKycSigningModal(url, deal.id, role, kind, signMirrorNext);
         }catch(e){ /* si falla, se queda en la sección con el botón "Firmar ahora" como respaldo */ }
       } else if(result.sentForSignature){
         showToast(t('alertGeneratedSent'), 'success');
@@ -4107,7 +4137,7 @@ function buildKycForm(deal, role, data, isStaffView, kind){
   return wrap;
 }
 
-function openKycSigningModal(url, dealId, role, kind){
+function openKycSigningModal(url, dealId, role, kind, onDone){
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed; inset:0; background:rgba(33,22,19,0.55); display:flex; align-items:center; justify-content:center; z-index:1000;';
   overlay.innerHTML = `
@@ -4132,6 +4162,7 @@ function openKycSigningModal(url, dealId, role, kind){
       await apiFetch(`/api/deals/${dealId}/kyc/${role}/status${kindQs}`);
       await loadKyc(dealId, role, undefined, kind);
     }catch(err){ showToast(err.message, 'error'); }
+    if(onDone) onDone();
   };
   window.addEventListener('message', onMessage);
 }
