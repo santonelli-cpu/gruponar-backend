@@ -653,11 +653,16 @@ const STRINGS = {
     nextStepSignature: 'Firma pendiente: {name}',
     nextStepUpload: 'Sube: {name}',
     nextStepKycSign: 'Firma tu expediente KYC',
-    waitingOnYouTitle: 'Te toca a ti ({count})', waitingOnYouMore: '+ {count} pendiente(s) más — revisa tus checklists abajo.',
+    waitingOnYouTitle: 'Te toca a ti ({count})', waitingOnYouMore: 'Ver los {count} pendiente(s) restantes', waitingOnYouLess: 'Ver menos',
     signLabel: 'Firmar', uploadLabel: 'Subir',
     versionsTitle: 'Historial de versiones', versionsEmpty: 'Este documento no tiene versiones anteriores.',
     versionsOnlyCurrent: 'Sin versiones anteriores — cada vez que se reemplace o quite el archivo, la versión anterior quedará guardada aquí.',
     versionCurrent: 'Actual', versionsUnnamed: '(sin nombre)',
+    markSignedOffline: 'Firmado fuera de la plataforma', markSignedOfflineTitle: 'El documento subido ya viene firmado (papel/correo) — márcalo completado y quítale al cliente la firma pendiente, sin pasar por DocuSign.',
+    confirmMarkSignedOffline: '¿Marcar "{name}" como ya firmado? El cliente dejará de verlo como firma pendiente.',
+    markedSignedOffline: 'Marcado como firmado — ya no le aparece pendiente al cliente.',
+    undoSignedOffline: 'Reabrir firma', undoSignedOfflineTitle: 'Deshacer la marca de firmado fuera de la plataforma — vuelve a quedar pendiente.',
+    actTaskSignedOffline: 'marcó un documento como firmado fuera de la plataforma',
     newVersionAvailable: 'Hay una versión nueva del portal.', reloadNow: 'Recargar',
     actDocReplaced: 'reemplazó un documento', actDocFileRemoved: 'quitó el archivo de un documento',
     myTasksTitle: 'Mis tareas ({count})',
@@ -922,11 +927,16 @@ const STRINGS = {
     nextStepSignature: 'Signature pending: {name}',
     nextStepUpload: 'Upload: {name}',
     nextStepKycSign: 'Sign your KYC file',
-    waitingOnYouTitle: "Waiting on you ({count})", waitingOnYouMore: '+ {count} more pending — see your checklists below.',
+    waitingOnYouTitle: "Waiting on you ({count})", waitingOnYouMore: 'Show the {count} remaining item(s)', waitingOnYouLess: 'Show less',
     signLabel: 'Sign', uploadLabel: 'Upload',
     versionsTitle: 'Version history', versionsEmpty: 'This document has no previous versions.',
     versionsOnlyCurrent: 'No previous versions — whenever the file is replaced or removed, the prior version will be kept here.',
     versionCurrent: 'Current', versionsUnnamed: '(unnamed)',
+    markSignedOffline: 'Signed outside the platform', markSignedOfflineTitle: 'The uploaded document is already signed (paper/email) — mark it completed and remove the pending signature from the client, without DocuSign.',
+    confirmMarkSignedOffline: 'Mark "{name}" as already signed? The client will no longer see it as a pending signature.',
+    markedSignedOffline: 'Marked as signed — no longer pending for the client.',
+    undoSignedOffline: 'Reopen signature', undoSignedOfflineTitle: 'Undo the signed-outside mark — it becomes pending again.',
+    actTaskSignedOffline: 'marked a document as signed outside the platform',
     newVersionAvailable: 'A new version of the portal is available.', reloadNow: 'Reload',
     actDocReplaced: 'replaced a document', actDocFileRemoved: "removed a document's file",
     myTasksTitle: 'My tasks ({count})',
@@ -990,6 +1000,7 @@ let notaryPaymentNote = undefined;
 // arranca abierta y una con muchos arranca cerrada (ver buildDashboard).
 let dashboardExpandedGroups = {};
 let docChecklistExpanded = {};
+let waitingOnYouExpanded = {};
 let teamAssigneesCache = undefined;
 let activityCache = {};
 
@@ -1181,6 +1192,7 @@ function adaptTask(t){
     id: t.id, en: t.label_en, es: t.label_es, status: t.status, sign: !!t.requires_signature,
     docType: t.doc_type || 'manual', signSide: t.sign_side || null,
     docusignStatus: t.docusign_status, documentOriginalName: t.document_original_name,
+    docusignEnvelopeId: t.docusign_envelope_id || null,
     assignedTo: t.assigned_to || null, assignedToName: t.assigned_to_name || null
   };
 }
@@ -3622,6 +3634,7 @@ const ACTIVITY_META = {
   task_done:             { icon: 'ti-circle-check', key: 'actTaskDone' },
   task_reopened:         { icon: 'ti-rotate-2',    key: 'actTaskReopened' },
   task_assigned:         { icon: 'ti-user-check',  key: 'actTaskAssigned' },
+  task_signed_offline:   { icon: 'ti-checks',      key: 'actTaskSignedOffline' },
   person_added:          { icon: 'ti-user-plus',   key: 'actPersonAdded' },
   kyc_sent:              { icon: 'ti-signature',   key: 'actKycSent' },
   contract_sent:         { icon: 'ti-file-text',   key: 'actContractSent' },
@@ -5428,6 +5441,8 @@ function buildNextStepCallout(deal, myParty){
   });
 
   if(!items.length) return null;
+  const expanded = waitingOnYouExpanded[deal.id] === true;
+  const visible = expanded ? items : items.slice(0, 3);
   const extra = items.length - 3;
   const box = document.createElement('div');
   box.className = 'callout';
@@ -5438,7 +5453,7 @@ function buildNextStepCallout(deal, myParty){
   head.style.marginBottom = '8px';
   head.innerHTML = `<b>${t('waitingOnYouTitle', { count: items.length })}</b>`;
   box.appendChild(head);
-  items.slice(0, 3).forEach(item => {
+  visible.forEach(item => {
     const row = document.createElement('div');
     row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:10px; padding:5px 0;';
     const label = document.createElement('span');
@@ -5452,9 +5467,12 @@ function buildNextStepCallout(deal, myParty){
     box.appendChild(row);
   });
   if(extra > 0){
-    const more = document.createElement('div');
-    more.className = 'field-hint'; more.style.margin = '4px 0 0';
-    more.textContent = t('waitingOnYouMore', { count: extra });
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'field-hint';
+    more.style.cssText = 'margin:6px 0 0; background:none; border:0; padding:0; cursor:pointer; text-align:left; font-family:inherit; text-decoration:underline;';
+    more.textContent = expanded ? t('waitingOnYouLess') : t('waitingOnYouMore', { count: extra });
+    more.onclick = () => { waitingOnYouExpanded[deal.id] = !expanded; render(); };
     box.appendChild(more);
   }
   return box;
@@ -5708,6 +5726,39 @@ function buildSignatureTasksSection(deal, body, isStaffView){
         }catch(err){ showToast(err.message, 'error'); }
       });
       actions.appendChild(sendBtn);
+
+      // "Firmado fuera de la plataforma" — si el documento se subió YA
+      // firmado (papel, correo), esto lo marca completado y le quita al
+      // cliente la firma pendiente sin pasar por DocuSign. Reversible solo
+      // si fue marcado a mano (nunca sobre un sobre real).
+      if(task.documentOriginalName && task.docusignStatus === 'not_sent'){
+        const offlineBtn = document.createElement('button');
+        offlineBtn.className = 'btn'; offlineBtn.style.fontSize = '11px';
+        offlineBtn.innerHTML = `<i class="ti ti-checks" aria-hidden="true"></i> ${t('markSignedOffline')}`;
+        offlineBtn.title = t('markSignedOfflineTitle');
+        offlineBtn.onclick = async () => {
+          if(!await confirmDialog(t('confirmMarkSignedOffline', { name: lang==='en' ? task.en : task.es }))) return;
+          try{
+            await apiFetch(`/api/deals/${deal.id}/tasks/${task.id}`, { method:'PATCH', body: JSON.stringify({ signedOffline: true }) });
+            showToast(t('markedSignedOffline'), 'success');
+            await openDeal(deal.id);
+          }catch(err){ showToast(err.message, 'error'); }
+        };
+        actions.appendChild(offlineBtn);
+      }
+      if(task.docusignStatus === 'completed' && !task.docusignEnvelopeId){
+        const undoBtn = document.createElement('button');
+        undoBtn.className = 'btn'; undoBtn.style.fontSize = '11px';
+        undoBtn.innerHTML = `<i class="ti ti-rotate-2" aria-hidden="true"></i> ${t('undoSignedOffline')}`;
+        undoBtn.title = t('undoSignedOfflineTitle');
+        undoBtn.onclick = async () => {
+          try{
+            await apiFetch(`/api/deals/${deal.id}/tasks/${task.id}`, { method:'PATCH', body: JSON.stringify({ signedOffline: false }) });
+            await openDeal(deal.id);
+          }catch(err){ showToast(err.message, 'error'); }
+        };
+        actions.appendChild(undoBtn);
+      }
     } else if(task.status !== 'done' && task.docusignStatus !== 'not_sent'){
       const sentHint = document.createElement('span');
       sentHint.className = 'field-hint'; sentHint.style.cssText = 'margin:0; display:flex; align-items:center;';

@@ -104,7 +104,12 @@ const reviewDocumentSchema = z.object({
 
 const updateTaskSchema = z.object({
   status: z.enum(['pending', 'progress', 'done']).optional(),
-  assignedTo: z.number().int().positive().nullable().optional()
+  assignedTo: z.number().int().positive().nullable().optional(),
+  // true = el documento se firmó FUERA de la plataforma (se subió ya
+  // firmado) — se marca completada y deja de aparecerle al cliente como
+  // firma pendiente; false = deshacer (solo si fue marcado a mano, nunca
+  // sobre un sobre real de DocuSign).
+  signedOffline: z.boolean().optional()
 }).strict();
 
 // Comprador/vendedor solo puede tocar documentos de su propia parte; un
@@ -1350,9 +1355,33 @@ router.get('/:id/documents/:docId/file', requireAuth, async (req, res) => {
 // quien coordina el cierre quien sabe si ese paso de verdad se completó.
 router.patch('/:id/tasks/:taskId', requireRole('admin', 'lawyer'), rateLimitWrite, validateBody(updateTaskSchema), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
-  const { status, assignedTo } = req.body;
+  const { status, assignedTo, signedOffline } = req.body;
   const task = db.prepare('SELECT * FROM tasks WHERE id = ? AND deal_id = ?').get(req.params.taskId, req.params.id);
   if (!task) return res.status(404).json({ error: 'Tarea no encontrada.' });
+
+  // "Firmado fuera de la plataforma" — el escrow (o cualquier tarea de
+  // firma) a veces se firma en papel/por correo y se sube ya firmado; con
+  // esto deja de aparecerle al cliente como firma pendiente. Solo aplica a
+  // tareas de firma, exige que el documento firmado YA esté subido, y nunca
+  // pisa un sobre real de DocuSign (para eso está "Verificar estado").
+  if (signedOffline !== undefined) {
+    if (!task.requires_signature) return res.status(400).json({ error: 'Esta tarea no es de firma.' });
+    if (task.docusign_envelope_id) {
+      return res.status(400).json({ error: 'Este documento se mandó por DocuSign — usa "Verificar estado" para sincronizar su firma.' });
+    }
+    if (signedOffline) {
+      if (!task.document_url) return res.status(400).json({ error: 'Sube primero el documento ya firmado.' });
+      db.prepare("UPDATE tasks SET docusign_status = 'completed', status = 'done', completed_at = datetime('now') WHERE id = ? AND deal_id = ?")
+        .run(req.params.taskId, req.params.id);
+      logActivity(req.params.id, req.session.userId, 'task_signed_offline', task.label_es);
+    } else {
+      if (task.docusign_status !== 'completed') return res.status(400).json({ error: 'Esta tarea no está marcada como firmada.' });
+      db.prepare("UPDATE tasks SET docusign_status = 'not_sent', status = 'pending', completed_at = NULL WHERE id = ? AND deal_id = ?")
+        .run(req.params.taskId, req.params.id);
+      logActivity(req.params.id, req.session.userId, 'task_reopened', task.label_es);
+    }
+    return res.json({ ok: true });
+  }
 
   if (status !== undefined) {
     // completed_at: la fecha real en que se completó el paso — alimenta la
