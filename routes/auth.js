@@ -208,6 +208,25 @@ function verifyEmailOtp(userId, code) {
   return true;
 }
 
+// Abre la sesión de verdad regenerando primero el ID de sesión — el
+// estándar contra session fixation: la cookie que existía ANTES de
+// autenticarse (que un atacante pudo haber plantado o conocido) nunca debe
+// ser la misma que queda autenticada. Todo camino que setea userId pasa
+// por aquí: dispositivo recordado, /totp, y aceptar invitación.
+function establishSession(req, res, user, accessAction, afterRegenerate) {
+  req.session.regenerate((err) => {
+    if (err) {
+      console.error('[session] no se pudo regenerar la sesión', err);
+      return res.status(500).json({ error: 'No se pudo iniciar sesión, intenta de nuevo.' });
+    }
+    req.session.userId = user.id;
+    req.session.role = user.role;
+    logAccess(user.id, accessAction, req);
+    if (afterRegenerate) afterRegenerate();
+    res.json({ id: user.id, name: user.name, email: user.email, role: user.role });
+  });
+}
+
 // Deja pendingUserId listo en la sesión y responde el reto de 2FA que le
 // toca a esta cuenta — nunca abre sesión de una vez (salvo dispositivo ya
 // recordado, ver checkRememberedDevice). La usan tanto /login como POST
@@ -215,10 +234,7 @@ function verifyEmailOtp(userId, code) {
 // identificado" en esta app pasa por aquí antes de tener sesión de verdad.
 function beginTwoFactorChallenge(req, res, user) {
   if (checkRememberedDevice(req, user)) {
-    req.session.userId = user.id;
-    req.session.role = user.role;
-    logAccess(user.id, 'login_success_remembered_device', req);
-    return res.json({ id: user.id, name: user.name, email: user.email, role: user.role });
+    return establishSession(req, res, user, 'login_success_remembered_device');
   }
 
   req.session.pendingUserId = user.id;
@@ -324,13 +340,9 @@ router.post('/totp', rateLimitTotp, validateBody(totpSchema), (req, res) => {
   if (!user.two_factor_method) {
     db.prepare('UPDATE users SET two_factor_method = ?, totp_enabled = 1 WHERE id = ?').run(useMethod, user.id);
   }
-  delete req.session.pendingUserId;
-  req.session.userId = user.id;
-  req.session.role = user.role;
-  logAccess(user.id, 'login_success', req);
-  if (remember) setRememberDeviceCookie(req, res, user);
-
-  res.json({ id: user.id, name: user.name, email: user.email, role: user.role });
+  establishSession(req, res, user, 'login_success', () => {
+    if (remember) setRememberDeviceCookie(req, res, user);
+  });
 });
 
 router.post('/logout', (req, res) => {

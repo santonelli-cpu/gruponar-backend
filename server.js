@@ -28,7 +28,11 @@ const app = express();
 // la política por default de helmet bloquearía eso (haría falta moverlo a
 // archivos externos con nonce para poder prender CSP de verdad).
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(express.json());
+// 1mb en vez del default de 100kb — un KYC de entidad con muchos campos de
+// texto libre (o un contract_json grande) puede pasar de 100kb, y el 413
+// resultante era un error mudo e inexplicable para quien estaba llenando
+// el formulario.
+app.use(express.json({ limit: '1mb' }));
 
 // Si tu frontend vive en otro origen (ej. lo sigues abriendo como artifact
 // de claude.ai en vez de servirlo desde /public de este mismo servidor),
@@ -84,12 +88,67 @@ app.use('/api/settings', settingsRouter);
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
+// Cualquier /api/* que no coincidió con ninguna ruta devuelve JSON 404 —
+// sin esto caía al static/al default de Express y el frontend intentaba
+// parsear HTML como JSON, mostrando "Error 404" sin contexto.
+app.use('/api', (req, res) => res.status(404).json({ error: 'Ruta no encontrada.' }));
+
 // Sirve el frontend (public/index.html) desde el mismo origen — así el
 // login y las cookies de sesión funcionan sin configurar CORS.
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Manejador de errores final — cualquier throw síncrono en un middleware o
+// un next(err) termina aquí como JSON limpio, nunca como la página HTML de
+// stack trace de Express. Un body JSON malformado (SyntaxError de
+// express.json) es culpa del cliente → 400; todo lo demás → 500 genérico
+// (el detalle queda en el log del servidor, no se filtra al cliente).
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  if (res.headersSent) return;
+  if (err.type === 'entity.parse.failed' || err instanceof SyntaxError) {
+    return res.status(400).json({ error: 'El cuerpo de la petición no es JSON válido.' });
+  }
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'La petición es demasiado grande.' });
+  }
+  if (err.name === 'MulterError') {
+    return res.status(413).json({
+      error: err.code === 'LIMIT_FILE_SIZE'
+        ? 'El archivo es demasiado grande (máximo 15 MB).'
+        : 'Archivo inválido.'
+    });
+  }
+  console.error('[error]', req.method, req.originalUrl, err);
+  res.status(500).json({ error: 'Error interno del servidor.' });
+});
+
+// Red de seguridad para promesas sin catch (un handler async que truena
+// después de responder, un best-effort sin .catch) — se registra en vez de
+// tumbar el proceso, que con better-sqlite3 síncrono dejaría a todos los
+// usuarios fuera por un error periférico (ej. un correo que falló raro).
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
+process.on('uncaughtException', (err) => {
+  // Aquí sí puede haber estado corrupto — log y salir; Render reinicia solo.
+  console.error('[uncaughtException]', err);
+  process.exit(1);
+});
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Grupo Nar backend escuchando en puerto ${PORT}`));
+const server = app.listen(PORT, () => console.log(`Grupo Nar backend escuchando en puerto ${PORT}`));
+
+// Apagado limpio en redeploys de Render (SIGTERM): deja de aceptar
+// conexiones nuevas pero termina las peticiones en vuelo (una subida de
+// documento a medias, un sobre de DocuSign creándose) antes de salir.
+function shutdown(signal) {
+  console.log(`[${signal}] cerrando servidor...`);
+  server.close(() => process.exit(0));
+  // Si algo quedó colgado, salir de todos modos tras 10s.
+  setTimeout(() => process.exit(0), 10000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 // Recordatorios automáticos de documentos pendientes (lib/reminders.js) —
 // una pasada 1 minuto después de arrancar (deja que todo termine de cargar)

@@ -403,6 +403,7 @@ const STRINGS = {
     phonePh: 'Teléfono', noDealsYet: 'Sin operación ligada',
     searchByName: 'Buscar por nombre...', allRoles: 'Todos', noClientsMatch: 'Ningún cliente coincide con la búsqueda/filtro.',
     nameLabel: 'Nombre', roleLabel: 'Rol', agencyLabel: 'Agencia',
+    networkError: 'Sin conexión con el servidor — revisa tu internet e intenta de nuevo.',
     loginTitle: 'Iniciar sesión', loginSub: 'Ingresa con tu correo y contraseña.',
     loginEmailPh: 'correo@ejemplo.com', loginPasswordPh: 'Contraseña', loginSubmit: 'Entrar', loginSubmitting: 'Entrando...',
     loginNoAccount: '¿Eres agente o abogado y no tienes cuenta?', loginCreateAccount: 'Crear cuenta',
@@ -648,6 +649,7 @@ const STRINGS = {
     phonePh: 'Phone', noDealsYet: 'No linked deal',
     searchByName: 'Search by name...', allRoles: 'All', noClientsMatch: 'No client matches that search/filter.',
     nameLabel: 'Name', roleLabel: 'Role', agencyLabel: 'Agency',
+    networkError: 'Could not reach the server — check your connection and try again.',
     loginTitle: 'Log in', loginSub: 'Enter your email and password.',
     loginEmailPh: 'email@example.com', loginPasswordPh: 'Password', loginSubmit: 'Log in', loginSubmitting: 'Logging in...',
     loginNoAccount: 'Are you an agent or lawyer without an account?', loginCreateAccount: 'Create account',
@@ -951,11 +953,18 @@ let totpRemember = true;
 
 
 async function apiFetch(path, options={}){
-  const res = await fetch(API_BASE + path, {
-    credentials: 'include',
-    headers: {'Content-Type':'application/json'},
-    ...options
-  });
+  let res;
+  try{
+    res = await fetch(API_BASE + path, {
+      credentials: 'include',
+      headers: {'Content-Type':'application/json'},
+      ...options
+    });
+  }catch(e){
+    // fetch solo lanza por red caída/servidor inalcanzable — "Failed to
+    // fetch" crudo no le dice nada a nadie; esto sí.
+    throw new Error(t('networkError'));
+  }
   let body = null;
   try{ body = await res.json(); }catch(e){}
   if(!res.ok) throw new Error((body && body.error) || `Error ${res.status}`);
@@ -966,7 +975,12 @@ async function apiFetch(path, options={}){
 // Content-Type: application/json, así el navegador pone el boundary de
 // multipart automáticamente.
 async function apiUpload(path, formData){
-  const res = await fetch(API_BASE + path, { method:'POST', credentials:'include', body: formData });
+  let res;
+  try{
+    res = await fetch(API_BASE + path, { method:'POST', credentials:'include', body: formData });
+  }catch(e){
+    throw new Error(t('networkError'));
+  }
   let body = null;
   try{ body = await res.json(); }catch(e){}
   if(!res.ok) throw new Error((body && body.error) || `Error ${res.status}`);
