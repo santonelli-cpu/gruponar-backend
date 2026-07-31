@@ -126,6 +126,8 @@
   .deal-section-nav button{flex-shrink:0; border:0.5px solid var(--line-strong); background:var(--stone-card); color:var(--ink-soft);
     font-size:11.5px; padding:4px 11px; border-radius:20px; cursor:pointer; white-space:nowrap; font-family:inherit;}
   .deal-section-nav button:hover{background:var(--oxblood-soft); color:var(--oxblood); border-color:var(--oxblood-soft);}
+  .deal-section-nav button.active{background:var(--oxblood-deep); color:#F6F4F0; border-color:var(--oxblood-deep); font-weight:500;}
+  .deal-section-nav button.active:hover{background:var(--oxblood-deep); color:#F6F4F0;}
   /* Menú "···" de acciones por documento del checklist (vista staff) */
   .doc-action-menu{position:absolute; top:32px; right:0; background:var(--stone-card); border:0.5px solid var(--line); border-radius:10px; box-shadow:0 4px 16px rgba(33,22,19,0.14); z-index:6; min-width:220px; overflow:hidden;}
   .doc-action-menu button{display:flex; align-items:center; gap:8px; width:100%; background:none; border:0; padding:9px 14px; font-size:12.5px; font-family:inherit; color:var(--ink); cursor:pointer; text-align:left;}
@@ -441,7 +443,7 @@ const STRINGS = {
     progressSummarySent: 'Resumen enviado a {count} destinatario(s).',
     lastProgressSummary: 'Último resumen enviado: {date}',
     activityTitle: 'Actividad', activityEmpty: 'Todavía no hay actividad registrada en esta operación.',
-    navSecParties: 'Partes', navSecDocs: 'Documentos', navSecKyc: 'Checklist KYC', navSecSignatures: 'Firmas',
+    navSecParties: 'Partes', navSecDocs: 'Documentos', navSecKyc: 'Checklist KYC', navSecSignatures: 'Firmas', tabKycSignatures: 'KYC y Firmas',
     navSecTracker: 'Tracker', navSecPeople: 'Personas', navSecContract: 'Contrato', navSecActivity: 'Actividad',
     actDealCreated: 'creó la operación', actDealTrashed: 'mandó la operación a la papelera', actDealRestored: 'restauró la operación',
     actDocUploaded: 'subió un documento', actDocApproved: 'aprobó un documento', actDocRejected: 'rechazó un documento',
@@ -715,7 +717,7 @@ const STRINGS = {
     progressSummarySent: 'Summary sent to {count} recipient(s).',
     lastProgressSummary: 'Last summary sent: {date}',
     activityTitle: 'Activity', activityEmpty: 'No activity recorded on this deal yet.',
-    navSecParties: 'Parties', navSecDocs: 'Documents', navSecKyc: 'KYC checklist', navSecSignatures: 'Signatures',
+    navSecParties: 'Parties', navSecDocs: 'Documents', navSecKyc: 'KYC checklist', navSecSignatures: 'Signatures', tabKycSignatures: 'KYC & Signatures',
     navSecTracker: 'Tracker', navSecPeople: 'People', navSecContract: 'Contract', navSecActivity: 'Activity',
     actDealCreated: 'created the deal', actDealTrashed: 'moved the deal to trash', actDealRestored: 'restored the deal',
     actDocUploaded: 'uploaded a document', actDocApproved: 'approved a document', actDocRejected: 'rejected a document',
@@ -1007,6 +1009,8 @@ let dashboardExpandedGroups = {};
 let docChecklistExpanded = {};
 let waitingOnYouExpanded = {};
 let docActionsMenuFor = null;
+let dealDetailTab = 'parties';
+let dealDetailTabDeal = null;
 let teamAssigneesCache = undefined;
 let activityCache = {};
 
@@ -1422,7 +1426,7 @@ function myPartyInDeal(deal){
 // arriba, que es lo esperado.
 let _lastViewKey = null;
 function currentViewKey(){
-  return [authenticated, mainTab, adminView, activeDealId, portalRole, portalPartyId].join('|');
+  return [authenticated, mainTab, adminView, activeDealId, dealDetailTab, portalRole, portalPartyId].join('|');
 }
 
 function render(){
@@ -3311,32 +3315,36 @@ function buildAdminDealDetail(deal){
   back.onclick = () => { activeDealId=null; render(); };
   wrap.appendChild(back);
 
-  // Barra fija de secciones — la página del detalle es larga (partes,
-  // checklists, KYC, tracker, firmas, personas, contrato, actividad); esto
-  // permite saltar directo sin scroll infinito. Los IDs los pone
-  // sectionAnchor() al crear cada título.
-  const NAV_SECTIONS = [
-    ['sec-parties', t('navSecParties')],
-    ['sec-docs', t('navSecDocs')],
-    ['sec-kyc', t('navSecKyc')],
-    ['admin-kyc-section', t('navSecSignatures')],
-    ['sec-tracker', t('navSecTracker')],
-    ['sec-people', t('navSecPeople')],
-    ['sec-contract', t('navSecContract')],
-    ['sec-activity', t('navSecActivity')]
+  // Pestañas reales — el encabezado de la operación (título, avance,
+  // acciones) siempre visible, y abajo UNA sección a la vez en vez de las
+  // 12 apiladas de antes. Al abrir OTRA operación se regresa a la primera
+  // pestaña; dentro de la misma, la pestaña activa sobrevive a los render().
+  if(dealDetailTabDeal !== deal.id){ dealDetailTabDeal = deal.id; dealDetailTab = 'parties'; }
+  const pendingDocsCount = deal.documents.filter(d => d.status !== 'done').length;
+  const pendingTasksCount = deal.tasks.filter(tk => tk.status !== 'done').length;
+  const TABS = [
+    ['parties', t('navSecParties')],
+    ['docs', t('navSecDocs') + (pendingDocsCount ? ` (${pendingDocsCount})` : '')],
+    ['kyc', t('tabKycSignatures')],
+    ['tracker', t('navSecTracker') + (pendingTasksCount ? ` (${pendingTasksCount})` : '')],
+    ['people', t('navSecPeople')],
+    ['contract', t('navSecContract')],
+    ['activity', t('navSecActivity')]
   ];
   const nav = document.createElement('nav');
   nav.className = 'deal-section-nav';
-  NAV_SECTIONS.forEach(([id, label]) => {
+  TABS.forEach(([id, label]) => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = label;
-    btn.onclick = () => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if(dealDetailTab === id) btn.classList.add('active');
+    btn.onclick = () => { dealDetailTab = id; render(); };
     nav.appendChild(btn);
   });
   wrap.appendChild(nav);
-  // Con la barra sticky arriba, el destino del scroll debe quedar DEBAJO de
-  // ella, no tapado — scroll-margin en cada ancla lo resuelve sin JS.
+  const tab = dealDetailTab;
+  // Los IDs siguen sirviendo como anclas DENTRO de su pestaña (ej. el link
+  // "ir a la sección de KYC" del tracker cambia de pestaña y luego scrollea).
   function sectionAnchor(el, id){ el.id = id; el.style.scrollMarginTop = '46px'; return el; }
 
   const header = document.createElement('div');
@@ -3517,7 +3525,7 @@ function buildAdminDealDetail(deal){
   // acto exacto de esta operación (lo que se lleva a la notaría). Se
   // guarda solo, sin botón, al salir del textarea (mismo patrón que las
   // fechas de arriba) — nunca se muestra vacío a comprador/vendedor.
-  if(['admin','lawyer'].includes(currentUser.role) || (deal.legalActs && deal.legalActs.trim())){
+  if(tab === 'parties' && (['admin','lawyer'].includes(currentUser.role) || (deal.legalActs && deal.legalActs.trim()))){
     const legalActsCard = document.createElement('div'); legalActsCard.className = 'card';
     const canEditLegalActs = ['admin','lawyer'].includes(currentUser.role);
     legalActsCard.innerHTML = `
@@ -3542,88 +3550,99 @@ function buildAdminDealDetail(deal){
     };
   }
 
-  const partiesTitle = document.createElement('div');
-  partiesTitle.className = 'section-title'; partiesTitle.textContent = t('sellersAndBuyers');
-  wrap.appendChild(sectionAnchor(partiesTitle, 'sec-parties'));
-  wrap.appendChild(buildPartiesSection(deal));
-
-  const propTitle = document.createElement('div');
-  propTitle.className = 'section-title'; propTitle.textContent = t('propertySection');
-  wrap.appendChild(sectionAnchor(propTitle, 'sec-docs'));
-  const propCard = document.createElement('div');
-  propCard.className = 'card';
-  propCard.appendChild(buildPropertyDocsSection(deal, true));
-  wrap.appendChild(propCard);
-
-  const notaryTitle = document.createElement('div');
-  notaryTitle.className = 'section-title'; notaryTitle.textContent = t('notaryClosingCostsSection');
-  wrap.appendChild(notaryTitle);
-  const notaryCard = document.createElement('div'); notaryCard.className = 'card';
-  notaryCard.appendChild(buildNotaryClosingCostsSection(deal, true));
-  wrap.appendChild(notaryCard);
-
-  // Gestoría y Banco — solo escenarios con fideicomiso y solo
-  // admin/abogados (a comprador/vendedor/agente el backend ni les manda
-  // estos documentos). Cada una se refleja en su subcarpeta de Drive.
-  if(['admin','lawyer','external_lawyer'].includes(currentUser.role) && deal.scenario !== 'purchase'){
-    [['gestoria', t('gestoriaSection')], ['banco', t('bancoSection')]].forEach(([section, label]) => {
-      if(!deal.documents.some(d => d.section === section)) return;
-      const secTitle = document.createElement('div');
-      secTitle.className = 'section-title'; secTitle.textContent = label;
-      wrap.appendChild(secTitle);
-      const secCard = document.createElement('div'); secCard.className = 'card';
-      secCard.appendChild(buildSectionDocsCard(deal, section));
-      wrap.appendChild(secCard);
-    });
+  if(tab === 'parties'){
+    const partiesTitle = document.createElement('div');
+    partiesTitle.className = 'section-title'; partiesTitle.textContent = t('sellersAndBuyers');
+    wrap.appendChild(sectionAnchor(partiesTitle, 'sec-parties'));
+    wrap.appendChild(buildPartiesSection(deal));
   }
 
-  const docsTitle = document.createElement('div');
-  docsTitle.className = 'section-title'; docsTitle.textContent = t('docsChecklist');
-  wrap.appendChild(sectionAnchor(docsTitle, 'sec-kyc'));
-  const docsCard = document.createElement('div');
-  docsCard.className = 'card';
-  docsCard.appendChild(buildDocsBySideGrouping(deal, true));
-  wrap.appendChild(docsCard);
+  if(tab === 'docs'){
+    const propTitle = document.createElement('div');
+    propTitle.className = 'section-title'; propTitle.textContent = t('propertySection');
+    wrap.appendChild(sectionAnchor(propTitle, 'sec-docs'));
+    const propCard = document.createElement('div');
+    propCard.className = 'card';
+    propCard.appendChild(buildPropertyDocsSection(deal, true));
+    wrap.appendChild(propCard);
 
-  const kycTitle = document.createElement('div');
-  kycTitle.className = 'section-title'; kycTitle.textContent = t('kycFile');
-  wrap.appendChild(sectionAnchor(kycTitle, 'admin-kyc-section'));
-  const kycCard = document.createElement('div'); kycCard.className = 'card';
-  deal.parties.forEach(p => kycCard.appendChild(buildKycSection(deal, p, true)));
-  wrap.appendChild(kycCard);
+    const notaryTitle = document.createElement('div');
+    notaryTitle.className = 'section-title'; notaryTitle.textContent = t('notaryClosingCostsSection');
+    wrap.appendChild(notaryTitle);
+    const notaryCard = document.createElement('div'); notaryCard.className = 'card';
+    notaryCard.appendChild(buildNotaryClosingCostsSection(deal, true));
+    wrap.appendChild(notaryCard);
 
-  const tasksTitle = document.createElement('div');
-  tasksTitle.className = 'section-title'; tasksTitle.textContent = t('closingTracker');
-  wrap.appendChild(sectionAnchor(tasksTitle, 'sec-tracker'));
-  const tasksCard = document.createElement('div');
-  tasksCard.className = 'card';
-  tasksCard.appendChild(buildTaskList(deal, ['admin','lawyer'].includes(currentUser.role)));
-  wrap.appendChild(tasksCard);
+    // Gestoría y Banco — solo escenarios con fideicomiso y solo
+    // admin/abogados (a comprador/vendedor/agente el backend ni les manda
+    // estos documentos). Cada una se refleja en su subcarpeta de Drive.
+    if(['admin','lawyer','external_lawyer'].includes(currentUser.role) && deal.scenario !== 'purchase'){
+      [['gestoria', t('gestoriaSection')], ['banco', t('bancoSection')]].forEach(([section, label]) => {
+        if(!deal.documents.some(d => d.section === section)) return;
+        const secTitle = document.createElement('div');
+        secTitle.className = 'section-title'; secTitle.textContent = label;
+        wrap.appendChild(secTitle);
+        const secCard = document.createElement('div'); secCard.className = 'card';
+        secCard.appendChild(buildSectionDocsCard(deal, section));
+        wrap.appendChild(secCard);
+      });
+    }
 
-  buildSignatureTasksSection(deal, wrap, true);
+    const docsTitle = document.createElement('div');
+    docsTitle.className = 'section-title'; docsTitle.textContent = t('docsChecklist');
+    wrap.appendChild(sectionAnchor(docsTitle, 'sec-kyc'));
+    const docsCard = document.createElement('div');
+    docsCard.className = 'card';
+    docsCard.appendChild(buildDocsBySideGrouping(deal, true));
+    wrap.appendChild(docsCard);
+  }
 
-  const agentsTitle = document.createElement('div');
-  agentsTitle.className = 'section-title'; agentsTitle.textContent = t('agentsInDeal');
-  wrap.appendChild(sectionAnchor(agentsTitle, 'sec-people'));
-  wrap.appendChild(buildDealAgentsSection(deal));
+  if(tab === 'kyc'){
+    const kycTitle = document.createElement('div');
+    kycTitle.className = 'section-title'; kycTitle.textContent = t('kycFile');
+    wrap.appendChild(sectionAnchor(kycTitle, 'admin-kyc-section'));
+    const kycCard = document.createElement('div'); kycCard.className = 'card';
+    deal.parties.forEach(p => kycCard.appendChild(buildKycSection(deal, p, true)));
+    wrap.appendChild(kycCard);
 
-  const contractTitle = document.createElement('div');
-  contractTitle.className = 'section-title'; contractTitle.textContent = t('contractPromise');
-  wrap.appendChild(sectionAnchor(contractTitle, 'sec-contract'));
-  const contractCard = document.createElement('div'); contractCard.className = 'card';
-  // Generar/editar el contrato es trabajo exclusivo de admin/abogado — el
-  // agente ve la misma vista de solo lectura que comprador/vendedor (ver
-  // PDF + firmar si le toca), nunca el machote en blanco.
-  contractCard.appendChild(buildContractSection(deal, ['admin', 'lawyer'].includes(currentUser.role)));
-  wrap.appendChild(contractCard);
+    buildSignatureTasksSection(deal, wrap, true);
+  }
 
-  // Línea de tiempo — quién hizo qué y cuándo en esta operación. Solo
-  // staff (el backend igual lo restringe); colapsada por default para no
-  // alargar más la página.
-  const activityTitle = document.createElement('div');
-  activityTitle.className = 'section-title'; activityTitle.textContent = t('activityTitle');
-  wrap.appendChild(sectionAnchor(activityTitle, 'sec-activity'));
-  wrap.appendChild(buildActivitySection(deal));
+  if(tab === 'tracker'){
+    const tasksTitle = document.createElement('div');
+    tasksTitle.className = 'section-title'; tasksTitle.textContent = t('closingTracker');
+    wrap.appendChild(sectionAnchor(tasksTitle, 'sec-tracker'));
+    const tasksCard = document.createElement('div');
+    tasksCard.className = 'card';
+    tasksCard.appendChild(buildTaskList(deal, ['admin','lawyer'].includes(currentUser.role)));
+    wrap.appendChild(tasksCard);
+  }
+
+  if(tab === 'people'){
+    const agentsTitle = document.createElement('div');
+    agentsTitle.className = 'section-title'; agentsTitle.textContent = t('agentsInDeal');
+    wrap.appendChild(sectionAnchor(agentsTitle, 'sec-people'));
+    wrap.appendChild(buildDealAgentsSection(deal));
+  }
+
+  if(tab === 'contract'){
+    const contractTitle = document.createElement('div');
+    contractTitle.className = 'section-title'; contractTitle.textContent = t('contractPromise');
+    wrap.appendChild(sectionAnchor(contractTitle, 'sec-contract'));
+    const contractCard = document.createElement('div'); contractCard.className = 'card';
+    // Generar/editar el contrato es trabajo exclusivo de admin/abogado — el
+    // agente ve la misma vista de solo lectura que comprador/vendedor (ver
+    // PDF + firmar si le toca), nunca el machote en blanco.
+    contractCard.appendChild(buildContractSection(deal, ['admin', 'lawyer'].includes(currentUser.role)));
+    wrap.appendChild(contractCard);
+  }
+
+  if(tab === 'activity'){
+    const activityTitle = document.createElement('div');
+    activityTitle.className = 'section-title'; activityTitle.textContent = t('activityTitle');
+    wrap.appendChild(sectionAnchor(activityTitle, 'sec-activity'));
+    wrap.appendChild(buildActivitySection(deal));
+  }
 
   return wrap;
 }
@@ -4564,6 +4583,8 @@ function buildTaskList(deal, canManage){
     const goKycLink = row.querySelector('.task-go-kyc');
     if(goKycLink) goKycLink.onclick = (e) => {
       e.preventDefault();
+      dealDetailTab = 'kyc';
+      render();
       document.getElementById('admin-kyc-section')?.scrollIntoView({ behavior:'smooth', block:'start' });
     };
     // Asignación de la tarea — admin elige a qué abogado interno/admin le
