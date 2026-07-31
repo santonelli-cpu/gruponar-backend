@@ -20,6 +20,7 @@ const settingsRouter = require('./routes/settings');
 const { runAutomaticReminders } = require('./lib/reminders');
 const { checkAndSendPredialReminders } = require('./lib/predialReminder');
 const { checkAndSendDeadlineReminders } = require('./lib/deadlineReminders');
+const { runDailyDbBackup } = require('./lib/dbBackup');
 const { createRateLimiter } = require('./lib/rateLimit');
 
 const app = express();
@@ -177,3 +178,9 @@ setInterval(() => checkAndSendPredialReminders().catch(err => console.error('[pr
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://portal.gruponar.com';
 setTimeout(() => checkAndSendDeadlineReminders(APP_BASE_URL).catch(err => console.error('[deadline-reminder] error:', err.message)), 2 * 60 * 1000);
 setInterval(() => checkAndSendDeadlineReminders(APP_BASE_URL).catch(err => console.error('[deadline-reminder] error:', err.message)), 24 * 60 * 60 * 1000);
+
+// Respaldo diario de la base de datos a Cloud Storage (lib/dbBackup.js) —
+// solo corre en Render; la clave incluye la fecha, así que reinicios en el
+// mismo día no duplican nada. Retención de 14 días con poda automática.
+setTimeout(() => runDailyDbBackup().catch(err => console.error('[backup] error:', err.message)), 3 * 60 * 1000);
+setInterval(() => runDailyDbBackup().catch(err => console.error('[backup] error:', err.message)), 24 * 60 * 60 * 1000);

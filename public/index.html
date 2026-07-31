@@ -126,6 +126,11 @@
   .deal-section-nav button{flex-shrink:0; border:0.5px solid var(--line-strong); background:var(--stone-card); color:var(--ink-soft);
     font-size:11.5px; padding:4px 11px; border-radius:20px; cursor:pointer; white-space:nowrap; font-family:inherit;}
   .deal-section-nav button:hover{background:var(--oxblood-soft); color:var(--oxblood); border-color:var(--oxblood-soft);}
+  /* Menú "···" de acciones por documento del checklist (vista staff) */
+  .doc-action-menu{position:absolute; top:32px; right:0; background:var(--stone-card); border:0.5px solid var(--line); border-radius:10px; box-shadow:0 4px 16px rgba(33,22,19,0.14); z-index:6; min-width:220px; overflow:hidden;}
+  .doc-action-menu button{display:flex; align-items:center; gap:8px; width:100%; background:none; border:0; padding:9px 14px; font-size:12.5px; font-family:inherit; color:var(--ink); cursor:pointer; text-align:left;}
+  .doc-action-menu button:hover{background:var(--stone);}
+  .doc-action-menu button.danger{color:var(--oxblood);}
   .progress-row{display:flex; gap:28px; margin-bottom:16px; flex-wrap:wrap;}
   .progress-block{flex:1; min-width:160px;}
   .progress-top{display:flex; justify-content:space-between; font-size:12px; margin-bottom:5px;}
@@ -657,7 +662,7 @@ const STRINGS = {
     signLabel: 'Firmar', uploadLabel: 'Subir',
     versionsTitle: 'Historial de versiones', versionsEmpty: 'Este documento no tiene versiones anteriores.',
     versionsOnlyCurrent: 'Sin versiones anteriores — cada vez que se reemplace o quite el archivo, la versión anterior quedará guardada aquí.',
-    versionCurrent: 'Actual', versionsUnnamed: '(sin nombre)',
+    versionCurrent: 'Actual', versionsUnnamed: '(sin nombre)', moreActions: 'Más acciones',
     markSignedOffline: 'Firmado fuera de la plataforma', markSignedOfflineTitle: 'El documento subido ya viene firmado (papel/correo) — márcalo completado y quítale al cliente la firma pendiente, sin pasar por DocuSign.',
     confirmMarkSignedOffline: '¿Marcar "{name}" como ya firmado? El cliente dejará de verlo como firma pendiente.',
     markedSignedOffline: 'Marcado como firmado — ya no le aparece pendiente al cliente.',
@@ -931,7 +936,7 @@ const STRINGS = {
     signLabel: 'Sign', uploadLabel: 'Upload',
     versionsTitle: 'Version history', versionsEmpty: 'This document has no previous versions.',
     versionsOnlyCurrent: 'No previous versions — whenever the file is replaced or removed, the prior version will be kept here.',
-    versionCurrent: 'Current', versionsUnnamed: '(unnamed)',
+    versionCurrent: 'Current', versionsUnnamed: '(unnamed)', moreActions: 'More actions',
     markSignedOffline: 'Signed outside the platform', markSignedOfflineTitle: 'The uploaded document is already signed (paper/email) — mark it completed and remove the pending signature from the client, without DocuSign.',
     confirmMarkSignedOffline: 'Mark "{name}" as already signed? The client will no longer see it as a pending signature.',
     markedSignedOffline: 'Marked as signed — no longer pending for the client.',
@@ -1001,6 +1006,7 @@ let notaryPaymentNote = undefined;
 let dashboardExpandedGroups = {};
 let docChecklistExpanded = {};
 let waitingOnYouExpanded = {};
+let docActionsMenuFor = null;
 let teamAssigneesCache = undefined;
 let activityCache = {};
 
@@ -4043,20 +4049,46 @@ function buildDocItemLi(deal, doc, isStaffView, readOnly){
   const reviewBadgeHtml = doc.fileUrl
     ? `<span class="review-badge ${doc.reviewStatus}">${t(doc.reviewStatus === 'approved' ? 'reviewApproved' : doc.reviewStatus === 'rejected' ? 'reviewRejected' : 'reviewPending')}</span>`
     : '';
-  li.innerHTML = `<span class="doc-check ${doc.status==='done'?'done':''}" ${readOnly ? 'style="cursor:default;"' : ''}>${doc.status==='done'?'<i class=\"ti ti-check\" aria-hidden=\"true\"></i>':''}</span><span>${label}</span>
-    <span class="doc-item-actions">
-      ${subChecksHtml}
-      ${reviewBadgeHtml}
+  // Vista de staff: UNA acción principal (Ver archivo, o Subir si no hay) y
+  // el resto de acciones dentro del menú "···" — antes cada renglón traía
+  // hasta 7 botones a la vista (Aprobar, Rechazar, Reemplazar, borrar,
+  // historial, quitar...) y el checklist parecía un tablero de mandos.
+  // La vista del cliente conserva sus 2-3 botones directos de siempre.
+  const menuOpen = docActionsMenuFor === doc.id;
+  const staffActionsHtml = `
+      ${doc.fileUrl
+        ? `<a href="/api/deals/${deal.id}/documents/${doc.id}/file" target="_blank" class="btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px;"><i class="ti ti-eye" aria-hidden="true"></i> ${t('viewFile')}</a>`
+        : `<button type="button" class="btn doc-upload-btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px;" title="${t('attachDocument')}"><i class="ti ti-upload" aria-hidden="true"></i> ${t('upload')}</button>`}
+      <button type="button" class="btn doc-kebab-btn" style="font-size:11px; padding:4px 8px;" title="${t('moreActions')}"><i class="ti ti-dots" aria-hidden="true"></i></button>
+      ${menuOpen ? `
+        <div class="doc-action-menu">
+          ${doc.fileUrl ? `<button type="button" class="doc-upload-btn"><i class="ti ti-upload" aria-hidden="true"></i> ${t('replaceFile')}</button>` : ''}
+          ${canReview && doc.fileUrl && doc.reviewStatus !== 'approved' ? `<button type="button" class="doc-approve-btn" style="color:var(--jade);"><i class="ti ti-check" aria-hidden="true"></i> ${t('approveDocument')}</button>` : ''}
+          ${canReview && doc.fileUrl && doc.reviewStatus !== 'rejected' ? `<button type="button" class="doc-reject-btn"><i class="ti ti-x" aria-hidden="true"></i> ${t('rejectDocument')}</button>` : ''}
+          <button type="button" class="doc-versions-btn"><i class="ti ti-history" aria-hidden="true"></i> ${t('versionsTitle')}</button>
+          ${doc.fileUrl ? `<button type="button" class="doc-delete-btn danger"><i class="ti ti-trash" aria-hidden="true"></i> ${t('deleteFile')}</button>` : ''}
+          <button type="button" class="doc-remove-req-btn danger"><i class="ti ti-playlist-x" aria-hidden="true"></i> ${t('removeChecklistItemTitle')}</button>
+        </div>` : ''}`;
+  const clientActionsHtml = `
       ${doc.fileUrl ? `<a href="/api/deals/${deal.id}/documents/${doc.id}/file" target="_blank" class="btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px;"><i class="ti ti-eye" aria-hidden="true"></i> ${t('viewFile')}</a>` : (readOnly ? `<span class="field-hint" style="margin:0;">${t('notUploaded')}</span>` : '')}
       ${!readOnly ? `<button type="button" class="btn doc-upload-btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px;" title="${t('attachDocument')}"><i class="ti ti-upload" aria-hidden="true"></i> ${doc.fileUrl ? t('replaceFile') : t('upload')}</button>` : ''}
-      ${!readOnly && doc.fileUrl ? `<button type="button" class="btn doc-delete-btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px; color:var(--oxblood);" title="${t('deleteFile')}"><i class="ti ti-trash" aria-hidden="true"></i></button>` : ''}
-      ${canReview && doc.fileUrl && doc.reviewStatus !== 'approved' ? `<button type="button" class="btn doc-approve-btn" style="font-size:11px; padding:4px 10px; color:var(--jade); border-color:var(--jade);">${t('approveDocument')}</button>` : ''}
-      ${canReview && doc.fileUrl && doc.reviewStatus !== 'rejected' ? `<button type="button" class="btn doc-reject-btn" style="font-size:11px; padding:4px 10px; color:var(--oxblood);">${t('rejectDocument')}</button>` : ''}
-      ${isStaffView ? `<button type="button" class="btn doc-versions-btn" style="font-size:11px; padding:4px 8px;" title="${t('versionsTitle')}"><i class="ti ti-history" aria-hidden="true"></i></button>` : ''}
-      ${isStaffView ? `<button type="button" class="btn doc-remove-req-btn" style="font-size:11px; padding:4px 8px; color:var(--oxblood);" title="${t('removeChecklistItemTitle')}"><i class="ti ti-x" aria-hidden="true"></i></button>` : ''}
+      ${!readOnly && doc.fileUrl ? `<button type="button" class="btn doc-delete-btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px; color:var(--oxblood);" title="${t('deleteFile')}"><i class="ti ti-trash" aria-hidden="true"></i></button>` : ''}`;
+  li.innerHTML = `<span class="doc-check ${doc.status==='done'?'done':''}" ${readOnly ? 'style="cursor:default;"' : ''}>${doc.status==='done'?'<i class=\"ti ti-check\" aria-hidden=\"true\"></i>':''}</span><span>${label}</span>
+    <span class="doc-item-actions" style="position:relative;">
+      ${subChecksHtml}
+      ${reviewBadgeHtml}
+      ${isStaffView ? staffActionsHtml : clientActionsHtml}
       <input type="file" class="doc-file-input" style="display:none;" accept=".pdf,.jpg,.jpeg,.png,.heic">
     </span>
     ${doc.reviewStatus === 'rejected' && doc.reviewNote ? `<span class="doc-review-note"><b>${t('reviewRejectedNote')}:</b> ${escapeHtml(doc.reviewNote)}</span>` : ''}`;
+  const kebabBtn = li.querySelector('.doc-kebab-btn');
+  if(kebabBtn) kebabBtn.onclick = (e) => {
+    e.stopPropagation();
+    docActionsMenuFor = menuOpen ? null : doc.id;
+    render();
+  };
+  const actionMenu = li.querySelector('.doc-action-menu');
+  if(actionMenu) actionMenu.onclick = (e) => e.stopPropagation();
   if(!readOnly) li.querySelector('.doc-check').onclick = async () => {
     const next = doc.status==='done' ? 'pending' : 'done';
     try{
@@ -5885,7 +5917,7 @@ function buildEscrowForm(deal, task){
 // él — los clics del propio botón/menú ya llaman stopPropagation, así que
 // esto solo se dispara para clics genuinamente afuera.
 document.addEventListener('click', () => {
-  if(dealMenuOpenFor !== null){ dealMenuOpenFor = null; render(); }
+  if(dealMenuOpenFor !== null || docActionsMenuFor !== null){ dealMenuOpenFor = null; docActionsMenuFor = null; render(); }
 });
 
 // --- Aviso de versión nueva ---
