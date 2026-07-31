@@ -25,11 +25,35 @@ const { createRateLimiter } = require('./lib/rateLimit');
 
 const app = express();
 // Headers de seguridad estándar (X-Content-Type-Options, X-Frame-Options,
-// Strict-Transport-Security, etc.) — CSP se deja apagada a propósito: todo
-// el frontend es un solo public/index.html con <script>/<style> inline, y
-// la política por default de helmet bloquearía eso (haría falta moverlo a
-// archivos externos con nonce para poder prender CSP de verdad).
-app.use(helmet({ contentSecurityPolicy: false }));
+// Strict-Transport-Security, etc.) más una CSP de verdad: ya no hay NI UN
+// script inline en el portal (todo vive en public/js/*.js), así que
+// script-src puede ser 'self' a secas — si alguna vez se colara HTML de un
+// tercero con un <script> adentro, el navegador simplemente no lo corre.
+//
+// Lo que sí sigue necesitando 'unsafe-inline' es el estilo: la interfaz usa
+// atributos style="..." por todos lados. Eso es mucho menos grave (un
+// atributo de estilo no ejecuta código) y es el siguiente paso natural si
+// se quiere apretar más.
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com', 'https://cdnjs.cloudflare.com'],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com', 'https://cdnjs.cloudflare.com'],
+      // data: — los QR de 2FA se generan como data URI (ver routes/auth.js).
+      imgSrc: ["'self'", 'data:'],
+      connectSrc: ["'self'"],
+      // La firma embebida de DocuSign se abre en un iframe dentro del portal.
+      frameSrc: ["'self'", 'https://*.docusign.com', 'https://*.docusign.net'],
+      formAction: ["'self'"],
+      frameAncestors: ["'self'"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      upgradeInsecureRequests: []
+    }
+  }
+}));
 // 1mb en vez del default de 100kb — un KYC de entidad con muchos campos de
 // texto libre (o un contract_json grande) puede pasar de 100kb, y el 413
 // resultante era un error mudo e inexplicable para quien estaba llenando
