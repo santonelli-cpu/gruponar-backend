@@ -37,7 +37,48 @@
   .icon-btn:hover{background:var(--stone); color:var(--oxblood);}
   .tabs{display:flex; gap:8px; align-items:center;}
   .tab-btn{background:none; border:none; color:var(--ink-soft); padding:7px 16px; border-radius:999px; font-size:12.5px; font-weight:500; cursor:pointer; font-family:'Inter',sans-serif; transition:all 0.15s;}
-  .body-wrap{padding:24px 26px; min-height:400px;}
+  /* Menú lateral fijo (como Stripe/Linear): todas las secciones a la vista,
+     siempre en el mismo lugar, sin que nada de la página las empuje hacia
+     abajo. Dentro de una operación, sus secciones cuelgan del menú como
+     sub-elementos — no hay que bajar a buscar una barra de pestañas. */
+  .app-body{display:flex; align-items:stretch; min-height:520px;}
+  /* Se queda pegado al hacer scroll: en una lista larga de documentos la
+     navegación sigue a la vista, no hay que regresar hasta arriba. */
+  .sidebar{width:236px; flex-shrink:0; background:var(--stone-card); border-right:1px solid var(--line);
+    padding:18px 12px; display:flex; flex-direction:column; gap:2px;
+    position:sticky; top:0; align-self:flex-start; max-height:100vh; overflow-y:auto;}
+  .body-wrap{flex:1; min-width:0; padding:24px 26px; min-height:400px;}
+  .side-group{font-size:10.5px; letter-spacing:0.08em; text-transform:uppercase; color:var(--ink-faint);
+    font-weight:600; margin:18px 0 6px; padding:0 10px;}
+  .side-group:first-child{margin-top:0;}
+  .side-item{display:flex; align-items:center; gap:9px; width:100%; padding:8px 10px; border:0; border-radius:8px;
+    background:none; color:var(--ink-soft); font-size:13.5px; font-family:inherit; text-align:left; cursor:pointer;
+    line-height:1.25; transition:background 0.12s, color 0.12s;}
+  .side-item:hover{background:var(--stone); color:var(--ink);}
+  .side-item.active{background:var(--oxblood-soft); color:var(--oxblood-deep); font-weight:600;}
+  .side-item i{font-size:15px; flex-shrink:0; opacity:0.85;}
+  .side-item .side-count{margin-left:auto; background:var(--oxblood-deep); color:#F6F4F0; border-radius:9px;
+    font-size:10.5px; font-weight:600; min-width:18px; height:18px; display:inline-flex; align-items:center;
+    justify-content:center; padding:0 5px;}
+  .side-item.active .side-count{background:var(--oxblood);}
+  .side-sub{padding-left:20px; font-size:13px;}
+  .side-divider{height:1px; background:var(--line); margin:14px 4px;}
+  .side-account{border-top:1px solid var(--line); padding:12px 10px 2px; margin-top:8px;}
+  /* En pantalla chica el menú se acuesta arriba como una tira deslizable */
+  @media (max-width:900px){
+    .app-body{display:block;}
+    .sidebar{width:auto; max-height:none; flex-direction:row; align-items:center; overflow-x:auto; gap:6px;
+      border-right:0; border-bottom:1px solid var(--line); padding:8px 12px; scrollbar-width:none; z-index:40;}
+    .sidebar::-webkit-scrollbar{display:none;}
+    .side-group, .side-divider{display:none;}
+    .side-item{width:auto; flex-shrink:0; white-space:nowrap; border:1px solid var(--line-strong);
+      padding:6px 11px; font-size:12.5px;}
+    .side-item i{display:none;}
+    .side-sub{padding-left:11px;}
+    .side-account{border-top:0; border-left:1px solid var(--line); margin-top:0; padding:0 0 0 10px; flex-shrink:0;}
+    .side-account > div:first-child{display:none !important;}
+    .side-account > div:last-child{margin-top:0 !important;}
+  }
   .banner{background:var(--gold-soft); color:#5B4620; font-size:12px; padding:10px 14px; border-radius:10px; margin-bottom:18px; line-height:1.5;}
   .section-title{font-family:'Cormorant Garamond',serif; font-weight:600; font-size:19px; margin:0 0 12px; color:var(--oxblood-deep);}
   .section-label{font-size:11.5px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:var(--ink-faint); margin:0 0 10px;}
@@ -120,34 +161,6 @@
   .btn-spinner{display:inline-block; width:12px; height:12px; border:2px solid currentColor; border-top-color:transparent; border-radius:50%; animation:spin .7s linear infinite; vertical-align:-2px;}
   @keyframes spin{to{transform:rotate(360deg);}}
   /* Barra fija de secciones dentro del detalle de la operación */
-  /* Pestañas tipo "chip" (como los filtros de notificaciones de Stripe):
-     cajitas grandes con borde, la activa con borde grueso y fondo tenue, y
-     un contador rojo cuando la sección tiene pendientes — pensadas para
-     que se entiendan de un vistazo sin conocer la plataforma. */
-  .deal-section-nav{position:sticky; top:0; z-index:30; display:flex; gap:8px; overflow-x:auto; padding:10px 2px 8px; margin:0 0 6px;
-    background:var(--stone); scrollbar-width:none;}
-  .deal-section-nav::-webkit-scrollbar{display:none;}
-  .deal-section-nav button{flex-shrink:0; display:inline-flex; align-items:center; gap:7px; border:1px solid var(--line-strong);
-    background:var(--stone-card); color:var(--ink-soft); font-size:13px; padding:9px 15px; border-radius:10px; cursor:pointer;
-    white-space:nowrap; font-family:inherit; line-height:1.1;}
-  .deal-section-nav button:hover{border-color:var(--oxblood); color:var(--oxblood);}
-  .deal-section-nav button.active{border:2px solid var(--oxblood-deep); background:var(--oxblood-soft); color:var(--oxblood-deep);
-    font-weight:600; padding:8px 14px;}
-  .deal-section-nav button.active:hover{background:var(--oxblood-soft); color:var(--oxblood-deep);}
-  .deal-section-nav .tab-count{background:var(--oxblood-deep); color:#F6F4F0; border-radius:9px; font-size:11px; font-weight:600;
-    min-width:18px; height:18px; display:inline-flex; align-items:center; justify-content:center; padding:0 5px;}
-  /* Campana de notificaciones (navbar) — panel estilo Stripe con chips de
-     filtro Todo / Acción requerida / Actualizaciones */
-  #notif-panel{position:fixed; top:58px; right:16px; width:min(430px, calc(100vw - 24px)); max-height:72vh; overflow-y:auto;
-    background:var(--stone-card); border:0.5px solid var(--line); border-radius:14px; box-shadow:0 10px 34px rgba(33,22,19,0.2); z-index:90; padding:16px;}
-  .notif-chip{border:1px solid var(--line-strong); background:var(--stone-card); color:var(--ink-soft); font-size:12.5px; padding:8px 13px;
-    border-radius:10px; cursor:pointer; font-family:inherit; display:inline-flex; align-items:center; gap:6px; line-height:1.1;}
-  .notif-chip.active{border:2px solid var(--oxblood-deep); background:var(--oxblood-soft); color:var(--oxblood-deep); font-weight:600; padding:7px 12px;}
-  .notif-chip .tab-count{background:var(--oxblood-deep); color:#F6F4F0; border-radius:9px; font-size:10.5px; font-weight:600;
-    min-width:17px; height:17px; display:inline-flex; align-items:center; justify-content:center; padding:0 4px;}
-  .notif-item{display:flex; gap:10px; padding:9px 4px; border-bottom:0.5px solid var(--line); cursor:pointer; align-items:flex-start; border-radius:8px;}
-  .notif-item:hover{background:var(--stone);}
-  .notif-item:last-child{border-bottom:0;}
   /* Menú "···" de acciones por documento del checklist (vista staff) */
   .doc-action-menu{position:absolute; top:32px; right:0; background:var(--stone-card); border:0.5px solid var(--line); border-radius:10px; box-shadow:0 4px 16px rgba(33,22,19,0.14); z-index:6; min-width:220px; overflow:hidden;}
   .doc-action-menu button{display:flex; align-items:center; gap:8px; width:100%; background:none; border:0; padding:9px 14px; font-size:12.5px; font-family:inherit; color:var(--ink); cursor:pointer; text-align:left;}
@@ -204,11 +217,13 @@
   .step-label{font-size:11px; font-weight:500; color:var(--ink-soft); max-width:92px; line-height:1.3;}
   .step.current .step-label{color:var(--oxblood); font-weight:600;}
 
+  /* Cajas de resumen — cada dato en su propia tarjeta con borde (más
+     legible que bloques grises pegados) y el número grande al frente. */
   .stat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:18px;}
-  .stat-tile{background:var(--stone); border-radius:12px; padding:12px 14px;}
-  .stat-tile .label{font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.05em; font-weight:500; margin:0 0 4px;}
-  .stat-tile .value{font-size:16px; font-weight:600; margin:0;}
-  .stat-tile .sub{font-size:11px; color:var(--ink-faint); margin-top:2px;}
+  .stat-tile{background:var(--stone-card); border:1px solid var(--line); border-radius:12px; padding:14px 16px;}
+  .stat-tile .label{font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.05em; font-weight:600; margin:0 0 6px;}
+  .stat-tile .value{font-size:21px; font-weight:600; margin:0; letter-spacing:-0.01em; line-height:1.15;}
+  .stat-tile .sub{font-size:11.5px; color:var(--ink-faint); margin-top:3px;}
 
   .callout{display:flex; align-items:center; justify-content:space-between; gap:16px; background:var(--gold-soft); border-left:3px solid var(--oxblood); border-radius:12px; padding:14px 16px;}
   .callout-text{font-size:13px; color:var(--oxblood-deep); line-height:1.5;}
@@ -305,7 +320,10 @@
     </div>
   </div>
   <div id="notif-panel" style="display:none;"></div>
-  <div class="body-wrap" id="body"></div>
+  <div class="app-body">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="body-wrap" id="body"></div>
+  </div>
 </div>
 
 <script>
@@ -717,6 +735,7 @@ const STRINGS = {
     notifDocApproved: 'Documento aprobado', notifDocRejected: 'Documento rechazado — súbelo de nuevo',
     kycAutoFilledFrom: 'Se llena solo con los datos de "{source}" — no hay que capturarlos otra vez.',
     kycSecondSignature: 'Falta una firma más: el expediente de LPR Luxury.',
+    sideMain: 'Plataforma', sideSections: 'Esta operación', tabOverview: 'Resumen',
     eSignHintStaff: 'Sube el documento y envíalo a firma — comprador y vendedor firman de forma embebida, sin salir de la plataforma.',
     eSignHintClient: 'Cuando tu coordinador envíe un documento a firma, aparecerá aquí para que lo firmes en línea.',
     docusignNotSent: 'Sin enviar', docusignSent: 'Enviado', docusignDelivered: 'Entregado', docusignCompleted: 'Firmado', docusignDeclined: 'Rechazado', docusignVoided: 'Anulado',
@@ -1005,6 +1024,7 @@ const STRINGS = {
     notifDocApproved: 'Document approved', notifDocRejected: 'Document rejected — please upload it again',
     kycAutoFilledFrom: 'Filled in automatically from "{source}" — no need to type it again.',
     kycSecondSignature: 'One more signature to go: the LPR Luxury record.',
+    sideMain: 'Platform', sideSections: 'This deal', tabOverview: 'Overview',
     eSignHintStaff: 'Upload the document and send it for signature — buyer and seller sign embedded, without leaving the platform.',
     eSignHintClient: "When your coordinator sends a document for signature, it'll show up here for you to sign online.",
     docusignNotSent: 'Not sent', docusignSent: 'Sent', docusignDelivered: 'Delivered', docusignCompleted: 'Signed', docusignDeclined: 'Declined', docusignVoided: 'Voided',
@@ -1492,6 +1512,100 @@ function currentViewKey(){
   return [authenticated, mainTab, adminView, activeDealId, dealDetailTab, portalRole, portalPartyId, portalTab].join('|');
 }
 
+// ---------- MENÚ LATERAL ----------
+// Una sola columna fija a la izquierda con TODO lo navegable: las secciones
+// de la plataforma y, cuando hay una operación abierta, sus secciones
+// colgando debajo. Antes esto vivía en dos barras dentro del contenido, y
+// cualquier cosa que creciera arriba (el aviso de "te toca a ti", por
+// ejemplo) empujaba la navegación fuera de la pantalla.
+function sidebarGroup(title){
+  const el = document.createElement('div');
+  el.className = 'side-group';
+  el.textContent = title;
+  document.getElementById('sidebar').appendChild(el);
+}
+
+function sidebarItem({ label, icon, count, active, sub, onClick }){
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'side-item' + (active ? ' active' : '') + (sub ? ' side-sub' : '');
+  btn.innerHTML = `${icon ? `<i class="ti ${icon}" aria-hidden="true"></i>` : ''}<span>${escapeHtml(label)}</span>${count ? `<span class="side-count">${count}</span>` : ''}`;
+  btn.onclick = onClick;
+  document.getElementById('sidebar').appendChild(btn);
+  return btn;
+}
+
+function sidebarDivider(){
+  const el = document.createElement('div');
+  el.className = 'side-divider';
+  document.getElementById('sidebar').appendChild(el);
+}
+
+// Las secciones de una operación (admin o Portal) — se llaman desde la
+// vista que las conoce, para no duplicar aquí la lógica de qué pestañas
+// aplican a quién.
+function sidebarSections(tabs, activeId, onSelect){
+  sidebarGroup(t('sideSections'));
+  tabs.forEach(([id, label, count]) => sidebarItem({
+    label, count, sub: true, active: activeId === id, onClick: () => onSelect(id)
+  }));
+}
+
+// Pie del menú: quién está adentro, con acceso a su perfil y a salir —
+// como el selector de cuenta de Stripe. Antes esto era una tarjeta grande
+// arriba del contenido que había que saltarse en cada pantalla.
+function buildSidebarAccount(){
+  const el = document.getElementById('sidebar');
+  const spacer = document.createElement('div');
+  spacer.style.cssText = 'flex:1; min-height:16px;';
+  el.appendChild(spacer);
+  const box = document.createElement('div');
+  box.className = 'side-account';
+  box.innerHTML = `
+    <div style="display:flex; align-items:center; gap:9px; min-width:0;">
+      ${avatarHtml(currentUser, 30)}
+      <div style="min-width:0;">
+        <div style="font-size:12.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(currentUser.name)}</div>
+        <div style="font-size:11px; color:var(--ink-faint);">${roleDisplayLabel(currentUser.role)}</div>
+      </div>
+    </div>
+    <div style="display:flex; gap:6px; margin-top:8px;">
+      <button class="btn" id="side-prof" style="font-size:11px; padding:5px 10px; flex:1;"><i class="ti ti-user-edit" aria-hidden="true"></i> ${t('editProfile')}</button>
+      <button class="btn" id="side-logout" style="font-size:11px; padding:5px 10px;" title="${t('logout')}"><i class="ti ti-logout" aria-hidden="true"></i></button>
+    </div>
+  `;
+  el.appendChild(box);
+  box.querySelector('#side-logout').onclick = logout;
+  box.querySelector('#side-prof').onclick = () => {
+    profileEditOpen = !profileEditOpen;
+    if(profileEditOpen && mainTab === 'admin' && (activeDealId || adminView === 'newDeal')){ activeDealId = null; adminView = 'list'; }
+    render();
+  };
+}
+
+function buildSidebar(){
+  const el = document.getElementById('sidebar');
+  el.innerHTML = '';
+  el.style.display = authenticated ? '' : 'none';
+  if(!authenticated) return;
+
+  if(mainTab === 'admin'){
+    sidebarGroup(t('sideMain'));
+    sidebarItem({ label: t('navDashboard'), icon: 'ti-layout-dashboard', active: adminView === 'dashboard',
+      onClick: () => { adminView='dashboard'; activeDealId=null; loadDashboard(); } });
+    sidebarItem({ label: t('navOperations'), icon: 'ti-building-estate', active: adminView === 'list' || !!activeDealId || adminView === 'newDeal',
+      onClick: () => { adminView='list'; activeDealId=null; render(); } });
+    if(currentUser.role === 'admin'){
+      sidebarItem({ label: t('navTeam'), icon: 'ti-users', count: pendingUsers && pendingUsers.length, active: adminView === 'team',
+        onClick: () => { adminView='team'; activeDealId=null; render(); } });
+      sidebarItem({ label: t('navClients'), icon: 'ti-address-book', active: adminView === 'clients',
+        onClick: () => { adminView='clients'; activeDealId=null; render(); } });
+      sidebarItem({ label: t('navTrash'), icon: 'ti-trash', count: trashedDeals && trashedDeals.length, active: adminView === 'trash',
+        onClick: () => { adminView='trash'; activeDealId=null; loadTrash(); } });
+    }
+  }
+}
+
 function render(){
   const viewKey = currentViewKey();
   const sameView = viewKey === _lastViewKey;
@@ -1523,6 +1637,7 @@ function renderInner(){
   const body = document.getElementById('body');
   body.style.padding = authenticated ? '' : '0';
   body.innerHTML = '';
+  buildSidebar();
   if(checkingSession){
     body.innerHTML = `<div class="empty"><i class="ti ti-loader-2" aria-hidden="true"></i><div>${t('checkingSession')}</div></div>`;
     return;
@@ -1537,6 +1652,9 @@ function renderInner(){
   if(adminTabBtn) adminTabBtn.style.display = ['admin','agent','lawyer','external_lawyer'].includes(currentUser.role) ? '' : 'none';
   if(mainTab === 'admin') renderAdmin(body);
   else renderPortal(body);
+  // Al final, para que quede hasta abajo del menú: las secciones de la
+  // operación abierta se agregan durante renderAdmin/renderPortal.
+  buildSidebarAccount();
 }
 
 // Panel izquierdo de marca (logo + mensaje) compartido entre login/registro/
@@ -2108,50 +2226,16 @@ function buildProfileEditor(){
 
 function renderAdmin(body){
   if(adminView === 'list' || adminView === 'dashboard' || adminView === 'team' || adminView === 'clients' || adminView === 'trash' || adminView === null){
-    const secCard = document.createElement('div');
-    secCard.className = 'card';
-    secCard.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:14px;">
-        <div style="display:flex; gap:14px;">
-          ${avatarHtml(currentUser, 44)}
-          <div>
-            <div style="font-size:12px; color:var(--ink-soft);">${t('activeSession')}</div>
-            <div style="font-weight:600; font-size:15px; margin:2px 0 8px;">${escapeHtml(currentUser.name)} <span style="font-weight:400; color:var(--ink-soft); font-size:12.5px;">— ${escapeHtml(currentUser.email)}</span></div>
-            <span class="badge" style="background:var(--oxblood-soft); color:var(--oxblood);">${roleDisplayLabel(currentUser.role)}</span>
-            ${currentUser.agency ? `<span class="badge" style="background:var(--stone); border:0.5px solid var(--line); color:var(--ink-soft); margin-left:4px;">${escapeHtml(currentUser.agency)}</span>` : ''}
-            ${currentUser.bio ? `<div class="field-hint" style="margin-top:8px; max-width:520px;">${escapeHtml(currentUser.bio)}</div>` : ''}
-            <div class="field-hint" style="margin-top:10px; max-width:520px;">${t('sessionHint')}</div>
-          </div>
-        </div>
-        <div style="display:flex; gap:8px;">
-          <button class="btn" id="prof-toggle"><i class="ti ti-user-edit" aria-hidden="true"></i> ${t('editProfile')}</button>
-          <button class="btn" id="do-logout"><i class="ti ti-logout" aria-hidden="true"></i> ${t('logout')}</button>
-        </div>
-      </div>
-    `;
-    body.appendChild(secCard);
-    secCard.querySelector('#do-logout').onclick = logout;
-    secCard.querySelector('#prof-toggle').onclick = () => { profileEditOpen = !profileEditOpen; render(); };
-    if(profileEditOpen) secCard.appendChild(buildProfileEditor());
-
-    const nav = document.createElement('div');
-    nav.style.cssText = 'display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;';
-    nav.innerHTML = `
-      <button class="btn ${adminView==='dashboard'?'primary':''}" id="nav-dashboard">${t('navDashboard')}</button>
-      <button class="btn ${adminView==='list'?'primary':''}" id="nav-list">${t('navOperations')}</button>
-      ${currentUser.role==='admin' ? `<button class="btn ${adminView==='team'?'primary':''}" id="nav-team">${t('navTeam')}${pendingUsers && pendingUsers.length ? ` (${pendingUsers.length})` : ''}</button>` : ''}
-      ${currentUser.role==='admin' ? `<button class="btn ${adminView==='clients'?'primary':''}" id="nav-clients">${t('navClients')}</button>` : ''}
-      ${currentUser.role==='admin' ? `<button class="btn ${adminView==='trash'?'primary':''}" id="nav-trash">${t('navTrash')}${trashedDeals && trashedDeals.length ? ` (${trashedDeals.length})` : ''}</button>` : ''}
-    `;
-    body.appendChild(nav);
-    nav.querySelector('#nav-dashboard').onclick = () => { adminView='dashboard'; activeDealId=null; loadDashboard(); };
-    nav.querySelector('#nav-list').onclick = () => { adminView='list'; activeDealId=null; render(); };
-    const teamBtn = nav.querySelector('#nav-team');
-    if(teamBtn) teamBtn.onclick = () => { adminView='team'; activeDealId=null; render(); };
-    const clientsBtn = nav.querySelector('#nav-clients');
-    if(clientsBtn) clientsBtn.onclick = () => { adminView='clients'; activeDealId=null; render(); };
-    const trashBtn = nav.querySelector('#nav-trash');
-    if(trashBtn) trashBtn.onclick = () => { adminView='trash'; activeDealId=null; loadTrash(); };
+    // La tarjeta de sesión se fue al pie del menú lateral (quien la ve todo
+    // el día ya sabe quién es); aquí solo aparece el editor de perfil
+    // cuando lo abre a propósito.
+    if(profileEditOpen){
+      const profCard = document.createElement('div');
+      profCard.className = 'card';
+      profCard.innerHTML = `<div class="section-title" style="margin:0;">${t('editProfile')}</div>`;
+      profCard.appendChild(buildProfileEditor());
+      body.appendChild(profCard);
+    }
   }
 
   if(adminView === 'team'){
@@ -3455,23 +3539,6 @@ function buildPartiesSection(deal){
   return wrap;
 }
 
-// Barra de pestañas tipo chip compartida entre el detalle admin y el Portal
-// — tabs es [[id, label, pendingCount], ...]; el contador solo aparece si
-// hay pendientes en esa sección.
-function buildSectionTabsNav(tabs, activeId, onSelect){
-  const nav = document.createElement('nav');
-  nav.className = 'deal-section-nav';
-  tabs.forEach(([id, label, count]) => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.innerHTML = `${escapeHtml(label)}${count ? ` <span class="tab-count">${count}</span>` : ''}`;
-    if(activeId === id) btn.classList.add('active');
-    btn.onclick = () => onSelect(id);
-    nav.appendChild(btn);
-  });
-  return nav;
-}
-
 function buildAdminDealDetail(deal){
   const s = SCENARIOS[deal.scenario];
   const wrap = document.createElement('div');
@@ -3497,7 +3564,7 @@ function buildAdminDealDetail(deal){
     ['contract', t('navSecContract'), 0],
     ['activity', t('navSecActivity'), 0]
   ];
-  wrap.appendChild(buildSectionTabsNav(TABS, dealDetailTab, (id) => { dealDetailTab = id; render(); }));
+  sidebarSections(TABS, dealDetailTab, (id) => { dealDetailTab = id; render(); });
   const tab = dealDetailTab;
   // Los IDs siguen sirviendo como anclas DENTRO de su pestaña (ej. el link
   // "ir a la sección de KYC" del tracker cambia de pestaña y luego scrollea).
@@ -5729,39 +5796,6 @@ function buildNextStepCallout(deal, myParty){
   return box;
 }
 
-// Tarjetas de operación en scroller horizontal (una fila, se desliza en vez
-// de apilarse) — para un comprador/vendedor/agente con más de una operación
-// activa, o admin/abogado en vista previa. Reemplaza el dropdown plano que
-// era la única forma de moverse entre operaciones en el portal.
-function buildPortalDealsDashboard(){
-  const scroller = document.createElement('div');
-  scroller.className = 'op-scroller';
-  deals.forEach(d => {
-    const s = SCENARIOS[d.scenario];
-    const myParty = myPartyInDeal(d);
-    // Si quien mira es la propia parte (comprador/vendedor real, o staff
-    // previsualizando esa parte), la etiqueta de arriba dice su lado —
-    // igual que el mockup ("BUYER"/"SELLER"). Si no (staff viendo "todo"),
-    // se queda el badge corto del escenario, que ya identifica la operación.
-    const roleLabel = myParty ? (myParty.side === 'seller' ? t('sellerLabel2') : t('buyerLabel2')) : s.labelShort;
-    const pct = overallPct(d);
-    const card = document.createElement('div');
-    card.className = 'op-card' + (d.id === portalDealId ? ' active' : '');
-    card.innerHTML = `
-      <div class="op-card-top">
-        <span class="op-role">${escapeHtml(roleLabel.toUpperCase())}</span>
-        ${d.id === portalDealId ? `<div class="op-check"><i class="ti ti-check" aria-hidden="true"></i></div>` : ''}
-      </div>
-      <p class="op-title">${escapeHtml(d.property)}</p>
-      <p class="op-addr">${DEVELOPMENT_LABEL[d.development||'punta_mita'].split(' (')[0]} &middot; ${escapeHtml(s.labelShort)}</p>
-      <div class="op-bar"><div class="op-bar-fill" style="width:${pct}%"></div></div>
-      <span class="op-pct">${t('pctComplete', { pct })}</span>
-    `;
-    card.onclick = () => { portalDealId = d.id; portalRole = 'agent'; portalPartyId = null; render(); };
-    scroller.appendChild(card);
-  });
-  return scroller;
-}
 function renderPortal(body){
   // Solo admin/agente/abogado pueden "ver como" cualquier persona — es una
   // vista previa interna. Un comprador/vendedor real siempre ve solo su
@@ -5793,10 +5827,16 @@ function renderPortal(body){
   if(portalDealId && !deals.some(d => d.id === portalDealId)) portalDealId = null;
   if(!portalDealId) portalDealId = deals[0].id;
 
+  // Con varias operaciones (agente con varios clientes, o admin/abogado en
+  // vista previa) la lista vive en el menú lateral, arriba de las secciones
+  // de la que está abierta — como Stripe: siempre visible, sin robarle
+  // altura al contenido.
   if(deals.length > 1){
-    const dt = document.createElement('div'); dt.className = 'section-label'; dt.textContent = t('yourOperations');
-    body.appendChild(dt);
-    body.appendChild(buildPortalDealsDashboard());
+    sidebarGroup(t('yourOperations'));
+    deals.forEach(d => sidebarItem({
+      label: d.property, sub: true, active: d.id === portalDealId,
+      onClick: () => { portalDealId = d.id; portalRole = 'agent'; portalPartyId = null; render(); }
+    }));
   }
 
   const deal = deals.find(d=>d.id===portalDealId);
@@ -5835,38 +5875,25 @@ function renderPortal(body){
     myParty = deal.parties.find(p => p.linkedUserIds.includes(currentUser.id)) || null;
   }
 
-  const header = document.createElement('div');
-  header.className = 'card';
-  header.innerHTML = `
-    <div class="deal-title" style="font-size:17px;">${escapeHtml(deal.property)}</div>
-    <span class="badge ${s.badgeClass}">${s.labelShort}</span>
-    <div class="deal-sub" style="margin-top:6px;">${escapeHtml(dealPartyNames(deal,'seller'))} → ${escapeHtml(dealPartyNames(deal,'buyer'))}</div>
-  `;
-  const stepper = buildClosingStepper(deal);
-  if(stepper) header.appendChild(stepper);
-  header.appendChild(buildPortalStatGrid(deal, myParty));
-  const callout = buildNextStepCallout(deal, myParty);
-  if(callout) header.appendChild(callout);
-  body.appendChild(header);
-
-  // Pestañas — la misma navegación clara del detalle de Operaciones: el
-  // encabezado (avance + "te toca a ti") siempre visible y abajo UNA
-  // sección a la vez, con contador rojo donde hay pendientes. La pestaña
-  // se resetea al cambiar de operación o de "ver como".
+  // "Resumen" es su propia sección (como el "Tu resumen" de Stripe): ahí
+  // viven el avance, las cifras y el "te toca a ti". En las demás secciones
+  // solo queda una franja con el nombre de la operación, para que lo que
+  // fuiste a ver salga de inmediato sin bajar por todo el encabezado.
   const hasSignTasks = deal.tasks.some(tk => tk.sign);
   const pendingSignsCount = deal.tasks.filter(tk => tk.sign && tk.docusignStatus !== 'completed').length;
   const myPendingDocs = myParty ? deal.documents.filter(d => d.partyId === myParty.id && d.status !== 'done').length : 0;
   const allPendingDocs = deal.documents.filter(d => d.status !== 'done').length;
-  const TABS = myParty ? [
-    ['mydocs', t('tabYourDocs'), myPendingDocs],
-    ['kyc', t('tabYourKyc'), 0],
-    ['property', t('propertySection'), 0],
-    ['costs', t('tabCosts'), 0],
-    ['contract', t('contractPromiseShort'), 0],
-    ...(hasSignTasks ? [['signatures', t('eSignature'), pendingSignsCount]] : []),
-    ['tracker', t('tabTracker'), 0]
-  ] : [
-    ['docs', t('tabDocs'), allPendingDocs],
+  const waitingCount = myParty
+    ? (() => { const { uploads, signatures } = pendingItemsForParty(deal, myParty); return uploads.length + signatures.length; })()
+    : 0;
+  const TABS = [
+    ['overview', t('tabOverview'), waitingCount],
+    ...(myParty ? [
+      ['mydocs', t('tabYourDocs'), myPendingDocs],
+      ['kyc', t('tabYourKyc'), 0]
+    ] : [
+      ['docs', t('tabDocs'), allPendingDocs]
+    ]),
     ['property', t('propertySection'), 0],
     ['costs', t('tabCosts'), 0],
     ['contract', t('contractPromiseShort'), 0],
@@ -5874,9 +5901,25 @@ function renderPortal(body){
     ['tracker', t('tabTracker'), 0]
   ];
   const tabKey = `${deal.id}|${myParty ? myParty.id : 'all'}`;
-  if(portalTabKey !== tabKey){ portalTabKey = tabKey; portalTab = myParty ? 'mydocs' : 'docs'; }
+  if(portalTabKey !== tabKey){ portalTabKey = tabKey; portalTab = 'overview'; }
   if(!TABS.some(([id]) => id === portalTab)) portalTab = TABS[0][0];
-  body.appendChild(buildSectionTabsNav(TABS, portalTab, (id) => { portalTab = id; render(); }));
+  sidebarSections(TABS, portalTab, (id) => { portalTab = id; render(); });
+
+  const header = document.createElement('div');
+  header.className = 'card';
+  header.innerHTML = `
+    <div class="deal-title" style="font-size:17px;">${escapeHtml(deal.property)}</div>
+    <span class="badge ${s.badgeClass}">${s.labelShort}</span>
+    <div class="deal-sub" style="margin-top:6px;">${escapeHtml(dealPartyNames(deal,'seller'))} → ${escapeHtml(dealPartyNames(deal,'buyer'))}</div>
+  `;
+  if(portalTab === 'overview'){
+    const stepper = buildClosingStepper(deal);
+    if(stepper) header.appendChild(stepper);
+    header.appendChild(buildPortalStatGrid(deal, myParty));
+    const callout = buildNextStepCallout(deal, myParty);
+    if(callout) header.appendChild(callout);
+  }
+  body.appendChild(header);
 
   if(portalTab === 'property'){
     const pt = document.createElement('div'); pt.className='section-title'; pt.id='portal-property-section'; pt.textContent=t('propertySection');
