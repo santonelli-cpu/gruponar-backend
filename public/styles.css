@@ -7,6 +7,7 @@
     --jade:#3E6B52; --jade-soft:#DEE9E2;
     --line:rgba(33,22,19,0.12); --line-strong:rgba(33,22,19,0.24);
     --shadow-card:0 1px 2px rgba(33,22,19,0.04), 0 8px 20px -12px rgba(33,22,19,0.12);
+    --nav-h:64px;
   }
   *{box-sizing:border-box;}
   /* Armazón de aplicación de altura completa (como Stripe/Linear): la barra
@@ -85,17 +86,66 @@
   .menu-toggle{display:none;}
   .sidebar-scrim{display:none;}
   @media (max-width:900px){
-    .menu-toggle{display:inline-flex;}
-    /* Una sola fila compacta: menú, marca y acciones. El descriptivo
+    /* El botón de menú desaparece en celular: la barra inferior ya trae las
+       secciones a la vista y su propio "Más" abre el cajón. Dejarlo era
+       repetir la misma puerta dos veces y apretar la barra de arriba. */
+    .menu-toggle{display:none;}
+    /* Una sola fila compacta: marca y acciones. El descriptivo
        "COORDINACIÓN DE CIERRES" es decorativo y en el celular empujaba
        todo a tres renglones. */
     .head-band{padding:10px 12px; gap:8px; flex-wrap:nowrap;}
+    /* "Portal cliente / agente" no cabe; en celular basta "Portal". */
+    .seg .tab-btn{padding:6px 12px; font-size:12px;}
+    #tab-portal{font-size:0;}
+    #tab-portal::after{content:'Portal'; font-size:12px;}
     .navbar-caption, .navbar-divider{display:none;}
     .brand-mark{gap:8px; min-width:0;}
     .brand-mark svg{width:22px; height:22px;}
     .navbar-wordmark{font-size:15px; letter-spacing:0.5px;}
     .nav-actions{gap:6px;}
     .navbar-pill{padding:7px 11px; font-size:12px;}
+    /* Hueco para la barra inferior (y para la barra de inicio del iPhone) */
+    .body-wrap{padding-bottom:calc(var(--nav-h) + env(safe-area-inset-bottom) + 12px);}
+    .sidebar{padding-bottom:calc(18px + env(safe-area-inset-bottom));}
+  }
+  /* ---- Barra inferior de navegación (solo celular) ----
+     Lo que un ícono de hamburguesa nunca logra: que las secciones estén a
+     la vista y al alcance del pulgar. Quien entra por primera vez ve de
+     inmediato que hay más que la pantalla en la que cayó. */
+  .bottom-nav{display:none;}
+  @media (max-width:900px){
+    .bottom-nav{display:block; position:fixed; left:0; right:0; bottom:0; z-index:70;
+      background:var(--stone-card); border-top:0.5px solid var(--line);
+      padding-bottom:env(safe-area-inset-bottom); box-shadow:0 -2px 12px rgba(33,22,19,0.05);}
+    .bottom-nav-inner{height:var(--nav-h); display:flex; justify-content:space-around; align-items:center;}
+    .bottom-nav button{flex:1; min-width:0; border:0; background:none; cursor:pointer; font-family:inherit;
+      display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px 4px;
+      font-size:10.5px; color:var(--ink-faint); position:relative;}
+    .bottom-nav button i{font-size:21px;}
+    .bottom-nav button span{max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+    .bottom-nav button.active{color:var(--oxblood-deep); font-weight:600;}
+    .bottom-nav .nav-count{position:absolute; top:2px; left:50%; margin-left:6px; background:var(--oxblood-deep);
+      color:#F6F4F0; border-radius:9px; font-size:9.5px; font-weight:600; min-width:16px; height:16px;
+      display:inline-flex; align-items:center; justify-content:center; padding:0 4px;}
+  }
+  /* ---- Pestañas horizontales de la operación (solo celular) ----
+     Dentro de una operación hay ocho secciones: demasiadas para la barra
+     inferior, así que van en un carrusel de píldoras arriba del contenido,
+     con su contador de pendientes. */
+  .section-pills{display:none;}
+  @media (max-width:900px){
+    .section-pills{display:flex; gap:8px; overflow-x:auto; padding:2px 0 12px; margin:0 0 4px;
+      scrollbar-width:none; -webkit-overflow-scrolling:touch;}
+    .section-pills::-webkit-scrollbar{display:none;}
+    .section-pills button{flex:0 0 auto; display:inline-flex; align-items:center; gap:6px;
+      border:0.5px solid var(--line); background:var(--stone-card); color:var(--ink-soft);
+      font-size:13px; padding:8px 14px; border-radius:999px; white-space:nowrap; cursor:pointer;
+      font-family:inherit;}
+    .section-pills button.active{border-color:var(--oxblood); background:var(--oxblood-soft);
+      color:var(--oxblood-deep); font-weight:600;}
+    .section-pills .pill-count{background:var(--oxblood-deep); color:#F6F4F0; border-radius:9px;
+      font-size:10px; font-weight:600; min-width:16px; height:16px; display:inline-flex;
+      align-items:center; justify-content:center; padding:0 4px;}
   }
   /* En celular de verdad ya no cabe la marca escrita junto al botón de menú
      y las acciones — se queda solo el emblema, que igual identifica. */

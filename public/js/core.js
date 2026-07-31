@@ -478,6 +478,12 @@ function currentViewKey(){
 // Cajón del menú en ventana angosta — abrir/cerrar y cerrarse solo al
 // elegir una sección (si no, tapa justo lo que acabas de abrir).
 let _activeSectionLabel = '';
+// El menú lateral, como datos: secciones de la plataforma, operaciones del
+// Portal y secciones de la operación abierta. En celular se re-dibujan como
+// barra inferior y como píldoras (ver buildMobileNav en app.js).
+let _sidebarAppItems = [];
+let _sidebarDealItems = [];
+let _sidebarSectionItems = [];
 
 function setSidebarOpen(open){
   document.getElementById('sidebar').classList.toggle('open', open);
@@ -494,11 +500,16 @@ function sidebarGroup(title){
   document.getElementById('sidebar').appendChild(el);
 }
 
-function sidebarItem({ label, icon, count, active, sub, onClick }){
+function sidebarItem({ label, icon, count, active, sub, group, onClick }){
   // La última sección activa que se agrega es la más específica (las de la
   // operación van después de las de la plataforma) — es la que el botón de
   // menú muestra en pantalla angosta.
   if(active) _activeSectionLabel = label;
+  // El mismo menú alimenta, en celular, la barra inferior y el carrusel de
+  // píldoras (ver buildMobileNav) — se guarda como datos para no tener que
+  // escribir esa navegación por segunda vez en cada vista.
+  (group === 'sections' ? _sidebarSectionItems : group === 'deals' ? _sidebarDealItems : _sidebarAppItems)
+    .push({ label, icon, count, active, onClick });
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'side-item' + (active ? ' active' : '') + (sub ? ' side-sub' : '');
@@ -520,7 +531,7 @@ function sidebarDivider(){
 function sidebarSections(tabs, activeId, onSelect){
   sidebarGroup(t('sideSections'));
   tabs.forEach(([id, label, count]) => sidebarItem({
-    label, count, sub: true, active: activeId === id, onClick: () => onSelect(id)
+    label, count, sub: true, group: 'sections', active: activeId === id, onClick: () => onSelect(id)
   }));
 }
 
@@ -562,6 +573,7 @@ function buildSidebar(){
   el.style.display = authenticated ? '' : 'none';
   document.getElementById('menu-toggle').style.visibility = authenticated ? 'visible' : 'hidden';
   _activeSectionLabel = '';
+  _sidebarAppItems = []; _sidebarDealItems = []; _sidebarSectionItems = [];
   if(!authenticated){ setSidebarOpen(false); return; }
 
   if(mainTab === 'admin'){
@@ -642,6 +654,9 @@ function renderInner(){
   // que hay más secciones y no solo la pantalla que se abrió.
   const menuLabel = document.querySelector('#menu-toggle .menu-label');
   if(menuLabel) menuLabel.textContent = _activeSectionLabel || t('menuLabel');
+  // La misma navegación, re-dibujada para el pulgar (ver app.js).
+  buildMobileNav();
+  buildMobileSectionPills();
 }
 
 // Panel izquierdo de marca (logo + mensaje) compartido entre login/registro/

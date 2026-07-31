@@ -263,7 +263,7 @@ function renderPortal(body){
       onClick: () => { portalView = 'overview'; render(); }
     });
     deals.forEach(d => sidebarItem({
-      label: d.property, sub: true, active: portalView === 'deal' && d.id === portalDealId,
+      label: d.property, sub: true, group: 'deals', active: portalView === 'deal' && d.id === portalDealId,
       onClick: () => { portalView = 'deal'; portalDealId = d.id; portalRole = 'agent'; portalPartyId = null; render(); }
     }));
     if(portalView === 'overview'){
@@ -321,6 +321,10 @@ function renderPortal(body){
   const waitingCount = myParty
     ? (() => { const { uploads, signatures } = pendingItemsForParty(deal, myParty); return uploads.length + signatures.length; })()
     : 0;
+  // Orden por lo que le TOCA hacer al cliente, no por cómo está organizado
+  // el expediente: primero sus documentos, su KYC y sus firmas; después lo
+  // de consulta (propiedad, gastos, contrato, seguimiento). En celular las
+  // primeras cuatro son además las que caben en la barra inferior.
   const TABS = [
     ['overview', t('tabOverview'), waitingCount],
     ...(myParty ? [
@@ -329,10 +333,10 @@ function renderPortal(body){
     ] : [
       ['docs', t('tabDocs'), allPendingDocs]
     ]),
+    ...(hasSignTasks ? [['signatures', t('eSignature'), pendingSignsCount]] : []),
     ['property', t('propertySection'), 0],
     ['costs', t('tabCosts'), 0],
     ['contract', t('contractPromiseShort'), 0],
-    ...(hasSignTasks ? [['signatures', t('eSignature'), pendingSignsCount]] : []),
     ['tracker', t('tabTracker'), 0]
   ];
   const tabKey = `${deal.id}|${myParty ? myParty.id : 'all'}`;

@@ -138,5 +138,78 @@ document.addEventListener('click', (e) => {
   if(notifOpen && !e.target.closest('#notif-panel')){ notifOpen = false; renderNotifPanel(); }
 });
 
+// ---------- NAVEGACIÓN DE CELULAR ----------
+// El menú lateral es de escritorio. En celular la misma navegación se
+// re-dibuja donde el pulgar alcanza: una barra fija abajo con lo principal
+// (siempre a la vista, sin tener que descubrir un ícono) y, dentro de una
+// operación, un carrusel de píldoras con sus secciones. Todo sale de los
+// mismos datos que arma buildSidebar, no hay una segunda lista que
+// mantener.
+function isNarrow(){ return window.matchMedia('(max-width:900px)').matches; }
+
+function buildMobileNav(){
+  const nav = document.getElementById('bottom-nav');
+  nav.innerHTML = '';
+  if(!authenticated){ nav.style.display = 'none'; return; }
+  nav.style.display = '';
+
+  // En el Portal el "nivel superior" del cliente son las secciones de SU
+  // operación: es toda su app. En Admin son las áreas de la plataforma.
+  const inPortalDeal = mainTab === 'portal' && _sidebarSectionItems.length;
+  const source = inPortalDeal ? _sidebarSectionItems : _sidebarAppItems;
+  const ICONS = ['ti-home', 'ti-file-text', 'ti-id', 'ti-signature', 'ti-list-check', 'ti-folder'];
+
+  const items = source.slice(0, 4).map((it, i) => ({ ...it, icon: it.icon || ICONS[i] || 'ti-point' }));
+  items.push({
+    label: t('menuMore'), icon: 'ti-dots',
+    active: false,
+    onClick: () => setSidebarOpen(true)
+  });
+
+  const inner = document.createElement('div');
+  inner.className = 'bottom-nav-inner';
+  items.forEach(it => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    if(it.active) btn.classList.add('active');
+    btn.innerHTML = `<i class="ti ${it.icon}" aria-hidden="true"></i><span>${escapeHtml(it.label)}</span>`
+      + (it.count ? `<span class="nav-count">${it.count > 9 ? '9+' : it.count}</span>` : '');
+    btn.onclick = () => { closeSidebarOnNarrow(); it.onClick(); };
+    inner.appendChild(btn);
+  });
+  nav.appendChild(inner);
+}
+
+// Las secciones de la operación abierta, como carrusel arriba del
+// contenido — solo cuando la barra inferior NO las está mostrando ya.
+function buildMobileSectionPills(){
+  if(!authenticated || !isNarrow()) return;
+  if(mainTab === 'portal') return;              // ahí ya viven en la barra inferior
+  if(!_sidebarSectionItems.length) return;
+  const body = document.getElementById('body');
+  const pills = document.createElement('nav');
+  pills.className = 'section-pills';
+  _sidebarSectionItems.forEach(it => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    if(it.active) btn.classList.add('active');
+    btn.innerHTML = escapeHtml(it.label) + (it.count ? ` <span class="pill-count">${it.count}</span>` : '');
+    btn.onclick = it.onClick;
+    pills.appendChild(btn);
+  });
+  body.insertBefore(pills, body.firstChild);
+  const activo = pills.querySelector('button.active');
+  if(activo) activo.scrollIntoView({ block: 'nearest', inline: 'center' });
+}
+
+// Instalable en la pantalla de inicio y capaz de abrir con mala señal (ver
+// public/sw.js). Va al final y sin bloquear: si el navegador no lo soporta
+// o el registro falla, la aplicación funciona exactamente igual.
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
+
 // --- Modal de firma embebida (DocuSign) ---
 loadData();

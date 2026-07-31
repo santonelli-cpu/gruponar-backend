@@ -2,8 +2,17 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- viewport-fit=cover: deja que la app pinte debajo del notch y de la barra
+     de inicio del iPhone; el respiro lo dan los env(safe-area-inset-*) del CSS. -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Grupo Nar — Plataforma de cierre</title>
+<!-- Instalable en la pantalla de inicio (ver manifest.json y js/app.js) -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#3A0C08">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Grupo NAR">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:opsz,wght@12..30,400;12..30,500;12..30,600&family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -50,6 +59,7 @@
     <aside class="sidebar" id="sidebar"></aside>
     <div class="body-wrap" id="body"></div>
   </div>
+  <nav class="bottom-nav" id="bottom-nav" style="display:none;"></nav>
 </div>
 
   <script src="js/i18n.js"></script>

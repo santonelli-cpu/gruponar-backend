@@ -47,6 +47,9 @@ app.use(helmet({
       // La firma embebida de DocuSign se abre en un iframe dentro del portal.
       frameSrc: ["'self'", 'https://*.docusign.com', 'https://*.docusign.net'],
       formAction: ["'self'"],
+      // El service worker que hace instalable el portal (public/sw.js).
+      workerSrc: ["'self'"],
+      manifestSrc: ["'self'"],
       frameAncestors: ["'self'"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],

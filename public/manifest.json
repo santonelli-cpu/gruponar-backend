@@ -1,0 +1,17 @@
+{
+  "name": "Grupo NAR — Coordinación de cierres",
+  "short_name": "Grupo NAR",
+  "description": "Cada documento, cada firma y cada etapa de la operación, en un solo lugar.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#F6F4F0",
+  "theme_color": "#3A0C08",
+  "lang": "es",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
