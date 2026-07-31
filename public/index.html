@@ -64,20 +64,20 @@
   .side-sub{padding-left:20px; font-size:13px;}
   .side-divider{height:1px; background:var(--line); margin:14px 4px;}
   .side-account{border-top:1px solid var(--line); padding:12px 10px 2px; margin-top:8px;}
-  /* En pantalla chica el menú se acuesta arriba como una tira deslizable */
+  /* Ventana angosta: el menú se guarda detrás del botón de hamburguesa y
+     entra deslizándose por la izquierda, como Stripe — el contenido se
+     queda con todo el ancho y la navegación sigue completa (con sus
+     títulos de grupo), en vez de una tira de chips a la que hay que
+     hacerle scroll horizontal para encontrar la sección. */
+  .menu-toggle{display:none;}
+  .sidebar-scrim{display:none;}
   @media (max-width:900px){
+    .menu-toggle{display:flex;}
     .app-body{display:block;}
-    .sidebar{width:auto; max-height:none; flex-direction:row; align-items:center; overflow-x:auto; gap:6px;
-      border-right:0; border-bottom:1px solid var(--line); padding:8px 12px; scrollbar-width:none; z-index:40;}
-    .sidebar::-webkit-scrollbar{display:none;}
-    .side-group, .side-divider{display:none;}
-    .side-item{width:auto; flex-shrink:0; white-space:nowrap; border:1px solid var(--line-strong);
-      padding:6px 11px; font-size:12.5px;}
-    .side-item i{display:none;}
-    .side-sub{padding-left:11px;}
-    .side-account{border-top:0; border-left:1px solid var(--line); margin-top:0; padding:0 0 0 10px; flex-shrink:0;}
-    .side-account > div:first-child{display:none !important;}
-    .side-account > div:last-child{margin-top:0 !important;}
+    .sidebar{position:fixed; top:0; left:0; bottom:0; z-index:80; width:264px; max-height:none;
+      transform:translateX(-100%); transition:transform 0.22s ease; box-shadow:0 0 40px rgba(33,22,19,0.18);}
+    .sidebar.open{transform:translateX(0);}
+    .sidebar-scrim.open{display:block; position:fixed; inset:0; background:rgba(33,22,19,0.35); z-index:79;}
   }
   .banner{background:var(--gold-soft); color:#5B4620; font-size:12px; padding:10px 14px; border-radius:10px; margin-bottom:18px; line-height:1.5;}
   .section-title{font-family:'Cormorant Garamond',serif; font-weight:600; font-size:19px; margin:0 0 12px; color:var(--oxblood-deep);}
@@ -294,6 +294,7 @@
 <h2 class="sr-only">Plataforma de coordinación de cierres inmobiliarios de Grupo Nar: administración de operaciones, checklist de KYC por parte, seguimiento de cierre y generación de contrato de promesa, con inicio de sesión por correo y contraseña.</h2>
 <div class="app" id="app">
   <div class="head-band">
+    <button class="icon-btn menu-toggle" id="menu-toggle" title="Menú" aria-label="Menú"><i class="ti ti-menu-2" aria-hidden="true"></i></button>
     <div class="brand-mark">
       <svg viewBox="0 0 1080 1080" xmlns="http://www.w3.org/2000/svg"><g><g>
         <polygon fill="#58130E" points="89.3,763 89.3,763 492.8,359.5 896.3,763 896.3,763 938.7,763 938.7,763 492.8,317 46.9,763 46.9,763"/>
@@ -321,6 +322,7 @@
   </div>
   <div id="notif-panel" style="display:none;"></div>
   <div class="app-body">
+    <div class="sidebar-scrim" id="sidebar-scrim"></div>
     <aside class="sidebar" id="sidebar"></aside>
     <div class="body-wrap" id="body"></div>
   </div>
@@ -1532,6 +1534,16 @@ function currentViewKey(){
 // colgando debajo. Antes esto vivía en dos barras dentro del contenido, y
 // cualquier cosa que creciera arriba (el aviso de "te toca a ti", por
 // ejemplo) empujaba la navegación fuera de la pantalla.
+// Cajón del menú en ventana angosta — abrir/cerrar y cerrarse solo al
+// elegir una sección (si no, tapa justo lo que acabas de abrir).
+function setSidebarOpen(open){
+  document.getElementById('sidebar').classList.toggle('open', open);
+  document.getElementById('sidebar-scrim').classList.toggle('open', open);
+}
+function closeSidebarOnNarrow(){
+  if(window.matchMedia('(max-width:900px)').matches) setSidebarOpen(false);
+}
+
 function sidebarGroup(title){
   const el = document.createElement('div');
   el.className = 'side-group';
@@ -1544,7 +1556,7 @@ function sidebarItem({ label, icon, count, active, sub, onClick }){
   btn.type = 'button';
   btn.className = 'side-item' + (active ? ' active' : '') + (sub ? ' side-sub' : '');
   btn.innerHTML = `${icon ? `<i class="ti ${icon}" aria-hidden="true"></i>` : ''}<span>${escapeHtml(label)}</span>${count ? `<span class="side-count">${count}</span>` : ''}`;
-  btn.onclick = onClick;
+  btn.onclick = () => { closeSidebarOnNarrow(); onClick(); };
   document.getElementById('sidebar').appendChild(btn);
   return btn;
 }
@@ -1601,7 +1613,8 @@ function buildSidebar(){
   const el = document.getElementById('sidebar');
   el.innerHTML = '';
   el.style.display = authenticated ? '' : 'none';
-  if(!authenticated) return;
+  document.getElementById('menu-toggle').style.visibility = authenticated ? 'visible' : 'hidden';
+  if(!authenticated){ setSidebarOpen(false); return; }
 
   if(mainTab === 'admin'){
     sidebarGroup(t('sideMain'));
@@ -2175,6 +2188,10 @@ document.getElementById('mainTabs').addEventListener('click', e=>{
   render();
 });
 document.getElementById('header-logout').addEventListener('click', logout);
+document.getElementById('menu-toggle').addEventListener('click', () => {
+  setSidebarOpen(!document.getElementById('sidebar').classList.contains('open'));
+});
+document.getElementById('sidebar-scrim').addEventListener('click', () => setSidebarOpen(false));
 
 // Círculo con foto (si el usuario subió una) o iniciales — `user` puede ser
 // currentUser ({id, avatarUrl}) o un agente de una operación ({userId,
