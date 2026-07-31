@@ -87,7 +87,12 @@ app.use('/api', contractsRouter);
 app.use('/api/google-drive', googleDriveRouter);
 app.use('/api/settings', settingsRouter);
 
-app.get('/api/health', (req, res) => res.json({ ok: true }));
+// `version` identifica el deploy actual (Render expone el SHA del commit;
+// en local, la hora de arranque). El frontend la consulta periódicamente y,
+// si cambió, muestra "hay una versión nueva — recarga": una pestaña abierta
+// desde hace días nunca se recarga sola y se queda con el código viejo.
+const APP_VERSION = process.env.RENDER_GIT_COMMIT || String(Date.now());
+app.get('/api/health', (req, res) => res.json({ ok: true, version: APP_VERSION }));
 
 // Cualquier /api/* que no coincidió con ninguna ruta devuelve JSON 404 —
 // sin esto caía al static/al default de Express y el frontend intentaba
