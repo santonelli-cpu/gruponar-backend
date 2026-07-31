@@ -120,14 +120,22 @@
   .btn-spinner{display:inline-block; width:12px; height:12px; border:2px solid currentColor; border-top-color:transparent; border-radius:50%; animation:spin .7s linear infinite; vertical-align:-2px;}
   @keyframes spin{to{transform:rotate(360deg);}}
   /* Barra fija de secciones dentro del detalle de la operación */
-  .deal-section-nav{position:sticky; top:0; z-index:30; display:flex; gap:6px; overflow-x:auto; padding:8px 2px; margin:0 0 4px;
+  /* Pestañas tipo "chip" (como los filtros de notificaciones de Stripe):
+     cajitas grandes con borde, la activa con borde grueso y fondo tenue, y
+     un contador rojo cuando la sección tiene pendientes — pensadas para
+     que se entiendan de un vistazo sin conocer la plataforma. */
+  .deal-section-nav{position:sticky; top:0; z-index:30; display:flex; gap:8px; overflow-x:auto; padding:10px 2px 8px; margin:0 0 6px;
     background:var(--stone); scrollbar-width:none;}
   .deal-section-nav::-webkit-scrollbar{display:none;}
-  .deal-section-nav button{flex-shrink:0; border:0.5px solid var(--line-strong); background:var(--stone-card); color:var(--ink-soft);
-    font-size:11.5px; padding:4px 11px; border-radius:20px; cursor:pointer; white-space:nowrap; font-family:inherit;}
-  .deal-section-nav button:hover{background:var(--oxblood-soft); color:var(--oxblood); border-color:var(--oxblood-soft);}
-  .deal-section-nav button.active{background:var(--oxblood-deep); color:#F6F4F0; border-color:var(--oxblood-deep); font-weight:500;}
-  .deal-section-nav button.active:hover{background:var(--oxblood-deep); color:#F6F4F0;}
+  .deal-section-nav button{flex-shrink:0; display:inline-flex; align-items:center; gap:7px; border:1px solid var(--line-strong);
+    background:var(--stone-card); color:var(--ink-soft); font-size:13px; padding:9px 15px; border-radius:10px; cursor:pointer;
+    white-space:nowrap; font-family:inherit; line-height:1.1;}
+  .deal-section-nav button:hover{border-color:var(--oxblood); color:var(--oxblood);}
+  .deal-section-nav button.active{border:2px solid var(--oxblood-deep); background:var(--oxblood-soft); color:var(--oxblood-deep);
+    font-weight:600; padding:8px 14px;}
+  .deal-section-nav button.active:hover{background:var(--oxblood-soft); color:var(--oxblood-deep);}
+  .deal-section-nav .tab-count{background:var(--oxblood-deep); color:#F6F4F0; border-radius:9px; font-size:11px; font-weight:600;
+    min-width:18px; height:18px; display:inline-flex; align-items:center; justify-content:center; padding:0 5px;}
   /* Menú "···" de acciones por documento del checklist (vista staff) */
   .doc-action-menu{position:absolute; top:32px; right:0; background:var(--stone-card); border:0.5px solid var(--line); border-radius:10px; box-shadow:0 4px 16px rgba(33,22,19,0.14); z-index:6; min-width:220px; overflow:hidden;}
   .doc-action-menu button{display:flex; align-items:center; gap:8px; width:100%; background:none; border:0; padding:9px 14px; font-size:12.5px; font-family:inherit; color:var(--ink); cursor:pointer; text-align:left;}
@@ -681,6 +689,7 @@ const STRINGS = {
     yourDocsChecklist: 'Tu checklist de documentos (KYC)', yourKycFile: 'Tu expediente KYC',
     allPartiesChecklist: 'Checklist de todas las partes', dealSingular: 'Operación',
     closingFollowup: 'Seguimiento del cierre', eSignature: 'Firma electrónica',
+    tabYourDocs: 'Tus documentos', tabYourKyc: 'Tu KYC', tabCosts: 'Gastos de cierre', tabTracker: 'Seguimiento', tabDocs: 'Documentos',
     eSignHintStaff: 'Sube el documento y envíalo a firma — comprador y vendedor firman de forma embebida, sin salir de la plataforma.',
     eSignHintClient: 'Cuando tu coordinador envíe un documento a firma, aparecerá aquí para que lo firmes en línea.',
     docusignNotSent: 'Sin enviar', docusignSent: 'Enviado', docusignDelivered: 'Entregado', docusignCompleted: 'Firmado', docusignDeclined: 'Rechazado', docusignVoided: 'Anulado',
@@ -958,6 +967,7 @@ const STRINGS = {
     yourDocsChecklist: 'Your document checklist (KYC)', yourKycFile: 'Your KYC file',
     allPartiesChecklist: 'Checklist for all parties', dealSingular: 'Deal',
     closingFollowup: 'Closing follow-up', eSignature: 'E-signature',
+    tabYourDocs: 'Your documents', tabYourKyc: 'Your KYC', tabCosts: 'Closing costs', tabTracker: 'Follow-up', tabDocs: 'Documents',
     eSignHintStaff: 'Upload the document and send it for signature — buyer and seller sign embedded, without leaving the platform.',
     eSignHintClient: "When your coordinator sends a document for signature, it'll show up here for you to sign online.",
     docusignNotSent: 'Not sent', docusignSent: 'Sent', docusignDelivered: 'Delivered', docusignCompleted: 'Signed', docusignDeclined: 'Declined', docusignVoided: 'Voided',
@@ -1018,6 +1028,10 @@ let docActionsMenuFor = null;
 let dealsSearch = '';
 let dealDetailTab = 'parties';
 let dealDetailTabDeal = null;
+// Pestaña activa del Portal cliente/agente (espejo de dealDetailTab pero
+// para renderPortal) — se resetea al cambiar de operación o de "ver como".
+let portalTab = 'docs';
+let portalTabKey = null;
 let teamAssigneesCache = undefined;
 let activityCache = {};
 
@@ -1433,7 +1447,7 @@ function myPartyInDeal(deal){
 // arriba, que es lo esperado.
 let _lastViewKey = null;
 function currentViewKey(){
-  return [authenticated, mainTab, adminView, activeDealId, dealDetailTab, portalRole, portalPartyId].join('|');
+  return [authenticated, mainTab, adminView, activeDealId, dealDetailTab, portalRole, portalPartyId, portalTab].join('|');
 }
 
 function render(){
@@ -3330,6 +3344,23 @@ function buildPartiesSection(deal){
   return wrap;
 }
 
+// Barra de pestañas tipo chip compartida entre el detalle admin y el Portal
+// — tabs es [[id, label, pendingCount], ...]; el contador solo aparece si
+// hay pendientes en esa sección.
+function buildSectionTabsNav(tabs, activeId, onSelect){
+  const nav = document.createElement('nav');
+  nav.className = 'deal-section-nav';
+  tabs.forEach(([id, label, count]) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.innerHTML = `${escapeHtml(label)}${count ? ` <span class="tab-count">${count}</span>` : ''}`;
+    if(activeId === id) btn.classList.add('active');
+    btn.onclick = () => onSelect(id);
+    nav.appendChild(btn);
+  });
+  return nav;
+}
+
 function buildAdminDealDetail(deal){
   const s = SCENARIOS[deal.scenario];
   const wrap = document.createElement('div');
@@ -3347,25 +3378,15 @@ function buildAdminDealDetail(deal){
   const pendingDocsCount = deal.documents.filter(d => d.status !== 'done').length;
   const pendingTasksCount = deal.tasks.filter(tk => tk.status !== 'done').length;
   const TABS = [
-    ['parties', t('navSecParties')],
-    ['docs', t('navSecDocs') + (pendingDocsCount ? ` (${pendingDocsCount})` : '')],
-    ['kyc', t('tabKycSignatures')],
-    ['tracker', t('navSecTracker') + (pendingTasksCount ? ` (${pendingTasksCount})` : '')],
-    ['people', t('navSecPeople')],
-    ['contract', t('navSecContract')],
-    ['activity', t('navSecActivity')]
+    ['parties', t('navSecParties'), 0],
+    ['docs', t('navSecDocs'), pendingDocsCount],
+    ['kyc', t('tabKycSignatures'), 0],
+    ['tracker', t('navSecTracker'), pendingTasksCount],
+    ['people', t('navSecPeople'), 0],
+    ['contract', t('navSecContract'), 0],
+    ['activity', t('navSecActivity'), 0]
   ];
-  const nav = document.createElement('nav');
-  nav.className = 'deal-section-nav';
-  TABS.forEach(([id, label]) => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.textContent = label;
-    if(dealDetailTab === id) btn.classList.add('active');
-    btn.onclick = () => { dealDetailTab = id; render(); };
-    nav.appendChild(btn);
-  });
-  wrap.appendChild(nav);
+  wrap.appendChild(buildSectionTabsNav(TABS, dealDetailTab, (id) => { dealDetailTab = id; render(); }));
   const tab = dealDetailTab;
   // Los IDs siguen sirviendo como anclas DENTRO de su pestaña (ej. el link
   // "ir a la sección de KYC" del tracker cambia de pestaña y luego scrollea).
@@ -5541,7 +5562,20 @@ function buildNextStepCallout(deal, myParty){
     const btn = document.createElement('button');
     btn.className = 'btn primary'; btn.style.cssText = 'white-space:nowrap; font-size:11.5px; padding:4px 12px; flex-shrink:0;';
     btn.textContent = item.btnLabel;
-    btn.onclick = () => { document.getElementById(item.anchor)?.scrollIntoView({ behavior:'smooth', block:'start' }); };
+    btn.onclick = () => {
+      // Con pestañas, la sección destino puede no estar renderizada — se
+      // cambia primero a su pestaña y luego se scrollea al ancla.
+      const PORTAL_ANCHOR_TAB = {
+        'portal-esignature-section': 'signatures',
+        'portal-kyc-section': 'kyc',
+        'portal-closing-costs-section': 'costs',
+        'portal-property-section': 'property',
+        'portal-mydocs-section': 'mydocs'
+      };
+      const wanted = PORTAL_ANCHOR_TAB[item.anchor];
+      if(wanted && portalTab !== wanted){ portalTab = wanted; render(); }
+      setTimeout(() => document.getElementById(item.anchor)?.scrollIntoView({ behavior:'smooth', block:'start' }), 60);
+    };
     row.appendChild(label); row.appendChild(btn);
     box.appendChild(row);
   });
@@ -5677,31 +5711,68 @@ function renderPortal(body){
   if(callout) header.appendChild(callout);
   body.appendChild(header);
 
-  const pt = document.createElement('div'); pt.className='section-title'; pt.id='portal-property-section'; pt.textContent=t('propertySection');
-  body.appendChild(pt);
-  const pcard = document.createElement('div'); pcard.className='card';
-  pcard.appendChild(buildPropertyDocsSection(deal, isPreview && !myParty, myParty && myParty.side));
-  body.appendChild(pcard);
+  // Pestañas — la misma navegación clara del detalle de Operaciones: el
+  // encabezado (avance + "te toca a ti") siempre visible y abajo UNA
+  // sección a la vez, con contador rojo donde hay pendientes. La pestaña
+  // se resetea al cambiar de operación o de "ver como".
+  const hasSignTasks = deal.tasks.some(tk => tk.sign);
+  const pendingSignsCount = deal.tasks.filter(tk => tk.sign && tk.docusignStatus !== 'completed').length;
+  const myPendingDocs = myParty ? deal.documents.filter(d => d.partyId === myParty.id && d.status !== 'done').length : 0;
+  const allPendingDocs = deal.documents.filter(d => d.status !== 'done').length;
+  const TABS = myParty ? [
+    ['mydocs', t('tabYourDocs'), myPendingDocs],
+    ['kyc', t('tabYourKyc'), 0],
+    ['property', t('propertySection'), 0],
+    ['costs', t('tabCosts'), 0],
+    ['contract', t('contractPromiseShort'), 0],
+    ...(hasSignTasks ? [['signatures', t('eSignature'), pendingSignsCount]] : []),
+    ['tracker', t('tabTracker'), 0]
+  ] : [
+    ['docs', t('tabDocs'), allPendingDocs],
+    ['property', t('propertySection'), 0],
+    ['costs', t('tabCosts'), 0],
+    ['contract', t('contractPromiseShort'), 0],
+    ...(hasSignTasks ? [['signatures', t('eSignature'), pendingSignsCount]] : []),
+    ['tracker', t('tabTracker'), 0]
+  ];
+  const tabKey = `${deal.id}|${myParty ? myParty.id : 'all'}`;
+  if(portalTabKey !== tabKey){ portalTabKey = tabKey; portalTab = myParty ? 'mydocs' : 'docs'; }
+  if(!TABS.some(([id]) => id === portalTab)) portalTab = TABS[0][0];
+  body.appendChild(buildSectionTabsNav(TABS, portalTab, (id) => { portalTab = id; render(); }));
 
-  const nt = document.createElement('div'); nt.className='section-title'; nt.id='portal-closing-costs-section'; nt.textContent=t('notaryClosingCostsSection');
-  body.appendChild(nt);
-  const ncard = document.createElement('div'); ncard.className='card';
-  ncard.appendChild(buildNotaryClosingCostsSection(deal, isPreview && !myParty, myParty && myParty.side));
-  body.appendChild(ncard);
+  if(portalTab === 'property'){
+    const pt = document.createElement('div'); pt.className='section-title'; pt.id='portal-property-section'; pt.textContent=t('propertySection');
+    body.appendChild(pt);
+    const pcard = document.createElement('div'); pcard.className='card';
+    pcard.appendChild(buildPropertyDocsSection(deal, isPreview && !myParty, myParty && myParty.side));
+    body.appendChild(pcard);
+  }
 
-  if(myParty){
+  if(portalTab === 'costs'){
+    const nt = document.createElement('div'); nt.className='section-title'; nt.id='portal-closing-costs-section'; nt.textContent=t('notaryClosingCostsSection');
+    body.appendChild(nt);
+    const ncard = document.createElement('div'); ncard.className='card';
+    ncard.appendChild(buildNotaryClosingCostsSection(deal, isPreview && !myParty, myParty && myParty.side));
+    body.appendChild(ncard);
+  }
+
+  if(portalTab === 'mydocs' && myParty){
     const secTitle = document.createElement('div'); secTitle.className='section-title'; secTitle.id='portal-mydocs-section'; secTitle.textContent=t('yourDocsChecklist');
     body.appendChild(secTitle);
     const card = document.createElement('div'); card.className='card';
     card.appendChild(buildDocListForParty(deal, myParty, false));
     body.appendChild(card);
+  }
 
+  if(portalTab === 'kyc' && myParty){
     const kt = document.createElement('div'); kt.className='section-title'; kt.id='portal-kyc-section'; kt.textContent=t('yourKycFile');
     body.appendChild(kt);
     const kcard = document.createElement('div'); kcard.className='card';
     kcard.appendChild(buildKycSection(deal, myParty, false));
     body.appendChild(kcard);
-  } else {
+  }
+
+  if(portalTab === 'docs' && !myParty){
     const secTitle = document.createElement('div'); secTitle.className='section-title'; secTitle.textContent=t('allPartiesChecklist');
     body.appendChild(secTitle);
     const card = document.createElement('div'); card.className='card';
@@ -5709,19 +5780,25 @@ function renderPortal(body){
     body.appendChild(card);
   }
 
-  const ct = document.createElement('div'); ct.className='section-title'; ct.textContent=t('contractPromiseShort');
-  body.appendChild(ct);
-  const ccard = document.createElement('div'); ccard.className='card';
-  ccard.appendChild(buildContractSection(deal, false));
-  body.appendChild(ccard);
+  if(portalTab === 'contract'){
+    const ct = document.createElement('div'); ct.className='section-title'; ct.textContent=t('contractPromiseShort');
+    body.appendChild(ct);
+    const ccard = document.createElement('div'); ccard.className='card';
+    ccard.appendChild(buildContractSection(deal, false));
+    body.appendChild(ccard);
+  }
 
-  const tt = document.createElement('div'); tt.className='section-title'; tt.textContent=t('closingFollowup');
-  body.appendChild(tt);
-  const tcard = document.createElement('div'); tcard.className='card';
-  tcard.appendChild(buildTaskList(deal, isPreview && ['admin','lawyer'].includes(currentUser.role)));
-  body.appendChild(tcard);
+  if(portalTab === 'tracker'){
+    const tt = document.createElement('div'); tt.className='section-title'; tt.textContent=t('closingFollowup');
+    body.appendChild(tt);
+    const tcard = document.createElement('div'); tcard.className='card';
+    tcard.appendChild(buildTaskList(deal, isPreview && ['admin','lawyer'].includes(currentUser.role)));
+    body.appendChild(tcard);
+  }
 
-  buildSignatureTasksSection(deal, body, false);
+  if(portalTab === 'signatures'){
+    buildSignatureTasksSection(deal, body, false);
+  }
 }
 
 // Documentos de cierre que requieren firma (escrow agreement, KYC del
