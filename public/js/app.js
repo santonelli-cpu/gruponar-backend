@@ -57,6 +57,7 @@ function updateNotifBadge(){
 }
 
 const NOTIF_TYPE_META = {
+  authorize:     { icon: 'ti-shield-check', key: 'notifAuthorize' },
   task_assigned: { icon: 'ti-user-check',  key: 'notifTaskAssigned' },
   doc_review:    { icon: 'ti-eye-check',   key: 'notifDocReview' },
   doc_upload:    { icon: 'ti-upload',      key: 'notifDocUpload' },

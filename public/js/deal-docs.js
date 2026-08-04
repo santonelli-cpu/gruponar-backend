@@ -159,7 +159,8 @@ function buildNotaryClosingCostsSection(deal, isStaffView, viewerSide){
   proofsTitle.style.cssText = 'font-weight:500; font-size:12.5px; color:var(--ink-soft); margin-bottom:6px;';
   proofsTitle.textContent = t('paymentProofsLabel');
   box.appendChild(proofsTitle);
-  const proofDocs = deal.documents.filter(d => d.partyId === null && [ESCROW_PAYMENT_PROOF_DOC_NAME, NOTARY_PAYMENT_PROOF_DOC_NAME].includes(d.name));
+  const proofNames = dealHasEscrow(deal) ? [ESCROW_PAYMENT_PROOF_DOC_NAME, NOTARY_PAYMENT_PROOF_DOC_NAME] : [NOTARY_PAYMENT_PROOF_DOC_NAME];
+  const proofDocs = deal.documents.filter(d => d.partyId === null && proofNames.includes(d.name));
   const ul = document.createElement('ul');
   ul.className = 'doc-list';
   proofDocs.forEach(doc => ul.appendChild(buildDocItemLi(deal, doc, isStaffView, proofsReadOnly)));
@@ -195,7 +196,8 @@ function buildTaskList(deal, canManage){
       : t('ddPendingBanner', { date: deal.dueDiligenceEndDate });
     ul.appendChild(ddBanner);
   }
-  deal.tasks.forEach((task, idx) => {
+  // Sin escrow, la tarea de "cuenta de escrow aperturada" no aplica.
+  visibleTasks(deal).forEach((task, idx) => {
     const row = document.createElement('div');
     row.className = 'task-row';
     const cls = task.status==='done'?'done':(task.status==='progress'?'progress':'');
@@ -467,7 +469,7 @@ function buildPersonRow(dealId, a, opts){
         ${a.status==='pending' ? `<span class="badge" style="background:var(--oxblood-soft); color:var(--oxblood); margin:0; font-size:10px;">${t('pendingApproval')}</span>` : ''}
         ${a.isCreator ? `<span class="field-hint" style="margin:0;">· ${t('personCreatedDeal')}</span>` : ''}
       </div>
-      <div class="field-hint" style="margin:1px 0 0;">${escapeHtml(a.email)}${a.agency ? ' · ' + escapeHtml(a.agency) : ''}</div>
+      <div class="field-hint" style="margin:1px 0 0;">${['admin','lawyer'].includes(currentUser.role) ? escapeHtml(a.email) + (a.agency ? ' · ' : '') : ''}${a.agency ? escapeHtml(a.agency) : ''}</div>
     </span>
   `;
   const controls = document.createElement('span');

@@ -428,15 +428,29 @@ function escapeHtml(str){
   return String(str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
 
+// Una operación puede no llevar escrow (se paga directo, o todo pasa por
+// notaría). Cuando es así, la tarea de "cuenta de escrow aperturada" y el
+// comprobante de pago a escrow no aplican: no se piden, y tampoco cuentan
+// para el avance — si contaran, la barra nunca llegaría a 100%.
+function dealHasEscrow(deal){ return (deal.escrowCompany || 'armour') !== 'none'; }
+function visibleDocs(deal){
+  return dealHasEscrow(deal) ? deal.documents : deal.documents.filter(d => d.name !== ESCROW_PAYMENT_PROOF_DOC_NAME);
+}
+function visibleTasks(deal){
+  return dealHasEscrow(deal) ? deal.tasks : deal.tasks.filter(tk => tk.docType !== 'escrow');
+}
+
 function pctDocs(deal){
   if(!deal._loaded) return deal._counts.documentsTotal ? Math.round(deal._counts.documentsDone/deal._counts.documentsTotal*100) : 0;
-  const done = deal.documents.filter(d=>d.status==='done').length;
-  return deal.documents.length ? Math.round(done/deal.documents.length*100) : 0;
+  const docs = visibleDocs(deal);
+  const done = docs.filter(d=>d.status==='done').length;
+  return docs.length ? Math.round(done/docs.length*100) : 0;
 }
 function pctTasks(deal){
   if(!deal._loaded) return deal._counts.tasksTotal ? Math.round(deal._counts.tasksDone/deal._counts.tasksTotal*100) : 0;
-  const done = deal.tasks.filter(t=>t.status==='done').length;
-  return deal.tasks.length ? Math.round(done/deal.tasks.length*100) : 0;
+  const tks = visibleTasks(deal);
+  const done = tks.filter(t=>t.status==='done').length;
+  return tks.length ? Math.round(done/tks.length*100) : 0;
 }
 // Un solo % que combina documentos + tracker — para la barra de una sola
 // línea de las tarjetas de operación del Portal (ahí no hace falta el
@@ -447,8 +461,9 @@ function overallPct(deal){
     const done = deal._counts.documentsDone + deal._counts.tasksDone;
     return total ? Math.round(done/total*100) : 0;
   }
-  const total = deal.documents.length + deal.tasks.length;
-  const done = deal.documents.filter(d=>d.status==='done').length + deal.tasks.filter(t=>t.status==='done').length;
+  const docs = visibleDocs(deal), tks = visibleTasks(deal);
+  const total = docs.length + tks.length;
+  const done = docs.filter(d=>d.status==='done').length + tks.filter(t=>t.status==='done').length;
   return total ? Math.round(done/total*100) : 0;
 }
 // La parte (deal_party_entity) de esta operación ligada a la cuenta actual

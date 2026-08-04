@@ -200,6 +200,7 @@ function buildNewDealForm(){
       <label>${t('escrowCompany')} <select id="nd-escrow-company">
         <option value="armour">Armour Secure</option>
         <option value="tla">TLA Financial Services</option>
+        <option value="none">${t('escrowNone')}</option>
       </select></label>
     </div>
     <div class="gate-error" id="nd-error"></div>
@@ -296,6 +297,13 @@ function partyOwnershipSummary(p){
 function buildPartiesSection(deal){
   const wrap = document.createElement('div');
   const addFormFor = { seller: null, buyer: null }; // toggles, no estado global
+  // Los correos de las partes solo los ve quien coordina la operación: si un
+  // agente o la contraparte pueden leerlos, la conversación se sale de la
+  // plataforma y se pierde el rastro de qué se entregó y cuándo.
+  const verContactos = ['admin','lawyer'].includes(currentUser.role);
+  // Dar de alta, editar o quitar partes también es de admin/abogado interno
+  // (el backend ya lo exige; esto evita ofrecer botones que rebotan).
+  const puedeEditarPartes = verContactos;
 
   // Clientes de operaciones anteriores — se cargan al abrir "Agregar" y se
   // enganchan con un clic, trayendo (si se quiere) los documentos que ya
@@ -373,7 +381,7 @@ function buildPartiesSection(deal){
     const addBtn = document.createElement('button');
     addBtn.className = 'btn'; addBtn.style.fontSize = '12px'; addBtn.innerHTML = `<i class="ti ti-plus" aria-hidden="true"></i> ${t('add')}`;
     addBtn.disabled = parties.length >= MAX_PARTIES_PER_SIDE;
-    header.appendChild(addBtn);
+    if(puedeEditarPartes) header.appendChild(addBtn);
     card.appendChild(header);
 
     parties.forEach(p => {
@@ -381,18 +389,19 @@ function buildPartiesSection(deal){
       row.className = 'party-card-row';
       row.innerHTML = `
         <div>
-          <p class="party-name">${escapeHtml(p.name)} <span>(${TYPE_LABEL[p.partyType]})</span>${p.linkedUser ? ` <span class="badge" style="background:var(--jade-soft); color:var(--jade); margin:0 0 0 4px;">${t('accountLinked')}: ${escapeHtml(p.linkedUser.email)}</span>` : ''}${p.linkedAttorney ? ` <span class="badge" style="background:var(--gold-soft); color:#6B4E1E; margin:0 0 0 4px;">${t('attorneyBadge')}: ${escapeHtml(p.linkedAttorney.name)} (${escapeHtml(p.linkedAttorney.email)})</span>` : ''}</p>
+          <p class="party-name">${escapeHtml(p.name)} <span>(${TYPE_LABEL[p.partyType]})</span>${p.linkedUser ? ` <span class="badge" style="background:var(--jade-soft); color:var(--jade); margin:0 0 0 4px;">${t('accountLinked')}${verContactos ? ': ' + escapeHtml(p.linkedUser.email) : ''}</span>` : ''}${p.linkedAttorney ? ` <span class="badge" style="background:var(--gold-soft); color:#6B4E1E; margin:0 0 0 4px;">${t('attorneyBadge')}: ${escapeHtml(p.linkedAttorney.name)}${verContactos ? ' (' + escapeHtml(p.linkedAttorney.email) + ')' : ''}</span>` : ''}</p>
           ${p.partyType !== 'individual' ? `<p class="party-meta">${escapeHtml(partyOwnershipSummary(p))}</p>` : ''}
         </div>
-        <span style="display:flex; gap:6px; flex-shrink:0;">
+        ${puedeEditarPartes ? `<span style="display:flex; gap:6px; flex-shrink:0;">
           <button class="btn pty-edit" style="font-size:11px;">${t('edit')}</button>
           ${parties.length > 1 ? `<button class="btn danger pty-remove" style="font-size:11px;">${t('remove')}</button>` : ''}
-        </span>
+        </span>` : ''}
       `;
       const editSlot = document.createElement('div');
       editSlot.style.flexBasis = '100%';
       row.appendChild(editSlot);
 
+      if(puedeEditarPartes){
       row.querySelector('.pty-edit').onclick = () => {
         if(editSlot.childElementCount){ editSlot.innerHTML = ''; return; }
         const scen = deal.scenario;
@@ -428,7 +437,8 @@ function buildPartiesSection(deal){
         block.appendChild(errEl);
         editSlot.appendChild(block);
       };
-      const removeBtn = row.querySelector('.pty-remove');
+      }
+      const removeBtn = puedeEditarPartes ? row.querySelector('.pty-remove') : null;
       if(removeBtn) removeBtn.onclick = async () => {
         if(!await confirmDialog(t('confirmRemoveParty', { name: p.name }), { danger: true })) return;
         try{
@@ -495,25 +505,34 @@ function buildAdminDealDetail(deal){
   // acciones) siempre visible, y abajo UNA sección a la vez en vez de las
   // 12 apiladas de antes. Al abrir OTRA operación se regresa a la primera
   // pestaña; dentro de la misma, la pestaña activa sobrevive a los render().
-  if(dealDetailTabDeal !== deal.id){ dealDetailTabDeal = deal.id; dealDetailTab = 'general'; }
+  if(dealDetailTabDeal !== deal.id){ dealDetailTabDeal = deal.id; dealDetailTab = ['admin','lawyer'].includes(currentUser.role) ? 'general' : 'parties'; }
   const pendingDocsCount = deal.documents.filter(d => d.status !== 'done').length;
   const pendingTasksCount = deal.tasks.filter(tk => tk.status !== 'done').length;
+  // Editar la operación (datos, partes, agentes, fechas, cerrarla,
+  // eliminarla) es de admin y abogado interno. Un agente coordina y sube
+  // cosas, pero no cambia la operación misma — el backend lo bloquea igual,
+  // esto es para no ofrecerle botones que le van a rebotar.
+  const canEditDeal = ['admin','lawyer'].includes(currentUser.role);
   const TABS = [
     // "General" guarda lo editable y las acciones. Antes vivían pegadas al
     // encabezado, así que el selector de escrow, las dos fechas y los cuatro
     // botones se veían en TODAS las pestañas, empujando hacia abajo lo que
     // de verdad se venía a ver.
-    ['general', t('navSecGeneral'), 0],
+    ...(canEditDeal ? [['general', t('navSecGeneral'), 0]] : []),
     ['parties', t('navSecParties'), 0],
     ['docs', t('navSecDocs'), pendingDocsCount],
     ['kyc', t('tabKycSignatures'), 0],
     ['tracker', t('navSecTracker'), pendingTasksCount],
-    ['people', t('navSecPeople'), 0],
+    // "Personas" es quién tiene acceso a la operación — se administra desde
+    // admin/abogado interno, no desde un agente.
+    ...(canEditDeal ? [['people', t('navSecPeople'), 0]] : []),
     ['contract', t('navSecContract'), 0],
     // La bitácora nombra partes y documentos de los dos lados — solo
     // admin/abogado interno (mismo criterio que el endpoint).
-    ...(['admin','lawyer'].includes(currentUser.role) ? [['activity', t('navSecActivity'), 0]] : [])
+    ...(canEditDeal ? [['activity', t('navSecActivity'), 0]] : [])
   ];
+  // Si la pestaña recordada ya no aplica a este rol, se cae a la primera.
+  if(!TABS.some(([id]) => id === dealDetailTab)) dealDetailTab = TABS[0][0];
   sidebarSections(TABS, dealDetailTab, (id) => { dealDetailTab = id; render(); });
   const tab = dealDetailTab;
   // Los IDs siguen sirviendo como anclas DENTRO de su pestaña (ej. el link
@@ -539,7 +558,7 @@ function buildAdminDealDetail(deal){
   const docsPct = pctDocs(deal), tasksPct = pctTasks(deal);
   header.innerHTML = `
     <div class="deal-head-row">
-      <div class="deal-title field-editable" id="deal-title-display" title="${t('clickToEdit')}" style="font-size:22px; margin:0;">${escapeHtml(deal.property)}</div>
+      <div class="deal-title${canEditDeal ? ' field-editable' : ''}" id="deal-title-display"${canEditDeal ? ` title="${t('clickToEdit')}"` : ''} style="font-size:22px; margin:0;">${escapeHtml(deal.property)}</div>
       <span class="badge ${s.badgeClass}">${s.labelShort}</span>
       ${deal.status==='completed' ? `<span class="badge" style="background:var(--jade-soft); color:var(--jade);">${t('dealCompletedBadge')}</span>` : ''}
     </div>
@@ -547,7 +566,7 @@ function buildAdminDealDetail(deal){
       ${sellerParties(deal).map(p => partyLineHtml(p, false)).join('')}
       ${buyerParties(deal).map((p, i) => partyLineHtml(p, i === 0)).join('')}
     </div>
-    <div class="location-line"><i class="ti ti-map-pin" aria-hidden="true"></i> <span class="field-editable" id="deal-development-display" title="${t('clickToEdit')}">${DEVELOPMENT_LABEL[deal.development||'punta_mita']}</span></div>
+    <div class="location-line"><i class="ti ti-map-pin" aria-hidden="true"></i> <span class="${canEditDeal ? 'field-editable' : ''}" id="deal-development-display"${canEditDeal ? ` title="${t('clickToEdit')}"` : ''}>${DEVELOPMENT_LABEL[deal.development||'punta_mita']}</span></div>
     ${Object.keys(agentsByFirm).length ? `
       <div class="agents-block">
         ${Object.entries(agentsByFirm).map(([firm, names]) =>
@@ -559,12 +578,12 @@ function buildAdminDealDetail(deal){
 
     <div class="escrow-block">
       <div class="k">${t('escrowCompany')}</div>
-      <div class="v">${deal.escrowCompany==='tla' ? 'TLA Financial Services' : 'Armour Secure'}</div>
+      <div class="v">${escrowCompanyLabel(deal.escrowCompany)}</div>
     </div>
 
     <div class="stat-grid" style="margin-top:12px;">
-      <div class="stat-tile"><p class="label">${t('propertyLabelColon')}</p><p class="value field-editable" id="deal-price-display" title="${t('clickToEdit')}">${deal.currency||'USD'} ${Number(deal.price||0).toLocaleString()}${deal.furniturePrice ? ' + '+t('furnitureLabel')+' '+Number(deal.furniturePrice).toLocaleString() : ''}</p></div>
-      <div class="stat-tile"><p class="label">${t('startLabel')}</p><p class="value field-editable" id="deal-startdate-display" title="${t('clickToEdit')}">${deal.startDate || '—'}</p></div>
+      <div class="stat-tile"><p class="label">${t('propertyLabelColon')}</p><p class="value${canEditDeal ? ' field-editable' : ''}" id="deal-price-display"${canEditDeal ? ` title="${t('clickToEdit')}"` : ''}>${deal.currency||'USD'} ${Number(deal.price||0).toLocaleString()}${deal.furniturePrice ? ' + '+t('furnitureLabel')+' '+Number(deal.furniturePrice).toLocaleString() : ''}</p></div>
+      <div class="stat-tile"><p class="label">${t('startLabel')}</p><p class="value${canEditDeal ? ' field-editable' : ''}" id="deal-startdate-display"${canEditDeal ? ` title="${t('clickToEdit')}"` : ''}>${deal.startDate || '—'}</p></div>
       <div class="stat-tile"><p class="label">${t('closingDateLabel')}</p><p class="value${deal.closingDate ? '' : ' value-empty'}">${deal.closingDate || '—'}</p></div>
       <div class="stat-tile"><p class="label">${t('ddEndLabel')}</p><p class="value${deal.dueDiligenceEndDate ? '' : ' value-empty'}">${deal.dueDiligenceEndDate || '—'}</p></div>
     </div>
@@ -585,7 +604,7 @@ function buildAdminDealDetail(deal){
   // Pestaña "General": lo editable y las acciones, ya no pegadas al
   // encabezado en todas las pestañas.
   let generalPanel = null;
-  if(tab === 'general'){
+  if(tab === 'general' && canEditDeal){
     generalPanel = document.createElement('div');
     generalPanel.className = 'card';
     generalPanel.innerHTML = `
@@ -594,6 +613,7 @@ function buildAdminDealDetail(deal){
           <select id="escrow-company-select">
             <option value="armour" ${deal.escrowCompany==='armour'?'selected':''}>Armour Secure</option>
             <option value="tla" ${deal.escrowCompany==='tla'?'selected':''}>TLA Financial Services</option>
+            <option value="none" ${deal.escrowCompany==='none'?'selected':''}>${t('escrowNone')}</option>
           </select>
         </label>
         <label>${t('closingDateLabel')} <input type="date" id="closing-date-input" value="${deal.closingDate}"></label>
@@ -623,6 +643,7 @@ function buildAdminDealDetail(deal){
       await openDeal(deal.id);
     }catch(e){ showToast(e.message, 'error'); if(revert) revert(); else render(); }
   }
+  if(canEditDeal){
   header.querySelector('#deal-title-display').onclick = function(){
     if(this.querySelector('input')) return;
     const current = deal.property;
@@ -677,6 +698,7 @@ function buildAdminDealDetail(deal){
     input.onchange = () => saveDealField({ startDate: input.value || null });
     input.onblur = () => { if(input.value === current) render(); };
   };
+  }
   // Los campos editables y las acciones ahora viven en la pestaña General,
   // así que solo hay que conectarlos cuando esa pestaña está abierta.
   if(generalPanel){
@@ -700,7 +722,7 @@ function buildAdminDealDetail(deal){
     }
     generalPanel.querySelector('#escrow-company-select').onchange = async (e) => {
       const next = e.target.value;
-      if(!await confirmDialog(t('confirmChangeEscrow', { company: next==='armour'?'Armour Secure':'TLA Financial Services' }))){
+      if(!await confirmDialog(t('confirmChangeEscrow', { company: escrowCompanyLabel(next) }))){
         e.target.value = deal.escrowCompany;
         return;
       }

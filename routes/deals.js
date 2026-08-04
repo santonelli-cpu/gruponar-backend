@@ -58,11 +58,11 @@ const createDealSchema = z.object({
   currency: z.string().trim().max(10).optional(),
   startDate: z.string().trim().max(30).optional(),
   parties: z.array(partyInArraySchema).min(1),
-  escrowCompany: z.enum(['armour', 'tla']).optional()
+  escrowCompany: z.enum(['armour', 'tla', 'none']).optional()
 }).strict();
 
 const updateDealSchema = z.object({
-  escrowCompany: z.enum(['armour', 'tla']).optional(),
+  escrowCompany: z.enum(['armour', 'tla', 'none']).optional(),
   closingDate: z.string().trim().max(30).nullable().optional(),
   dueDiligenceEndDate: z.string().trim().max(30).nullable().optional(),
   property: z.string().trim().max(300).optional(),
@@ -669,7 +669,7 @@ router.get('/:id', requireAuth, (req, res) => {
 // (cierre, fin de due diligence) de una operación ya creada. Ambos grupos
 // de campos son independientes entre sí (solo se actualiza lo que venga en
 // el body).
-router.patch('/:id', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, validateBody(updateDealSchema), (req, res) => {
+router.patch('/:id', requireRole('admin', 'lawyer'), rateLimitWrite, validateBody(updateDealSchema), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const { escrowCompany, closingDate, dueDiligenceEndDate, property, price, furniturePrice, currency, startDate, development, status, legalActs } = req.body;
   if (legalActs !== undefined && !['admin', 'lawyer'].includes(req.session.role)) {
@@ -710,7 +710,7 @@ router.patch('/:id', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'),
 
 // POST /api/deals/:id/parties — agrega una parte nueva (vendedor/comprador
 // adicional) a una operación ya creada, con su propio checklist.
-router.post('/:id/parties', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, validateBody(createPartySchema), async (req, res) => {
+router.post('/:id/parties', requireRole('admin', 'lawyer'), rateLimitWrite, validateBody(createPartySchema), async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id);
   if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
@@ -753,7 +753,7 @@ router.post('/:id/parties', requireRole('admin', 'agent', 'lawyer', 'external_la
 // attorneyEmail para agregarlo, removeAttorney para quitarlo — con las
 // mismas facultades que el titular sobre esta misma parte (ver
 // registerPartyUserRaw).
-router.patch('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, validateBody(updatePartySchema), async (req, res) => {
+router.patch('/:id/parties/:partyId', requireRole('admin', 'lawyer'), rateLimitWrite, validateBody(updatePartySchema), async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
   if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
@@ -844,7 +844,7 @@ function rebuildChecklistForParty(deal, partyId, p) {
 // POST /api/deals/:id/parties/:partyId/rebuild-checklist — recalcula el
 // checklist de una parte con su estructura de propiedad actual (ya guardada
 // en la base), agregando lo que falte.
-router.post('/:id/parties/:partyId/rebuild-checklist', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, (req, res) => {
+router.post('/:id/parties/:partyId/rebuild-checklist', requireRole('admin', 'lawyer'), rateLimitWrite, (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
   if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
@@ -872,7 +872,7 @@ router.post('/:id/parties/:partyId/rebuild-checklist', requireRole('admin', 'age
 // Nunca borra un documento que ya tenga archivo subido (status='done') — se
 // devuelve en "flagged" para que el admin lo revise a mano (puede que en
 // realidad sea de un socio y haya que reasignarlo, no perderlo).
-router.post('/:id/parties/:partyId/fix-entity-checklist', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, (req, res) => {
+router.post('/:id/parties/:partyId/fix-entity-checklist', requireRole('admin', 'lawyer'), rateLimitWrite, (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
   if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
@@ -902,7 +902,7 @@ router.post('/:id/parties/:partyId/fix-entity-checklist', requireRole('admin', '
 
 // DELETE /api/deals/:id/parties/:partyId — quitar una parte agregada de más
 // (bloqueado si ya tiene trabajo real hecho, para no perderlo).
-router.delete('/:id/parties/:partyId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, (req, res) => {
+router.delete('/:id/parties/:partyId', requireRole('admin', 'lawyer'), rateLimitWrite, (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const party = db.prepare('SELECT * FROM deal_party_entities WHERE id = ? AND deal_id = ?').get(req.params.partyId, req.params.id);
   if (!party) return res.status(404).json({ error: 'Parte no encontrada.' });
@@ -1013,7 +1013,7 @@ const fromClientSchema = z.object({
   copyDocuments: z.boolean().optional()
 }).strict();
 
-router.post('/:id/parties/from-client', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, validateBody(fromClientSchema), async (req, res) => {
+router.post('/:id/parties/from-client', requireRole('admin', 'lawyer'), rateLimitWrite, validateBody(fromClientSchema), async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const deal = db.prepare('SELECT * FROM deals WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!deal) return res.status(404).json({ error: 'Operación no encontrada.' });
@@ -1142,7 +1142,7 @@ router.get('/:id/available-agents', requireRole('admin', 'agent', 'lawyer', 'ext
 // plataforma. Se permite aunque su cuenta siga 'pending' de aprobación
 // (queda asignado desde ya; solo puede iniciar sesión una vez que un admin
 // lo apruebe, esa regla no cambia).
-router.post('/:id/agents', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, validateBody(addAgentSchema), (req, res) => {
+router.post('/:id/agents', requireRole('admin', 'lawyer'), rateLimitWrite, validateBody(addAgentSchema), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const { userId, representsSide } = req.body;
   const user = db.prepare("SELECT * FROM users WHERE id = ? AND role IN ('agent', 'external_lawyer', 'lawyer') AND status IN ('active', 'pending')").get(userId);
@@ -1168,7 +1168,7 @@ router.post('/:id/agents', requireRole('admin', 'agent', 'lawyer', 'external_law
 // lo da de alta ya activo (no pasa por aprobación, quien lo está agregando
 // ya es staff) y lo liga a esta operación de una vez, con una contraseña
 // temporal que se comparte por el canal que prefieras.
-router.post('/:id/agents/register', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitEmail, validateBody(registerAgentSchema), async (req, res) => {
+router.post('/:id/agents/register', requireRole('admin', 'lawyer'), rateLimitEmail, validateBody(registerAgentSchema), async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const { name, email: normalizedEmail, role, agency, agencyOther, representsSide } = req.body;
   const collaboratorRole = role === 'external_lawyer' ? 'external_lawyer' : 'agent';
@@ -1227,7 +1227,7 @@ router.post('/:id/agents/register', requireRole('admin', 'agent', 'lawyer', 'ext
 
 // PATCH /api/deals/:id/agents/:userId — cambia a quién representa un agente
 // ya agregado (ej. se les olvidó elegirlo, o cambió de cliente).
-router.patch('/:id/agents/:userId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, validateBody(updateAgentSchema), (req, res) => {
+router.patch('/:id/agents/:userId', requireRole('admin', 'lawyer'), rateLimitWrite, validateBody(updateAgentSchema), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const { representsSide } = req.body;
   const info = db.prepare("UPDATE deal_parties SET represents_side = ? WHERE deal_id = ? AND user_id = ? AND role_in_deal = 'agent'")
@@ -1239,7 +1239,7 @@ router.patch('/:id/agents/:userId', requireRole('admin', 'agent', 'lawyer', 'ext
 // DELETE /api/deals/:id/agents/:userId — quita a un agente de la operación
 // (no de la plataforma, solo deja de verla). Restringido a role_in_deal
 // 'agent' para no poder usar esta ruta contra un comprador/vendedor ligado.
-router.delete('/:id/agents/:userId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, (req, res) => {
+router.delete('/:id/agents/:userId', requireRole('admin', 'lawyer'), rateLimitWrite, (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const info = db.prepare("DELETE FROM deal_parties WHERE deal_id = ? AND user_id = ? AND role_in_deal = 'agent'").run(req.params.id, req.params.userId);
   if (!info.changes) return res.status(404).json({ error: 'Ese agente no está en esta operación.' });
@@ -1249,7 +1249,7 @@ router.delete('/:id/agents/:userId', requireRole('admin', 'agent', 'lawyer', 'ex
 // POST /api/deals/:id/drive-folder — crea (o reintenta crear) la estructura
 // de carpetas en Drive para una operación que no la tiene todavía (ej. se
 // creó antes de conectar Drive, o la primera vez falló).
-router.post('/:id/drive-folder', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, async (req, res) => {
+router.post('/:id/drive-folder', requireRole('admin', 'lawyer'), rateLimitWrite, async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   if (!driveClient.isConfigured()) return res.status(501).json({ error: 'Google Drive no está configurado todavía.' });
   if (!driveClient.isConnected()) return res.status(501).json({ error: 'Google Drive no está conectado — ve a Equipo → Integraciones.' });
@@ -1274,7 +1274,7 @@ router.post('/:id/drive-folder', requireRole('admin', 'agent', 'lawyer', 'extern
 // checklist (ej. un comprobante más de los que ya se sabe que siempre hay
 // más de uno) — antes solo staff podía, y el cliente tenía que pedírselo a
 // un admin/agente para algo tan simple como "necesito otra fila".
-router.post('/:id/documents', requireRole('admin', 'agent', 'lawyer', 'external_lawyer', 'buyer', 'seller'), rateLimitWrite, validateBody(addDocumentSchema), (req, res) => {
+router.post('/:id/documents', requireRole('admin', 'lawyer'), rateLimitWrite, validateBody(addDocumentSchema), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const { name, dealPartyEntityId, subLabel, section } = req.body;
 
@@ -1312,7 +1312,7 @@ router.post('/:id/documents', requireRole('admin', 'agent', 'lawyer', 'external_
 // POR COMPLETO (no solo el archivo que tuviera subido — ver DELETE .../file
 // arriba para eso) — para cuando algo de la lista fija no aplica a esta
 // operación. Solo staff, mismo motivo que agregar.
-router.delete('/:id/documents/:docId', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, async (req, res) => {
+router.delete('/:id/documents/:docId', requireRole('admin', 'lawyer'), rateLimitWrite, async (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deal_id = ?').get(req.params.docId, req.params.id);
   if (!doc) return res.status(404).json({ error: 'Documento no encontrado.' });
@@ -1604,7 +1604,7 @@ router.get('/:id/team-assignees', requireRole('admin', 'lawyer'), (req, res) => 
 // respaldo) — ahora solo se marca deleted_at y se esconde de la lista
 // normal; un admin la puede restaurar desde la Papelera, o borrarla de
 // verdad aparte (DELETE .../permanent) cuando esté seguro.
-router.delete('/:id', requireRole('admin', 'agent', 'lawyer', 'external_lawyer'), rateLimitWrite, (req, res) => {
+router.delete('/:id', requireRole('admin', 'lawyer'), rateLimitWrite, (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const info = db.prepare("UPDATE deals SET deleted_at = datetime('now'), deleted_by = ? WHERE id = ? AND deleted_at IS NULL")
     .run(req.session.userId, req.params.id);

@@ -1,0 +1,74 @@
+/* Grupo NAR — colour system.
+   Institutional palette (manual §2.4) and secondary palette (§2.5) are verbatim.
+   Everything else is a tint/shade derived from them for interface use. */
+:root{
+  /* --- Institutional (§2.4) --- */
+  --nar-wine:#58130e;        /* primary. contrast, emphasis, the brand voice */
+  --nar-clay:#976b60;        /* "arena" — adjacent, details */
+  --nar-blush:#a48887;       /* "rosa claro" — adjacent, secondary variation */
+
+  /* --- Secondary (§2.5) — support only, never a replacement --- */
+  --nar-espresso:#22130b;    /* near-black */
+  --nar-olive:#8e816f;       /* verde tenue */
+  --nar-ash:#d2d2d2;         /* light grey */
+
+  /* --- Derived neutrals: warm paper, not white --- */
+  --nar-paper:#faf8f5;
+  --nar-bone:#f2ede7;
+  --nar-linen:#e7e0d8;
+  --nar-stone:#cfc6bb;
+  --nar-slate:#6f665d;
+  --nar-ink:#1a1310;
+  --nar-black:#0d0806;
+  --nar-white:#ffffff;
+
+  /* --- Derived wine ramp --- */
+  --nar-wine-900:#2c0906;
+  --nar-wine-800:#3d0d09;
+  --nar-wine-700:#4a100c;
+  --nar-wine-600:#58130e;
+  --nar-wine-500:#6d1c15;
+  --nar-wine-400:#8a2c22;
+  --nar-wine-200:#d6bfba;
+  --nar-wine-100:#eddedb;
+  --nar-wine-050:#f7efed;
+
+  /* --- Semantic: surfaces --- */
+  --surface-page:var(--nar-paper);
+  --surface-card:var(--nar-white);
+  --surface-raised:var(--nar-bone);
+  --surface-sunken:var(--nar-linen);
+  --surface-inverse:var(--nar-espresso);
+  --surface-brand:var(--nar-wine);
+  --surface-brand-soft:var(--nar-wine-050);
+  --surface-overlay:rgba(26,19,16,.55);
+
+  /* --- Semantic: text --- */
+  --text-heading:var(--nar-espresso);
+  --text-body:#3a322c;
+  --text-muted:var(--nar-slate);
+  --text-subtle:#948a80;
+  --text-brand:var(--nar-wine);
+  --text-on-brand:var(--nar-paper);
+  --text-on-inverse:var(--nar-bone);
+  --text-link:var(--nar-wine);
+  --text-link-hover:var(--nar-wine-400);
+
+  /* --- Semantic: lines --- */
+  --line-hairline:rgba(34,19,11,.12);
+  --line-rule:rgba(34,19,11,.20);
+  --line-strong:var(--nar-espresso);
+  --line-brand:var(--nar-wine);
+  --line-inverse:rgba(242,237,231,.22);
+
+  /* --- Semantic: states --- */
+  --state-hover-tint:rgba(88,19,14,.06);
+  --state-press-tint:rgba(88,19,14,.12);
+  --focus-ring:var(--nar-clay);
+
+  /* --- Status (derived; the manual defines none) --- */
+  --status-positive:#5c6b4a;
+  --status-caution:#a8762f;
+  --status-critical:var(--nar-wine);
+  --status-info:var(--nar-olive);
+}

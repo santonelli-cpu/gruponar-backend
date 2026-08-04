@@ -190,6 +190,15 @@ router.get('/notifications', requireAuth, (req, res) => {
       WHERE t.assigned_to = ? AND t.status != 'done'
         AND deals.status = 'active' AND deals.deleted_at IS NULL
     `).all(req.session.userId).forEach(r => actionRequired.push(r));
+    // Documentos que un agente preparó y esperan que YO los autorice y los
+    // mande a firma (ver ensureKycReviewTask en routes/kyc.js). Van primero:
+    // son los que tienen a alguien más esperando del otro lado.
+    db.prepare(`
+      SELECT 'authorize' AS type, t.label_es AS labelEs, t.label_en AS labelEn,
+        deals.id AS dealId, deals.property, COALESCE(t.created_at, '') AS at
+      FROM tasks t JOIN deals ON deals.id = t.deal_id
+      WHERE t.deal_id IN (${dealsSql}) AND t.doc_type = 'kyc_review' AND t.status != 'done'
+    `).all(...params).forEach(r => actionRequired.push(r));
     // Documentos ya subidos que esperan revisión (aprobar/rechazar).
     db.prepare(`
       SELECT 'doc_review' AS type, d.name AS labelEs, d.name AS labelEn, dpe.name AS partyName,

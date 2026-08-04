@@ -16,8 +16,15 @@
      entera hacía scroll y el menú terminaba donde terminaban sus botones,
      dejando media columna vacía debajo. */
   html, body{margin:0; height:100%;}
+  /* OJO con la altura: en el celular, 100vh mide la pantalla COMPLETA,
+     incluyendo lo que tapa la barra de direcciones del navegador. Con el
+     armazón de altura fija eso dejaba el final del contenido (y la barra
+     inferior) fuera de la vista, y como la página en sí no hace scroll, no
+     había manera de alcanzarlo. 100dvh sí se ajusta cuando la barra del
+     navegador se encoge; 100vh queda antes como respaldo para navegadores
+     viejos. */
   .app{background:var(--stone); color:var(--ink); font-family:'Inter',sans-serif; overflow:hidden;
-    height:100vh; display:flex; flex-direction:column;}
+    height:100vh; height:100dvh; display:flex; flex-direction:column;}
   .head-band{position:relative; background:var(--stone-card); color:var(--ink); padding:14px 28px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; border-bottom:1px solid var(--line); flex-shrink:0;}
   .brand-mark{display:flex; align-items:center; gap:12px;}
   .brand-mark svg{display:block; flex-shrink:0; width:28px; height:28px;}
@@ -53,7 +60,8 @@
      secciones creciera. Nunca se corta a media pantalla. */
   .sidebar{width:236px; flex-shrink:0; background:var(--stone-card); border-right:1px solid var(--line);
     padding:18px 12px; display:flex; flex-direction:column; gap:2px; height:100%; overflow-y:auto;}
-  .body-wrap{flex:1; min-width:0; padding:24px 26px; overflow-y:auto; height:100%;}
+  .body-wrap{flex:1; min-width:0; padding:24px 26px; overflow-y:auto; height:100%;
+    -webkit-overflow-scrolling:touch; overscroll-behavior:contain;}
   .side-group{font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink-faint);
     font-weight:600; margin:20px 0 7px; padding:0 12px;}
   .side-group:first-child{margin-top:2px;}
@@ -262,7 +270,7 @@
   /* Barra fija de secciones dentro del detalle de la operación */
   /* Panel de la campana de notificaciones — en pantalla ancha cuelga de la
      campana; en angosta ocupa casi todo el ancho, pegado abajo de la barra. */
-  #notif-panel{position:fixed; top:62px; right:16px; width:min(430px, calc(100vw - 24px)); max-height:72vh; overflow-y:auto;
+  #notif-panel{position:fixed; top:62px; right:16px; width:min(430px, calc(100vw - 24px)); max-height:72dvh; overflow-y:auto;
     background:var(--stone-card); border:0.5px solid var(--line); border-radius:14px;
     box-shadow:0 10px 34px rgba(33,22,19,0.2); z-index:90; padding:16px;}
   .notif-chip{border:1px solid var(--line-strong); background:var(--stone-card); color:var(--ink-soft); font-size:12.5px;
@@ -278,7 +286,7 @@
   .notif-item:hover{background:var(--stone);}
   .notif-item:last-child{border-bottom:0;}
   @media (max-width:900px){
-    #notif-panel{left:12px; right:12px; width:auto; max-height:70vh;}
+    #notif-panel{left:12px; right:12px; width:auto; max-height:70dvh;}
   }
   /* Menú "···" de acciones por documento del checklist (vista staff) */
   .doc-action-menu{position:absolute; top:32px; right:0; background:var(--stone-card); border:0.5px solid var(--line); border-radius:10px; box-shadow:0 4px 16px rgba(33,22,19,0.14); z-index:6; min-width:220px; overflow:hidden;}
@@ -373,7 +381,7 @@
   .field-hint{font-size:11px; color:var(--ink-faint); margin-top:-4px; margin-bottom:8px;}
   a{color:var(--oxblood); text-decoration:none;}
   a:hover{text-decoration:underline; color:var(--oxblood-deep);}
-  .gate-stage{min-height:100vh; display:flex; align-items:center; justify-content:center; padding:32px 20px; background:radial-gradient(120% 100% at 15% -10%, var(--oxblood-soft) 0%, var(--stone) 55%);}
+  .gate-stage{min-height:100vh; min-height:100dvh; display:flex; align-items:center; justify-content:center; padding:32px 20px; background:radial-gradient(120% 100% at 15% -10%, var(--oxblood-soft) 0%, var(--stone) 55%);}
   .gate-shell{width:100%; max-width:1040px; min-height:600px; display:flex; background:var(--stone-card); border-radius:20px; overflow:hidden; border:0.5px solid var(--line); box-shadow:0 2px 4px rgba(33,22,19,0.05), 0 32px 64px -28px rgba(58,12,8,0.28);}
   .gate-brand{flex:0 0 42%; position:relative; overflow:hidden; background:radial-gradient(140% 180% at 12% -20%, #4E1610 0%, var(--oxblood-deep) 55%); color:var(--stone); display:flex; flex-direction:column; justify-content:space-between; padding:44px 40px;}
   .gate-brand-watermark{position:absolute; right:-72px; bottom:-64px; width:340px; height:340px; opacity:0.08; pointer-events:none;}
@@ -406,7 +414,7 @@
   .gate-error{color:var(--clay); font-size:12px; margin-bottom:8px; min-height:14px;}
   @media (max-width:860px){
     .gate-stage{padding:0;}
-    .gate-shell{flex-direction:column; border-radius:0; border:none; min-height:100vh;}
+    .gate-shell{flex-direction:column; border-radius:0; border:none; min-height:100vh; min-height:100dvh;}
     .gate-brand{flex:0 0 auto; padding:32px 28px;}
     .gate-brand-mid{padding:24px 0;}
     .gate-brand-mid h1{font-size:22px;}

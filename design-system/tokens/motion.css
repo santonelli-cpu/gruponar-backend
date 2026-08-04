@@ -1,0 +1,20 @@
+/* Grupo NAR — motion. Slow, weighted, no bounce. Nothing springs in a law office. */
+:root{
+  --ease-standard:cubic-bezier(.22,.61,.36,1);
+  --ease-entrance:cubic-bezier(.16,.84,.44,1);
+  --ease-exit:cubic-bezier(.4,0,.68,.06);
+  --ease-linear:linear;
+
+  --dur-instant:80ms;
+  --dur-fast:160ms;
+  --dur-base:260ms;
+  --dur-slow:420ms;
+  --dur-editorial:720ms;   /* image reveals, hero fades */
+  --dur-kenburns:14s;      /* slow scale on full-bleed photography */
+
+  --transition-control:color var(--dur-fast) var(--ease-standard),background-color var(--dur-fast) var(--ease-standard),border-color var(--dur-fast) var(--ease-standard),opacity var(--dur-fast) var(--ease-standard);
+  --transition-reveal:opacity var(--dur-editorial) var(--ease-entrance),transform var(--dur-editorial) var(--ease-entrance);
+}
+@media (prefers-reduced-motion:reduce){
+  :root{--dur-fast:0ms;--dur-base:0ms;--dur-slow:0ms;--dur-editorial:0ms;--dur-kenburns:0s}
+}

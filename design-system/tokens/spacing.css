@@ -1,0 +1,39 @@
+/* Grupo NAR — spacing & layout.
+   Architectural rhythm: a 4px base, but layout breathes in large multiples. */
+:root{
+  --space-0:0;
+  --space-1:4px;
+  --space-2:8px;
+  --space-3:12px;
+  --space-4:16px;
+  --space-5:20px;
+  --space-6:24px;
+  --space-8:32px;
+  --space-10:40px;
+  --space-12:48px;
+  --space-16:64px;
+  --space-20:80px;
+  --space-24:96px;
+  --space-32:128px;
+  --space-40:160px;
+
+  /* vertical rhythm for editorial sections */
+  --section-y-sm:var(--space-16);
+  --section-y-md:var(--space-24);
+  --section-y-lg:var(--space-32);
+  --section-y-xl:var(--space-40);
+
+  /* container widths */
+  --container-prose:720px;
+  --container-content:1040px;
+  --container-wide:1320px;
+  --container-full:1600px;
+  --gutter:clamp(20px,5vw,72px);
+
+  /* the logo's protection area = one module = the cap-height of the wordmark (§2.2) */
+  --logo-clearspace:1em;
+
+  /* grid */
+  --grid-columns:12;
+  --grid-gap:24px;
+}

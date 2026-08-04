@@ -23,6 +23,7 @@ const { fillLprMoralEs, SIGNATURE_ANCHOR: LPR_MORAL_ES_ANCHOR } = require('../li
 const { fillLprMoralEn, SIGNATURE_ANCHOR: LPR_MORAL_EN_ANCHOR } = require('../lib/kycFill/lprMoralEn');
 const { convertDocxToPdf } = require('../lib/kycFill/docxFillEngine');
 const kycMirror = require('../lib/kycMirror');
+const mailer = require('../lib/email');
 const { validateBody, z } = require('../lib/validateBody');
 const { rateLimitExpensive, rateLimitUpload, rateLimitWrite } = require('../lib/apiRateLimits');
 
@@ -149,6 +150,10 @@ function resolveTemplateKey(deal, party, lang, isLprAgency) {
   }
 
   const company = deal.escrow_company || 'armour';
+  // Sin escrow no hay expediente de escrow que llenar: ese KYC existe
+  // porque LO PIDE la escrow company. Si la operación no lleva una, la
+  // parte solo tiene el de LPR (cuando aplica) o ninguno.
+  if (company === 'none') return null;
   if (company === 'tla') {
     if (isIndividual) return lang === 'en' ? 'tla-individual-en' : 'tla-individual-es';
     return lang === 'es' ? null : 'tla-entity-en'; // persona moral de TLA solo existe en inglés todavía
@@ -531,7 +536,7 @@ async function sendKycEnvelope(deal, party, submission, template, embedUserId) {
 // PDF adjunto a la tarea, sino ir a la sección de KYC y darle "Enviar a
 // firma" ahí. No duplica la tarea si ya hay una pendiente para este mismo
 // expediente (ej. el agente le da "generar" dos veces).
-function ensureKycReviewTask(dealId, party, kycSubmissionId, kind) {
+function ensureKycReviewTask(req, dealId, party, kycSubmissionId, kind) {
   const existing = db.prepare("SELECT id FROM tasks WHERE kyc_submission_id = ? AND status != 'done'").get(kycSubmissionId);
   if (existing) return;
   const suffix = kind === 'lpr' ? ' (LPR Luxury)' : '';
@@ -542,6 +547,34 @@ function ensureKycReviewTask(dealId, party, kycSubmissionId, kind) {
     INSERT INTO tasks (deal_id, label_en, label_es, requires_signature, doc_type, kyc_submission_id, sort_order, created_at)
     VALUES (?, ?, ?, 0, 'kyc_review', ?, ?, datetime('now'))
   `).run(dealId, labelEn, labelEs, kycSubmissionId, nextOrder);
+  notifyAuthorizationNeeded(req, dealId, labelEs);
+}
+
+// Avisa por correo a quien SÍ puede autorizar (admin y el abogado interno de
+// la operación) que hay algo esperando su visto bueno. La tarea ya quedó en
+// el tracker y en "Acción requerida" de la campana, pero eso solo lo ve
+// quien entra al portal — sin el correo, un documento podía quedarse días
+// esperando sin que nadie se enterara. Nunca lanza: el aviso es un extra,
+// no puede tumbar la generación del documento.
+function notifyAuthorizationNeeded(req, dealId, documentLabel) {
+  if (!mailer.isConfigured()) return;
+  const deal = db.prepare('SELECT id, property, created_by FROM deals WHERE id = ?').get(dealId);
+  if (!deal) return;
+  const solicitante = db.prepare('SELECT name FROM users WHERE id = ?').get(req.session.userId);
+  const destinatarios = db.prepare(`
+    SELECT DISTINCT u.name, u.email FROM users u
+    WHERE u.status = 'active' AND u.email IS NOT NULL
+      AND (u.role = 'admin' OR (u.role = 'lawyer' AND (u.id = ? OR u.id IN (
+        SELECT user_id FROM deal_parties WHERE deal_id = ?
+      ))))
+  `).all(deal.created_by, dealId);
+  const url = `${process.env.APP_BASE_URL || 'https://portal.gruponar.com'}/?dealId=${dealId}`;
+  destinatarios.forEach(d => {
+    mailer.sendAuthorizationNeededEmail({
+      to: d.email, name: d.name, dealProperty: deal.property,
+      documentLabel, requestedByName: (solicitante && solicitante.name) || 'Un agente', url
+    }).catch(err => console.error('[authorization-email]', err.message));
+  });
 }
 
 // Se llama al mandar de verdad a firma (desde /generate cuando quien genera
@@ -639,7 +672,7 @@ async function generateAndMaybeSend(req, deal, party, submission, template, kind
     embedded = ['buyer', 'seller'].includes(req.session.role);
   } else if (AGENT_LIKE_ROLES.includes(req.session.role)) {
     pendingReview = true;
-    ensureKycReviewTask(deal.id, party, submission.id, kind);
+    ensureKycReviewTask(req, deal.id, party, submission.id, kind);
   } else if (docusignClient.isConfigured()) {
     try {
       const freshSubmission = db.prepare('SELECT * FROM kyc_submissions WHERE id = ?').get(submission.id);

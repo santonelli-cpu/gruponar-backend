@@ -90,6 +90,14 @@ function setLang(next){
   localStorage.setItem('nar_lang', lang);
   render();
 }
+// Nombre de la escrow company — 'none' es una operación SIN escrow (no
+// todas lo llevan: en algunas se paga directo o solo pasa por notaría).
+function escrowCompanyLabel(value){
+  if(value === 'tla') return 'TLA Financial Services';
+  if(value === 'none') return t('escrowNone');
+  return 'Armour Secure';
+}
+
 function roleDisplayLabel(role){
   if(role === 'admin') return t('roleLabelAdmin');
   if(role === 'agent') return t('registerRoleAgent');
@@ -405,12 +413,12 @@ const STRINGS = {
     profilePhoto: 'Foto o logo (PNG/JPG, máx. 5 MB)', profileRemovePhoto: 'Quitar foto', profileSaved: 'Perfil actualizado.',
     profileNameRequired: 'Escribe un nombre.', genericError: 'Algo salió mal. Inténtalo de nuevo.',
     notifTitle: 'Notificaciones', notifAll: 'Todo', notifAction: 'Acción requerida', notifUpdates: 'Actualizaciones',
-    notifEmpty: 'Estás al corriente — nada pendiente por ahora.', notifTaskAssigned: 'Tarea asignada a ti',
+    notifEmpty: 'Estás al corriente — nada pendiente por ahora.', notifTaskAssigned: 'Tarea asignada a ti', notifAuthorize: 'Espera tu autorización',
     notifDocReview: 'Documento por revisar', notifDocUpload: 'Sube', notifSignPending: 'Firma pendiente',
     notifDocApproved: 'Documento aprobado', notifDocRejected: 'Documento rechazado — súbelo de nuevo',
     kycAutoFilledFrom: 'Se llena solo con los datos de "{source}" — no hay que capturarlos otra vez.',
     kycSecondSignature: 'Falta una firma más: el expediente de LPR Luxury.',
-    sideMain: 'Plataforma', sideSections: 'Esta operación', tabOverview: 'Resumen', menuLabel: 'Menú', menuMore: 'Más', navSecGeneral: 'General', noAgencyLabel: 'Sin agencia',
+    sideMain: 'Plataforma', sideSections: 'Esta operación', tabOverview: 'Resumen', menuLabel: 'Menú', menuMore: 'Más', navSecGeneral: 'General', noAgencyLabel: 'Sin agencia', escrowNone: 'Sin escrow',
     pastClientsTitle: '¿Ya es cliente?', pastClientsHint: 'Engánchalo con un clic: se agrega con los mismos datos y su cuenta de siempre.',
     pastClientsLoading: 'Buscando clientes anteriores…', pastClientsEmpty: 'Todavía no hay clientes de otras operaciones para reutilizar.',
     pastClientsSearchPh: 'Buscar por nombre o correo…', pastClientsNoMatch: 'Ningún cliente coincide.',
@@ -702,12 +710,12 @@ const STRINGS = {
     profilePhoto: 'Photo or logo (PNG/JPG, max 5 MB)', profileRemovePhoto: 'Remove photo', profileSaved: 'Profile updated.',
     profileNameRequired: 'Please enter a name.', genericError: 'Something went wrong. Please try again.',
     notifTitle: 'Notifications', notifAll: 'All', notifAction: 'Action required', notifUpdates: 'Updates',
-    notifEmpty: 'You are all caught up — nothing pending right now.', notifTaskAssigned: 'Task assigned to you',
+    notifEmpty: 'You are all caught up — nothing pending right now.', notifTaskAssigned: 'Task assigned to you', notifAuthorize: 'Waiting for your authorization',
     notifDocReview: 'Document to review', notifDocUpload: 'Upload', notifSignPending: 'Signature pending',
     notifDocApproved: 'Document approved', notifDocRejected: 'Document rejected — please upload it again',
     kycAutoFilledFrom: 'Filled in automatically from "{source}" — no need to type it again.',
     kycSecondSignature: 'One more signature to go: the LPR Luxury record.',
-    sideMain: 'Platform', sideSections: 'This deal', tabOverview: 'Overview', menuLabel: 'Menu', menuMore: 'More', navSecGeneral: 'General', noAgencyLabel: 'No agency',
+    sideMain: 'Platform', sideSections: 'This deal', tabOverview: 'Overview', menuLabel: 'Menu', menuMore: 'More', navSecGeneral: 'General', noAgencyLabel: 'No agency', escrowNone: 'No escrow',
     pastClientsTitle: 'Already a client?', pastClientsHint: 'Add them in one click — same details, same account as before.',
     pastClientsLoading: 'Looking up past clients…', pastClientsEmpty: 'No clients from other deals to reuse yet.',
     pastClientsSearchPh: 'Search by name or email…', pastClientsNoMatch: 'No client matches.',
