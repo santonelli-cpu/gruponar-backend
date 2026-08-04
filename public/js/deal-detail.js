@@ -20,7 +20,7 @@ function buildPartyFieldsBlock(allowedTypes, existing, dealId){
       <label>${t('type')} <select class="pf-type">${typeOptions}</select></label>
       <label>${t('partyEmailLabel')} <input type="email" class="pf-email" placeholder="${t('partyEmailPh')}" ${linkedUser ? 'disabled' : ''}></label>
     </div>
-    <div class="field-hint" style="margin-top:-6px;">${linkedUser ? t('partyEmailLinkedHint', { email: linkedUser.email }) : t('partyEmailHint')}</div>
+    <div class="field-hint" style="margin-top:-6px;">${linkedUser ? (['admin','lawyer'].includes(currentUser.role) ? t('partyEmailLinkedHint', { email: linkedUser.email }) : t('partyEmailLinkedHintNoEmail')) : t('partyEmailHint')}</div>
     ${existing ? `
       <div class="pf-attorney-wrap" style="margin-top:10px; padding-top:10px; border-top:0.5px dashed var(--line);">
         ${existing.linkedAttorney ? `
@@ -108,7 +108,7 @@ function buildPartyFieldsBlock(allowedTypes, existing, dealId){
 
   if(existing){
     box.querySelector('.pf-name').value = existing.name || '';
-    if(linkedUser) box.querySelector('.pf-email').value = linkedUser.email;
+    if(linkedUser && ['admin','lawyer'].includes(currentUser.role)) box.querySelector('.pf-email').value = linkedUser.email;
     if(allowedTypes.includes(existing.partyType)) typeSel.value = existing.partyType;
     if(existing.ownershipMode) modeSel.value = existing.ownershipMode;
     if(existing.owners && existing.owners[0]) box.querySelector('.pf-owner1').value = existing.owners[0].name;
@@ -301,9 +301,11 @@ function buildPartiesSection(deal){
   // agente o la contraparte pueden leerlos, la conversación se sale de la
   // plataforma y se pierde el rastro de qué se entregó y cuándo.
   const verContactos = ['admin','lawyer'].includes(currentUser.role);
-  // Dar de alta, editar o quitar partes también es de admin/abogado interno
-  // (el backend ya lo exige; esto evita ofrecer botones que rebotan).
-  const puedeEditarPartes = verContactos;
+  // Dar de alta, editar o quitar partes: admin, abogado interno y abogado
+  // externo (el backend exige lo mismo). Ojo, NO es la misma lista que
+  // verContactos: el abogado externo edita la parte pero no ve el correo
+  // de la cuenta ya ligada.
+  const puedeEditarPartes = ['admin','lawyer','external_lawyer'].includes(currentUser.role);
 
   // Clientes de operaciones anteriores — se cargan al abrir "Agregar" y se
   // enganchan con un clic, trayendo (si se quiere) los documentos que ya
@@ -509,10 +511,11 @@ function buildAdminDealDetail(deal){
   const pendingDocsCount = deal.documents.filter(d => d.status !== 'done').length;
   const pendingTasksCount = deal.tasks.filter(tk => tk.status !== 'done').length;
   // Editar la operación (datos, partes, agentes, fechas, cerrarla,
-  // eliminarla) es de admin y abogado interno. Un agente coordina y sube
-  // cosas, pero no cambia la operación misma — el backend lo bloquea igual,
-  // esto es para no ofrecerle botones que le van a rebotar.
-  const canEditDeal = ['admin','lawyer'].includes(currentUser.role);
+  // eliminarla) es de admin, abogado interno y abogado externo — los tres
+  // coordinan la operación. El agente y el cliente no: suben lo suyo, pero
+  // no cambian la operación misma (el backend lo bloquea igual; esto es
+  // para no ofrecerles botones que les van a rebotar).
+  const canEditDeal = ['admin','lawyer','external_lawyer'].includes(currentUser.role);
   const TABS = [
     // "General" guarda lo editable y las acciones. Antes vivían pegadas al
     // encabezado, así que el selector de escrow, las dos fechas y los cuatro
