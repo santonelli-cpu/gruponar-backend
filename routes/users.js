@@ -170,6 +170,33 @@ router.post('/:id/reset-2fa', requireRole('admin'), rateLimitWrite, (req, res) =
   res.json({ ok: true });
 });
 
+// POST /api/users/:id/temp-password — "se perdió la contraseña temporal que
+// le generé a esta persona".
+//
+// La original NO se puede volver a mostrar, y es a propósito: en la base
+// solo vive su hash de bcrypt, nunca el texto. Guardarla legible para poder
+// enseñarla después dejaría credenciales reales en la base de datos y en
+// cada respaldo diario que sube a Cloud Storage — de cuentas que firman
+// documentos legales. Así que en vez de recuperarla, se genera una NUEVA:
+// resuelve lo mismo (darle acceso a quien no lo tiene) sin guardar nada en
+// claro. La anterior deja de servir en ese momento.
+//
+// No aplica a cuentas de admin: un admin no le cambia la contraseña a otro
+// admin desde aquí (mismo criterio que PATCH /:id/profile); para eso está
+// "olvidé mi contraseña".
+router.post('/:id/temp-password', requireRole('admin'), rateLimitWrite, (req, res) => {
+  const user = db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado.' });
+  if (user.role === 'admin') return res.status(403).json({ error: 'No se puede generar contraseña temporal para una cuenta de administrador.' });
+
+  const password = tempPassword();
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(password, 12), user.id);
+  // Cualquier "recuérdame" viejo deja de valer: si la contraseña se cambió
+  // porque se perdió, un dispositivo recordado no debe seguir entrando.
+  db.prepare('DELETE FROM remembered_devices WHERE user_id = ?').run(user.id);
+  res.json({ ok: true, name: user.name, email: user.email, temporaryPassword: password });
+});
+
 // PATCH /api/users/:id/agency — la agencia normalmente la elige el agente al
 // registrarse/aceptar su invitación, pero no había forma de corregirla
 // después (ej. si se equivocó, cambió de agencia, o quedó en NULL porque se

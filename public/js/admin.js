@@ -13,6 +13,60 @@ function avatarHtml(user, size){
 }
 
 // ---------- ADMIN ----------
+// "Se me perdió la contraseña temporal de esta persona." La original no se
+// puede volver a mostrar (en la base solo vive su hash — ver POST
+// /api/users/:id/temp-password), así que se genera una nueva y se muestra
+// UNA vez, en un cuadro del que se puede copiar. La anterior deja de servir.
+function buildTempPasswordButton(user){
+  const btn = document.createElement('button');
+  btn.className = 'btn'; btn.style.fontSize = '11px';
+  btn.textContent = t('newTempPassword');
+  btn.title = t('newTempPasswordTitle');
+  btn.onclick = () => withButtonLoading(btn, async () => {
+    if(!await confirmDialog(t('newTempPasswordConfirm', { name: user.name }))) return;
+    try{
+      const r = await apiFetch(`/api/users/${user.id}/temp-password`, { method:'POST' });
+      showTempPasswordDialog(r.name, r.temporaryPassword);
+    }catch(e){ showToast(e.message, 'error'); }
+  });
+  return btn;
+}
+
+function showTempPasswordDialog(name, password){
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.innerHTML = `
+    <div class="dialog-box">
+      <p style="margin-top:0;">${t('newTempPasswordFor', { name: escapeHtml(name) })}</p>
+      <div style="display:flex; gap:8px; align-items:center; margin:14px 0;">
+        <code id="tmp-pass" style="flex:1; font-family:'IBM Plex Mono',monospace; font-size:16px; letter-spacing:1px;
+          background:var(--stone); border:0.5px solid var(--line); border-radius:8px; padding:12px 14px; user-select:all;">${escapeHtml(password)}</code>
+        <button class="btn" id="tmp-copy"><i class="ti ti-copy" aria-hidden="true"></i> ${t('copy')}</button>
+      </div>
+      <p class="field-hint" style="margin:0;">${t('newTempPasswordHint')}</p>
+      <div class="dialog-actions">
+        <button class="btn primary" id="tmp-close">${t('close')}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.querySelector('#tmp-close').onclick = close;
+  overlay.onclick = (e) => { if(e.target === overlay) close(); };
+  overlay.querySelector('#tmp-copy').onclick = async () => {
+    try{
+      await navigator.clipboard.writeText(password);
+      showToast(t('copied'), 'success');
+    }catch(e){
+      // Sin permiso de portapapeles (o navegador viejo): al menos se deja
+      // seleccionada para copiar a mano.
+      const range = document.createRange();
+      range.selectNodeContents(overlay.querySelector('#tmp-pass'));
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    }
+  };
+}
+
 let profileEditOpen = false;
 
 function buildProfileEditor(){
@@ -585,6 +639,7 @@ function buildTeamSection(){
         reset2faBtn.disabled = false;
       };
       actionsCell.appendChild(reset2faBtn);
+      actionsCell.appendChild(buildTempPasswordButton(u));
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
@@ -784,6 +839,7 @@ function buildClientsSection(){
       reset2faBtn.disabled = false;
     };
     actionsCell.appendChild(reset2faBtn);
+    actionsCell.appendChild(buildTempPasswordButton(c));
     const phoneCell = tr.children[2];
     const phoneInput = document.createElement('input');
     phoneInput.type = 'text'; phoneInput.value = c.phone || ''; phoneInput.placeholder = t('phonePh');
