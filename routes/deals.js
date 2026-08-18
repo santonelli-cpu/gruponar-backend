@@ -9,7 +9,7 @@ const crypto = require('crypto');
 const db = require('../db');
 const { requireAuth, requireRole, resolveAgency } = require('./auth');
 const { genFilename } = require('../lib/storage');
-const { canAccessDeal, myRoleInDeal, myDealPartyEntityId, myRepresentsSide, UNRESTRICTED_ROLES, AGENT_LIKE_ROLES } = require('../lib/access');
+const { canAccessDeal, myRoleInDeal, myDealPartyEntityId, myRepresentsSide, UNRESTRICTED_ROLES, AGENT_LIKE_ROLES, STAFF_ONLY_DOC_SECTIONS } = require('../lib/access');
 const { isValidEmail } = require('../lib/validate');
 const { validateBody, z } = require('../lib/validateBody');
 const { rateLimitWrite, rateLimitEmail, rateLimitUpload, rateLimitExpensive } = require('../lib/apiRateLimits');
@@ -77,7 +77,7 @@ const updateDealSchema = z.object({
 
 const addAgentSchema = z.object({
   userId: z.number().int().positive(),
-  representsSide: z.enum(['buyer', 'seller']).nullable().optional()
+  representsSide: z.enum(['buyer', 'seller', 'both']).nullable().optional()
 }).strict();
 
 const registerAgentSchema = z.object({
@@ -86,18 +86,18 @@ const registerAgentSchema = z.object({
   role: z.enum(['agent', 'external_lawyer']).optional(),
   agency: z.string().trim().max(200).optional(),
   agencyOther: z.string().trim().max(200).optional(),
-  representsSide: z.enum(['buyer', 'seller']).nullable().optional()
+  representsSide: z.enum(['buyer', 'seller', 'both']).nullable().optional()
 }).strict();
 
 const updateAgentSchema = z.object({
-  representsSide: z.enum(['buyer', 'seller']).nullable()
+  representsSide: z.enum(['buyer', 'seller', 'both']).nullable()
 }).strict();
 
 const addDocumentSchema = z.object({
   name: z.string().trim().min(1, 'Falta el nombre del documento.').max(300),
   dealPartyEntityId: z.number().int().positive().nullable().optional(),
   subLabel: z.string().trim().max(200).optional(),
-  section: z.enum(['gestoria', 'banco']).optional()
+  section: z.enum(['gestoria', 'banco', 'closing_costs']).optional()
 }).strict();
 
 const updateDocumentSchema = z.object({
@@ -127,7 +127,7 @@ const updateTaskSchema = z.object({
 // (doc.section) son solo de admin/abogados — GET /:id ya se los oculta a
 // comprador/vendedor/agente, esto cierra el acceso directo por ID.
 function canTouchDoc(req, dealId, doc) {
-  if (doc.section) return ['admin', 'lawyer', 'external_lawyer'].includes(req.session.role);
+  if (STAFF_ONLY_DOC_SECTIONS.includes(doc.section)) return ['admin', 'lawyer', 'external_lawyer'].includes(req.session.role);
   if (doc.deal_party_entity_id === null) return true;
   const role = myRoleInDeal(req, dealId);
   if (['admin', 'lawyer'].includes(role)) return true;
@@ -659,7 +659,7 @@ router.get('/:id', requireAuth, (req, res) => {
   // Gestoría/Banco son trabajo interno de los abogados (CLG, avalúo,
   // formatos del banco...) — comprador/vendedor/agente no las ven.
   if (!['admin', 'lawyer', 'external_lawyer'].includes(req.session.role)) {
-    visibleDocuments = visibleDocuments.filter(d => !d.section);
+    visibleDocuments = visibleDocuments.filter(d => !STAFF_ONLY_DOC_SECTIONS.includes(d.section));
   }
 
   res.json({ ...deal, parties: visibleParties, agents, documents: visibleDocuments, tasks });
@@ -1267,24 +1267,43 @@ router.post('/:id/drive-folder', requireRole('admin', 'lawyer', 'external_lawyer
 // POST /api/deals/:id/documents — agrega un requisito de documento nuevo al
 // checklist, fuera de lo que trae la plantilla del escenario (data/
 // scenario-docs.json) — para cuando esta operación en particular necesita
-// algo especial que la lista fija no contempla. Solo staff: agregar
-// requisitos al checklist es curaduría, no algo que un comprador/vendedor
-// haga sobre sí mismo. Sin dealPartyEntityId es un documento de Propiedad.
-// Comprador/vendedor también puede agregar un requisito extra a su propio
-// checklist (ej. un comprobante más de los que ya se sabe que siempre hay
-// más de uno) — antes solo staff podía, y el cliente tenía que pedírselo a
-// un admin/agente para algo tan simple como "necesito otra fila".
-router.post('/:id/documents', requireRole('admin', 'lawyer', 'external_lawyer'), rateLimitWrite, validateBody(addDocumentSchema), (req, res) => {
+// algo especial que la lista fija no contempla. Sin dealPartyEntityId es un
+// documento de Propiedad.
+//
+// El agente SÍ puede agregar renglones (es quien recibe los papeles de su
+// cliente y sabe que llegó un comprobante extra que la lista fija no
+// contempla; sin esto tenía que pedirle a un admin "agrégame una fila"), y
+// solo del lado que representa — el mismo filtro por lado que ya se aplica
+// más abajo. Comprador/vendedor también, en las tres partes del checklist
+// que de verdad les tocan: su propia parte, Propiedad si son el vendedor
+// (escritura y predial son papeles del dueño) y Gastos de cierre si son el
+// comprador (los comprobantes de pago los sube él) — ver canAddHere.
+// Quitar renglones sigue siendo solo de admin/abogado (ver DELETE abajo).
+router.post('/:id/documents', requireRole('admin', 'lawyer', 'external_lawyer', 'agent', 'buyer', 'seller'), rateLimitWrite, validateBody(addDocumentSchema), (req, res) => {
   if (!canAccessDeal(req, req.params.id)) return res.status(403).json({ error: 'No autorizado.' });
   const { name, dealPartyEntityId, subLabel, section } = req.body;
 
   // Gestoría/Banco son secciones de trabajo de los abogados — un
   // comprador/vendedor/agente ni siquiera las ve (GET /:id se las filtra).
-  if (section && !['admin', 'lawyer', 'external_lawyer'].includes(req.session.role)) {
+  if (STAFF_ONLY_DOC_SECTIONS.includes(section) && !['admin', 'lawyer', 'external_lawyer'].includes(req.session.role)) {
     return res.status(403).json({ error: 'No autorizado para agregar documentos en esta sección.' });
   }
   if (section && dealPartyEntityId) {
-    return res.status(400).json({ error: 'Un documento de Gestoría/Banco es de la operación, no de una parte.' });
+    return res.status(400).json({ error: 'Un documento de una sección es de la operación, no de una parte.' });
+  }
+
+  // Gastos de cierre es del comprador (él paga y él sube los comprobantes);
+  // Propiedad es del vendedor (es el dueño, los papeles del inmueble son
+  // suyos). El otro lado los consulta pero no agrega renglones ahí — mismo
+  // criterio que ya usaba la interfaz para dejar cada sección en solo
+  // lectura. Staff y agentes no se restringen aquí (el agente ya trae su
+  // filtro por lado más abajo).
+  if (['buyer', 'seller'].includes(req.session.role)) {
+    const isOwnParty = dealPartyEntityId !== undefined && dealPartyEntityId !== null;
+    const canAddHere = isOwnParty
+      || (section === 'closing_costs' && req.session.role === 'buyer')
+      || (!section && req.session.role === 'seller');
+    if (!canAddHere) return res.status(403).json({ error: 'Solo puedes agregar documentos en tu checklist o en la sección que te toca.' });
   }
 
   let partyId = null;

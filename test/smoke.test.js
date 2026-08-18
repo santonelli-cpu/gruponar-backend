@@ -24,6 +24,7 @@ const PASSWORD = 'TestPassword123!';
 const PASSWORD_HASH = '$2b$10$UP3HojXuPo8JHbEWeM/py.4vVkeyA1CfgPXSldR3rij73raQFHhUG';
 const ADMIN_SECRET = 'JBSWY3DPEHPK3PXPJBSWY3DP';
 const LAWYER_SECRET = 'KRSXG5CTMVRXEZLUJBSWY3DP';
+const SELLER_SECRET = 'MFRGGZDFMZTWQ2LKNNWG23TP';
 
 let serverProc;
 let tmpDir;
@@ -92,7 +93,8 @@ before(async () => {
     INSERT INTO users (name,email,password_hash,role,status,totp_secret,totp_enabled,two_factor_method) VALUES
       ('Test Admin','admin@test.local','${PASSWORD_HASH}','admin','active','${ADMIN_SECRET}',1,'totp'),
       ('Test Lawyer','lawyer@test.local','${PASSWORD_HASH}','lawyer','active','${LAWYER_SECRET}',1,'totp'),
-      ('Test Buyer','buyer@test.local','${PASSWORD_HASH}','buyer','active',NULL,0,NULL);
+      ('Test Buyer','buyer@test.local','${PASSWORD_HASH}','buyer','active',NULL,0,NULL),
+      ('Test Seller','seller@test.local','${PASSWORD_HASH}','seller','active','${SELLER_SECRET}',1,'totp');
   `]);
 });
 
@@ -261,6 +263,26 @@ test('comprador no ve Gestoría/Banco ni puede tocar sus documentos', async () =
   // ni marcarlos por ID directo
   const touch = await buyer('PATCH', `/api/deals/${dealId}/documents/${gestoriaDoc.id}`, { status: 'done' });
   assert.equal(touch.status, 403);
+
+  // Sí agrega renglones al checklist, pero SOLO dentro de su propia parte:
+  // ni en Propiedad (sin dealPartyEntityId) ni en la parte de alguien más.
+  // El frontend le muestra el "+" con el mismo criterio
+  // (canAddChecklistItem en deal-detail.js).
+  const myPartyId = adminDetail.body.parties.find(p => p.side === 'buyer').id;
+  const mine = await buyer('POST', `/api/deals/${dealId}/documents`, { name: 'Extra del cliente', dealPartyEntityId: myPartyId });
+  assert.equal(mine.status, 201, JSON.stringify(mine.body));
+  // Gastos de cierre sí es suyo (él paga y sube los comprobantes); Propiedad
+  // no (escritura y predial son papeles del dueño, o sea del vendedor).
+  const costs = await buyer('POST', `/api/deals/${dealId}/documents`, { name: 'Segundo comprobante de pago', section: 'closing_costs' });
+  assert.equal(costs.status, 201, JSON.stringify(costs.body));
+  const property = await buyer('POST', `/api/deals/${dealId}/documents`, { name: 'Extra de propiedad' });
+  assert.equal(property.status, 403, 'Propiedad es del vendedor');
+  const otherPartyId = adminDetail.body.parties.find(p => p.id !== myPartyId).id;
+  const theirs = await buyer('POST', `/api/deals/${dealId}/documents`, { name: 'Extra ajeno', dealPartyEntityId: otherPartyId });
+  assert.equal(theirs.status, 403, 'no debe poder agregar en la parte de alguien más');
+  // y tampoco puede quitar el que acaba de agregar (eso es de admin/abogado)
+  const removal = await buyer('DELETE', `/api/deals/${dealId}/documents/${mine.body.id}`);
+  assert.equal(removal.status, 403);
 });
 
 test('versiones de documentos: lista vacía para admin, 403 para parte ajena', async () => {
@@ -310,4 +332,138 @@ test('edición de perfil: conflicto de correo → 409; admin protegido → 404',
   assert.equal(conflict.status, 409);
   const adminEdit = await admin('PATCH', '/api/users/1/profile', { name: 'X', email: 'otro@test.local' });
   assert.equal(adminEdit.status, 404);
+});
+
+// Doble representación: el mismo agente lleva a comprador Y vendedor de la
+// misma operación (pasa seguido cuando la propiedad y el cliente salen de la
+// misma agencia). Antes solo se podía elegir UN lado, así que había que
+// ligar a la misma persona dos veces — imposible por UNIQUE(deal_id,user_id).
+// De paso cubre que el agente ya puede agregar renglones al checklist ("+").
+test('agente con doble representación ve los dos lados y agrega renglones al checklist', async () => {
+  const admin = makeSession();
+  await loginWith2fa(admin, 'admin@test.local', ADMIN_SECRET);
+  const created = await admin('POST', '/api/deals', {
+    scenario: 'purchase', development: 'punta_mita', property: 'Doble Representación',
+    price: 0, furniturePrice: 0, currency: 'USD', startDate: '2026-08-01', escrowCompany: 'armour',
+    parties: [
+      { side: 'seller', partyType: 'individual', name: 'Vendedor Doble' },
+      { side: 'buyer', partyType: 'individual', name: 'Comprador Doble' }
+    ]
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const dealId = created.body.id;
+
+  const reg = await admin('POST', `/api/deals/${dealId}/agents/register`, {
+    name: 'Agente Doble', email: 'doble@test.local', role: 'agent',
+    agency: 'LPR Luxury', representsSide: 'both'
+  });
+  assert.equal(reg.status, 201, JSON.stringify(reg.body));
+
+  const agent = makeSession();
+  const login = await agent('POST', '/api/auth/login', { email: 'doble@test.local', password: reg.body.temporaryPassword });
+  assert.equal(login.status, 200, JSON.stringify(login.body));
+  const totp = await agent('POST', '/api/auth/totp', { code: authenticator.generate(login.body.secret), remember: false });
+  assert.equal(totp.status, 200, JSON.stringify(totp.body));
+
+  // Los DOS lados visibles (con un solo lado elegido vería una sola parte)
+  const detail = await agent('GET', `/api/deals/${dealId}`);
+  assert.equal(detail.status, 200);
+  assert.deepEqual(detail.body.parties.map(p => p.side).sort(), ['buyer', 'seller']);
+  const sellerParty = detail.body.parties.find(p => p.side === 'seller');
+  const buyerParty = detail.body.parties.find(p => p.side === 'buyer');
+
+  // y puede agregar un requisito de checklist a cualquiera de los dos
+  for (const party of [sellerParty, buyerParty]) {
+    const add = await agent('POST', `/api/deals/${dealId}/documents`, {
+      name: `Comprobante extra ${party.side}`, dealPartyEntityId: party.id
+    });
+    assert.equal(add.status, 201, JSON.stringify(add.body));
+  }
+  const afterAdd = await agent('GET', `/api/deals/${dealId}`);
+  assert.equal(afterAdd.body.documents.filter(d => d.name.startsWith('Comprobante extra')).length, 2);
+
+  // pero NO puede quitar renglones (eso sigue siendo de admin/abogado)
+  const someDoc = afterAdd.body.documents.find(d => d.name === 'Comprobante extra buyer');
+  const removal = await agent('DELETE', `/api/deals/${dealId}/documents/${someDoc.id}`);
+  assert.equal(removal.status, 403, 'el agente no debe poder quitar renglones del checklist');
+});
+
+// Un agente de UN solo lado sigue sin poder agregar renglones del otro lado
+// — el "+" nuevo no debe volverse una puerta al lado contrario.
+test('agente de un solo lado no puede agregar renglones del otro lado', async () => {
+  const admin = makeSession();
+  await loginWith2fa(admin, 'admin@test.local', ADMIN_SECRET);
+  const created = await admin('POST', '/api/deals', {
+    scenario: 'purchase', development: 'punta_mita', property: 'Un Solo Lado',
+    price: 0, furniturePrice: 0, currency: 'USD', startDate: '2026-08-01', escrowCompany: 'armour',
+    parties: [
+      { side: 'seller', partyType: 'individual', name: 'Vendedor Solo' },
+      { side: 'buyer', partyType: 'individual', name: 'Comprador Solo' }
+    ]
+  });
+  const dealId = created.body.id;
+  const adminDetail = await admin('GET', `/api/deals/${dealId}`);
+  const buyerPartyId = adminDetail.body.parties.find(p => p.side === 'buyer').id;
+  const sellerPartyId = adminDetail.body.parties.find(p => p.side === 'seller').id;
+
+  const reg = await admin('POST', `/api/deals/${dealId}/agents/register`, {
+    name: 'Agente Vendedor', email: 'solovendedor@test.local', role: 'agent',
+    agency: 'LPR Luxury', representsSide: 'seller'
+  });
+  assert.equal(reg.status, 201, JSON.stringify(reg.body));
+
+  const agent = makeSession();
+  const login = await agent('POST', '/api/auth/login', { email: 'solovendedor@test.local', password: reg.body.temporaryPassword });
+  const totp = await agent('POST', '/api/auth/totp', { code: authenticator.generate(login.body.secret), remember: false });
+  assert.equal(totp.status, 200, JSON.stringify(totp.body));
+
+  const detail = await agent('GET', `/api/deals/${dealId}`);
+  assert.deepEqual(detail.body.parties.map(p => p.side), ['seller']);
+
+  const mine = await agent('POST', `/api/deals/${dealId}/documents`, { name: 'Extra propio', dealPartyEntityId: sellerPartyId });
+  assert.equal(mine.status, 201, JSON.stringify(mine.body));
+  const theirs = await agent('POST', `/api/deals/${dealId}/documents`, { name: 'Extra ajeno', dealPartyEntityId: buyerPartyId });
+  assert.equal(theirs.status, 403, 'no debe poder agregar documentos del lado que no representa');
+  // y las secciones internas (Gestoría/Banco) siguen cerradas para el agente
+  const internal = await agent('POST', `/api/deals/${dealId}/documents`, { name: 'Extra gestoría', section: 'gestoria' });
+  assert.equal(internal.status, 403, 'Gestoría/Banco no son del agente');
+});
+
+// La otra mitad del criterio por sección: Propiedad (escritura, predial) es
+// del VENDEDOR, y Gastos de cierre no — es lo contrario del comprador.
+test('vendedor agrega en Propiedad y en su parte, pero no en Gastos de cierre', async () => {
+  const admin = makeSession();
+  await loginWith2fa(admin, 'admin@test.local', ADMIN_SECRET);
+  const created = await admin('POST', '/api/deals', {
+    scenario: 'purchase', development: 'punta_mita', property: 'Checklist Vendedor',
+    price: 0, furniturePrice: 0, currency: 'USD', startDate: '2026-08-01', escrowCompany: 'armour',
+    parties: [
+      { side: 'seller', partyType: 'individual', name: 'Test Seller', email: 'seller@test.local' },
+      { side: 'buyer', partyType: 'individual', name: 'C' }
+    ]
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const dealId = created.body.id;
+  const adminDetail = await admin('GET', `/api/deals/${dealId}`);
+  const myPartyId = adminDetail.body.parties.find(p => p.side === 'seller').id;
+
+  const seller = makeSession();
+  await loginWith2fa(seller, 'seller@test.local', SELLER_SECRET);
+
+  const mine = await seller('POST', `/api/deals/${dealId}/documents`, { name: 'Extra del vendedor', dealPartyEntityId: myPartyId });
+  assert.equal(mine.status, 201, JSON.stringify(mine.body));
+  const property = await seller('POST', `/api/deals/${dealId}/documents`, { name: 'Constancia de no adeudo extra' });
+  assert.equal(property.status, 201, JSON.stringify(property.body));
+  const costs = await seller('POST', `/api/deals/${dealId}/documents`, { name: 'Comprobante ajeno', section: 'closing_costs' });
+  assert.equal(costs.status, 403, 'Gastos de cierre es del comprador');
+  const internal = await seller('POST', `/api/deals/${dealId}/documents`, { name: 'Avalúo extra', section: 'gestoria' });
+  assert.equal(internal.status, 403, 'Gestoría sigue siendo del despacho');
+
+  // Y lo que agregó en Gastos de cierre el comprador sí le llega al cliente
+  // (la sección NO es de staff, a diferencia de Gestoría/Banco).
+  const adminCosts = await admin('POST', `/api/deals/${dealId}/documents`, { name: 'Comprobante extra del cierre', section: 'closing_costs' });
+  assert.equal(adminCosts.status, 201);
+  const sellerView = await seller('GET', `/api/deals/${dealId}`);
+  assert.ok(sellerView.body.documents.some(d => d.section === 'closing_costs'), 'Gastos de cierre debe verse del lado del cliente');
+  assert.ok(!sellerView.body.documents.some(d => ['gestoria', 'banco'].includes(d.section)), 'Gestoría/Banco no');
 });

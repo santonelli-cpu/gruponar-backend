@@ -143,9 +143,12 @@ ensureColumn('deals', 'drive_folder_url', 'drive_folder_url TEXT');
 
 // A qué lado representa un agente en esta operación (solo aplica cuando
 // role_in_deal='agent'; NULL para comprador/vendedor, o para agentes viejos
-// que todavía no se les asignó lado). No lleva CHECK acá porque
-// ensureColumn agrega columnas simples — la validación de 'buyer'/'seller'
-// se hace en la ruta, igual que otros campos opcionales de este estilo.
+// que todavía no se les asignó lado). 'both' es la doble representación: el
+// mismo agente lleva a comprador y vendedor de la misma operación, y ve los
+// dos lados completos (ver myRepresentsSide en lib/access.js). No lleva
+// CHECK acá porque ensureColumn agrega columnas simples — la validación de
+// 'buyer'/'seller'/'both' se hace en la ruta, igual que otros campos
+// opcionales de este estilo.
 ensureColumn('deal_parties', 'represents_side', 'represents_side TEXT');
 
 // Igual que arriba pero en la invitación misma — para poder elegir a qué

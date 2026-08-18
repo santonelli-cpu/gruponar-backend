@@ -160,12 +160,16 @@ function buildNotaryClosingCostsSection(deal, isStaffView, viewerSide){
   proofsTitle.textContent = t('paymentProofsLabel');
   box.appendChild(proofsTitle);
   const proofNames = dealHasEscrow(deal) ? [ESCROW_PAYMENT_PROOF_DOC_NAME, NOTARY_PAYMENT_PROOF_DOC_NAME] : [NOTARY_PAYMENT_PROOF_DOC_NAME];
-  const proofDocs = deal.documents.filter(d => d.partyId === null && proofNames.includes(d.name));
+  // Los dos comprobantes de siempre se reconocen por nombre (nacen con la
+  // operación, sin section); los renglones extra que se agreguen aquí
+  // llevan section='closing_costs' para que se queden EN esta tarjeta —
+  // sin eso caían en Propiedad, que es donde vive todo lo demás sin parte.
+  const proofDocs = deal.documents.filter(d => d.partyId === null && (proofNames.includes(d.name) || d.section === 'closing_costs'));
   const ul = document.createElement('ul');
   ul.className = 'doc-list';
   proofDocs.forEach(doc => ul.appendChild(buildDocItemLi(deal, doc, isStaffView, proofsReadOnly)));
   box.appendChild(ul);
-  if(!proofsReadOnly) box.appendChild(buildAddDocumentRow(deal, null));
+  if(!proofsReadOnly) box.appendChild(buildAddDocumentRow(deal, null, 'closing_costs'));
   return box;
 }
 
@@ -338,6 +342,7 @@ function buildInviteForm(deal){
         <option value="">${t('representsUnset')}</option>
         <option value="seller">${t('representsSeller')}</option>
         <option value="buyer">${t('representsBuyer')}</option>
+        <option value="both">${t('representsBoth')}</option>
       </select></label>
       <span id="inv-agency-fields" style="display:flex; gap:10px; flex-wrap:wrap;">
         <label>${t('registerAgencyPlaceholderSelect')} <select id="inv-agency">
@@ -477,10 +482,14 @@ function buildPersonRow(dealId, a, opts){
   if(isAgentLike){
     const sel = document.createElement('select');
     sel.style.cssText = 'font-size:11.5px; padding:2px 6px;';
+    // 'both' es la doble representación (el mismo agente lleva comprador y
+    // vendedor): una sola fila con acceso a los dos lados, en vez de tener
+    // que ligar a la misma persona dos veces.
     sel.innerHTML = `
       <option value="" ${!a.representsSide?'selected':''}>${t('representsUnset')}</option>
       <option value="seller" ${a.representsSide==='seller'?'selected':''}>${t('representsSeller')}</option>
       <option value="buyer" ${a.representsSide==='buyer'?'selected':''}>${t('representsBuyer')}</option>
+      <option value="both" ${a.representsSide==='both'?'selected':''}>${t('representsBoth')}</option>
     `;
     sel.onchange = async () => {
       try{

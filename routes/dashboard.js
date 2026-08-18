@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { requireAuth } = require('./auth');
-const { UNRESTRICTED_ROLES, AGENT_LIKE_ROLES } = require('../lib/access');
+const { UNRESTRICTED_ROLES, AGENT_LIKE_ROLES, STAFF_ONLY_DOC_SECTIONS } = require('../lib/access');
 
 const router = express.Router();
 
@@ -53,7 +53,9 @@ function visibleDealIdsSql(req) {
 // admin, abogado interno o abogado externo no los ve, y por lo tanto
 // tampoco deben contarse entre sus pendientes.
 function sectionScopeSql(req, sectionColumn) {
-  return ['admin', 'lawyer', 'external_lawyer'].includes(req.session.role) ? '' : ` AND ${sectionColumn} IS NULL`;
+  if (['admin', 'lawyer', 'external_lawyer'].includes(req.session.role)) return '';
+  const list = STAFF_ONLY_DOC_SECTIONS.map(s => `'${s}'`).join(', ');
+  return ` AND (${sectionColumn} IS NULL OR ${sectionColumn} NOT IN (${list}))`;
 }
 
 function sideScopeSql(req, partyIdColumn, dealIdColumn) {
@@ -63,7 +65,7 @@ function sideScopeSql(req, partyIdColumn, dealIdColumn) {
     JOIN deal_parties agente ON agente.deal_id = dpe.deal_id
       AND agente.user_id = ${Number(req.session.userId)} AND agente.role_in_deal = 'agent'
     WHERE dpe.deal_id = ${dealIdColumn}
-      AND (agente.represents_side IS NULL OR dpe.side = agente.represents_side)
+      AND (agente.represents_side IS NULL OR agente.represents_side = 'both' OR dpe.side = agente.represents_side)
   ))`;
 }
 

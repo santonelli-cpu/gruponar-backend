@@ -24,7 +24,7 @@ const createInviteSchema = z.object({
   roleInDeal: z.enum(['buyer', 'seller', 'agent', 'lawyer', 'external_lawyer']),
   name: z.string().trim().min(1, 'Escribe un nombre.').max(200, 'El nombre es demasiado largo.'),
   email: z.string().trim().toLowerCase().max(254).email('Ese correo no tiene un formato válido.'),
-  representsSide: z.enum(['buyer', 'seller']).nullable().optional()
+  representsSide: z.enum(['buyer', 'seller', 'both']).nullable().optional()
 }).strict();
 
 const acceptInviteSchema = z.object({

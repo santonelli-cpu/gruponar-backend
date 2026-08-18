@@ -1331,6 +1331,11 @@ function buildDocItemLi(deal, doc, isStaffView, readOnly){
   // parte" — isStaffView ya viene en false ahí). El badge de estado sí lo ve
   // todo el mundo, para que quien subió el documento sepa si quedó bien.
   const canReview = isStaffView && ['admin','lawyer'].includes(currentUser.role);
+  // Quitar el renglón del checklist es de admin/abogado (DELETE
+  // /api/deals/:id/documents/:docId) — un agente puede AGREGAR requisitos
+  // (ver canAddChecklistItem) pero no borrar los que ya están, así que el
+  // botón no se le ofrece en vez de rebotarle con 403.
+  const canRemoveChecklistItem = isStaffView && ['admin','lawyer','external_lawyer'].includes(currentUser.role);
   const reviewBadgeHtml = doc.fileUrl
     ? `<span class="review-badge ${doc.reviewStatus}">${t(doc.reviewStatus === 'approved' ? 'reviewApproved' : doc.reviewStatus === 'rejected' ? 'reviewRejected' : 'reviewPending')}</span>`
     : '';
@@ -1352,7 +1357,7 @@ function buildDocItemLi(deal, doc, isStaffView, readOnly){
           ${canReview && doc.fileUrl && doc.reviewStatus !== 'rejected' ? `<button type="button" class="doc-reject-btn"><i class="ti ti-x" aria-hidden="true"></i> ${t('rejectDocument')}</button>` : ''}
           <button type="button" class="doc-versions-btn"><i class="ti ti-history" aria-hidden="true"></i> ${t('versionsTitle')}</button>
           ${doc.fileUrl ? `<button type="button" class="doc-delete-btn danger"><i class="ti ti-trash" aria-hidden="true"></i> ${t('deleteFile')}</button>` : ''}
-          <button type="button" class="doc-remove-req-btn danger"><i class="ti ti-playlist-x" aria-hidden="true"></i> ${t('removeChecklistItemTitle')}</button>
+          ${canRemoveChecklistItem ? `<button type="button" class="doc-remove-req-btn danger"><i class="ti ti-playlist-x" aria-hidden="true"></i> ${t('removeChecklistItemTitle')}</button>` : ''}
         </div>` : ''}`;
   const clientActionsHtml = `
       ${doc.fileUrl ? `<a href="/api/deals/${deal.id}/documents/${doc.id}/file" target="_blank" class="btn" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px;"><i class="ti ti-eye" aria-hidden="true"></i> ${t('viewFile')}</a>` : (readOnly ? `<span class="field-hint" style="margin:0;">${t('notUploaded')}</span>` : '')}
@@ -1452,10 +1457,30 @@ function buildDocItemLi(deal, doc, isStaffView, readOnly){
   return li;
 }
 
+// Quién puede agregar un renglón al checklist, igual que POST
+// /api/deals/:id/documents en el backend: admin, abogado (interno o
+// externo) y agente en cualquier lado que ya vean (el filtro por lado del
+// agente lo aplica el backend); comprador/vendedor en las tres partes que
+// les tocan — su propia parte siempre, Propiedad solo el vendedor (los
+// papeles del inmueble son del dueño) y Gastos de cierre solo el comprador
+// (él paga y él sube los comprobantes). Es el mismo criterio con el que
+// cada sección ya se ponía en solo lectura para el lado contrario; sin
+// este gateo el "+" aparecería donde el backend va a contestar 403.
+function canAddChecklistItem(deal, dealPartyEntityId, section){
+  if(['admin','lawyer','external_lawyer','agent'].includes(currentUser.role)) return true;
+  const myParty = myPartyInDeal(deal);
+  if(!myParty) return false;
+  if(dealPartyEntityId) return myParty.id === dealPartyEntityId;
+  if(section === 'closing_costs') return myParty.side === 'buyer';
+  return !section && myParty.side === 'seller';
+}
+
 // Formulario chico para agregar un requisito de documento custom al
 // checklist — para property (dealPartyEntityId null) o para una parte
-// específica. Solo staff (ver buildDocItemLi arriba, mismo criterio).
+// específica. Devuelve un fragmento vacío para quien no puede agregar, así
+// los llamadores pueden hacer appendChild sin condicionar cada uno.
 function buildAddDocumentRow(deal, dealPartyEntityId, section){
+  if(!canAddChecklistItem(deal, dealPartyEntityId || null, section || null)) return document.createDocumentFragment();
   const row = document.createElement('div');
   row.style.cssText = 'margin-top:6px;';
   row.innerHTML = `
