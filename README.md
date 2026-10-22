@@ -134,6 +134,10 @@ vendedor.
    ambiente sandbox limita a quién le puedes mandar sobres hasta pedir
    "go-live" con DocuSign).
 
+## HubSpot (CRM)
+
+Integración de una vía portal → HubSpot, apagada mientras no exista `HUBSPOT_TOKEN`. Detalle y configuración en [docs/HUBSPOT.md](docs/HUBSPOT.md).
+
 ## Desplegarlo (para que tenga una URL real)
 Cualquiera de estas funciona bien para un proyecto así de tamaño:
 - **Render** (render.com) — despliegue directo desde un repo de GitHub, con

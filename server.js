@@ -17,6 +17,8 @@ const kycRouter = require('./routes/kyc');
 const contractsRouter = require('./routes/contracts');
 const googleDriveRouter = require('./routes/googleDrive');
 const settingsRouter = require('./routes/settings');
+const hubspotRouter = require('./routes/hubspot');
+const { dealSyncHook } = require('./lib/hubspot');
 const { runAutomaticReminders } = require('./lib/reminders');
 const { checkAndSendPredialReminders } = require('./lib/predialReminder');
 const { checkAndSendDeadlineReminders } = require('./lib/deadlineReminders');
@@ -105,6 +107,9 @@ const rateLimitApi = createRateLimiter({ windowMs: 15 * 60 * 1000, maxAttempts: 
 app.use('/api', rateLimitApi);
 
 app.use('/api/auth', authRouter);
+// Después de cada escritura exitosa sobre una operación, la encola para
+// mandarla a HubSpot (no hace nada si no hay HUBSPOT_TOKEN).
+app.use('/api/deals', dealSyncHook);
 app.use('/api/deals', dealsRouter);
 app.use('/api/docusign', docusignRouter);
 app.use('/api/users', usersRouter);
@@ -114,6 +119,7 @@ app.use('/api', kycRouter);
 app.use('/api', contractsRouter);
 app.use('/api/google-drive', googleDriveRouter);
 app.use('/api/settings', settingsRouter);
+app.use('/api/admin/hubspot', hubspotRouter);
 
 // `version` identifica el deploy actual (Render expone el SHA del commit;
 // en local, la hora de arranque). El frontend la consulta periódicamente y,
