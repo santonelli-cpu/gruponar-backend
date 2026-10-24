@@ -141,3 +141,16 @@ test('frecuencia: por defecto semanal; solo publica cuando ya toca', async () =>
   // Sin Drive conectado, aunque ya toque, se salta sin tronar.
   assert.equal((await snapshot.publishIfDue(now)).skipped, 'drive_not_connected');
 });
+
+test('un KYC subido ya firmado en PDF se marca como tal, no como incompleto', () => {
+  const dealId = db.prepare(`INSERT INTO deals (scenario, property, start_date) VALUES ('purchase', 'Casa PDF 2', '2026-10-01')`).run().lastInsertRowid;
+  const entity = db.prepare(`INSERT INTO deal_party_entities (deal_id, side, party_type, name) VALUES (?, 'buyer', 'individual', 'Comprador PDF')`).run(dealId).lastInsertRowid;
+  db.prepare(`INSERT INTO kyc_submissions (deal_id, deal_party_entity_id, template_key, answers_json, status) VALUES (?,?, 'tla_individual', '{}', 'signed')`).run(dealId, entity);
+  const snap = snapshot.buildSnapshot();
+  const op = snap.operaciones.find(o => o.inmueble === 'Casa PDF 2');
+  assert.equal(op.partes[0].kyc[0].origen, 'pdf_firmado');
+  assert.match(snapshot.toMarkdown(snap), /tla_individual: firmado \(PDF subido\)/);
+  const villa = snap.operaciones.find(o => o.inmueble === 'Villa Prueba 1');
+  assert.equal(villa.partes.find(p => p.lado === 'vendedor').kyc[0].origen, 'portal');
+  assert.match(snapshot.toMarkdown(snap), /KYC sin KYC en el portal|sin KYC en el portal/);
+});
