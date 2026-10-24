@@ -8,7 +8,7 @@ una foto de solo lectura en el Google Drive que ya está conectado
 
 ## Qué publica
 
-Cada hora (y 4 minutos después de cada arranque), en la carpeta
+**Una vez por semana** por defecto, en la carpeta
 **"Jarvis (portal)"** de la raíz del Drive conectado:
 
 - `portal-snapshot.json`: para que Jarvis lo lea por máquina.
@@ -42,7 +42,14 @@ portal ni llave nueva que guardar.
 - `GET /api/admin/jarvis/status`: si está activo, si Drive está conectado,
   última publicación y último error.
 - `GET /api/admin/jarvis/preview`: el JSON exacto que se publica.
-- `POST /api/admin/jarvis/publish`: publica ya, sin esperar a la hora.
+- `POST /api/admin/jarvis/publish`: publica ya, sin esperar a que toque.
+
+## Frecuencia
+
+`JARVIS_SNAPSHOT_EVERY_HOURS` en Render: `168` (por defecto, semanal) o `24`
+(diario). El servidor revisa cada hora si ya pasó el intervalo desde la última
+publicación buena, así que un reinicio no la duplica. Para una foto al momento,
+`POST /api/admin/jarvis/publish`.
 
 ## Apagarlo
 

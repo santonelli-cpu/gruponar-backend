@@ -129,3 +129,15 @@ test('sin Drive conectado no publica y no truena', async () => {
   assert.equal(result.skipped, 'drive_not_connected');
   assert.equal(snapshot.getStatus().drive_conectado, false);
 });
+
+test('frecuencia: por defecto semanal; solo publica cuando ya toca', async () => {
+  const now = new Date('2026-10-26T13:00:00Z');
+  assert.equal(snapshot.isDue(null, 168, now), true);
+  assert.equal(snapshot.isDue('2026-10-20T13:00:00Z', 168, now), false);
+  assert.equal(snapshot.isDue('2026-10-19T13:00:00Z', 168, now), true);
+  assert.equal(snapshot.isDue('2026-10-25T12:00:00Z', 24, now), true);
+  assert.equal(snapshot.isDue('basura', 168, now), true);
+  assert.equal(snapshot.getStatus().cada_horas, 168);
+  // Sin Drive conectado, aunque ya toque, se salta sin tronar.
+  assert.equal((await snapshot.publishIfDue(now)).skipped, 'drive_not_connected');
+});

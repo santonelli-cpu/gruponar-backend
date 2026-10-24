@@ -20,8 +20,8 @@ router.get('/preview', rateLimitExpensive, (req, res) => {
   res.json(snapshot.buildSnapshot());
 });
 
-// POST /api/admin/jarvis/publish — publica ya en Drive, sin esperar a la
-// siguiente hora.
+// POST /api/admin/jarvis/publish — publica ya en Drive, sin esperar a que
+// toque la publicación semanal.
 router.post('/publish', rateLimitExpensive, async (req, res) => {
   try {
     const result = await snapshot.publishSnapshot();
