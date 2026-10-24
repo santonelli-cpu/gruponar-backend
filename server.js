@@ -19,6 +19,8 @@ const googleDriveRouter = require('./routes/googleDrive');
 const settingsRouter = require('./routes/settings');
 const hubspotRouter = require('./routes/hubspot');
 const { dealSyncHook } = require('./lib/hubspot');
+const jarvisRouter = require('./routes/jarvis');
+const { publishSnapshot: publishJarvisSnapshot } = require('./lib/jarvisSnapshot');
 const { runAutomaticReminders } = require('./lib/reminders');
 const { checkAndSendPredialReminders } = require('./lib/predialReminder');
 const { checkAndSendDeadlineReminders } = require('./lib/deadlineReminders');
@@ -120,6 +122,7 @@ app.use('/api', contractsRouter);
 app.use('/api/google-drive', googleDriveRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/admin/hubspot', hubspotRouter);
+app.use('/api/admin/jarvis', jarvisRouter);
 
 // `version` identifica el deploy actual (Render expone el SHA del commit;
 // en local, la hora de arranque). El frontend la consulta periódicamente y,
@@ -211,6 +214,14 @@ setInterval(() => checkAndSendPredialReminders().catch(err => console.error('[pr
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://portal.gruponar.com';
 setTimeout(() => checkAndSendDeadlineReminders(APP_BASE_URL).catch(err => console.error('[deadline-reminder] error:', err.message)), 2 * 60 * 1000);
 setInterval(() => checkAndSendDeadlineReminders(APP_BASE_URL).catch(err => console.error('[deadline-reminder] error:', err.message)), 24 * 60 * 60 * 1000);
+
+// Reporte de solo lectura para Jarvis (lib/jarvisSnapshot.js) — foto de
+// todas las operaciones en el Drive conectado, carpeta "Jarvis (portal)".
+// Primera pasada a los 4 minutos de arrancar y luego cada hora. Se salta solo
+// si Drive no está conectado o si JARVIS_SNAPSHOT_DISABLED=1.
+const runJarvisSnapshot = () => publishJarvisSnapshot().catch(err => console.error('[jarvis-snapshot] error:', err.message));
+setTimeout(runJarvisSnapshot, 4 * 60 * 1000);
+setInterval(runJarvisSnapshot, 60 * 60 * 1000);
 
 // Respaldo diario de la base de datos a Cloud Storage (lib/dbBackup.js) —
 // solo corre en Render; la clave incluye la fecha, así que reinicios en el
