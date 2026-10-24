@@ -268,3 +268,15 @@ CREATE TABLE IF NOT EXISTS document_versions (
   archived_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_document_versions_doc ON document_versions(document_id, id);
+
+-- Integración de una vía portal → HubSpot (lib/hubspot.js): último
+-- resultado de sincronización por operación y el ID del deal en HubSpot,
+-- para no tener que buscarlo cada vez. Si se borra la fila, el siguiente
+-- sync lo vuelve a encontrar por la propiedad única portal_deal_id.
+CREATE TABLE IF NOT EXISTS hubspot_sync_log (
+  deal_id INTEGER PRIMARY KEY,
+  hubspot_deal_id TEXT,
+  status TEXT NOT NULL CHECK(status IN ('ok','error','skipped')),
+  detail TEXT,
+  synced_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

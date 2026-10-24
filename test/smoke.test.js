@@ -467,3 +467,30 @@ test('vendedor agrega en Propiedad y en su parte, pero no en Gastos de cierre', 
   assert.ok(sellerView.body.documents.some(d => d.section === 'closing_costs'), 'Gastos de cierre debe verse del lado del cliente');
   assert.ok(!sellerView.body.documents.some(d => ['gestoria', 'banco'].includes(d.section)), 'Gestoría/Banco no');
 });
+
+test('reporte para Jarvis: solo admin; vista previa sin datos sensibles; sin Drive no publica', async () => {
+  const anon = makeSession();
+  const anonStatus = await anon('GET', '/api/admin/jarvis/status');
+  assert.ok([401, 403].includes(anonStatus.status), `sin sesión debe rechazar, dio ${anonStatus.status}`);
+
+  const lawyer = makeSession();
+  await loginWith2fa(lawyer, 'lawyer@test.local', LAWYER_SECRET);
+  const lawyerPreview = await lawyer('GET', '/api/admin/jarvis/preview');
+  assert.equal(lawyerPreview.status, 403);
+
+  const admin = makeSession();
+  await loginWith2fa(admin, 'admin@test.local', ADMIN_SECRET);
+  const status = await admin('GET', '/api/admin/jarvis/status');
+  assert.equal(status.status, 200);
+  assert.equal(status.body.drive_conectado, false);
+
+  const preview = await admin('GET', '/api/admin/jarvis/preview');
+  assert.equal(preview.status, 200);
+  assert.equal(preview.body.version, 1);
+  assert.ok(Array.isArray(preview.body.operaciones));
+  assert.ok(!JSON.stringify(preview.body).includes('password_hash'));
+
+  const publish = await admin('POST', '/api/admin/jarvis/publish');
+  assert.equal(publish.status, 409);
+  assert.equal(publish.body.skipped, 'drive_not_connected');
+});
